@@ -338,7 +338,24 @@ def register(
 
     _PENDING_REGISTER[email_norm] = pending_json
 
-    # ── 发验证码邮件 ──────────────────────────────────────────────────────────
+    # ── 本地/自托管模式:跳过邮箱验证 ──────────────────────────────────────────
+    # 开源用户反馈:自托管没有 RESEND_API_KEY → 验证码发不出(Resend 403)→ 卡注册,
+    # 只能从后端日志扒验证码。邮箱验证只在 server 强制鉴权模式有意义(数据在云端);
+    # 本地部署数据保存在本地,直接用刚生成的 code 完成注册并登录,无需邮件。
+    from core.config import require_auth as _require_auth_reg
+    if not _require_auth_reg():
+        try:
+            user, token = confirm_email_verification(email_norm, code)
+            _log.info("[register] 本地模式自动完成注册(免邮箱验证) email=%s", _mask_email(email_norm))
+            return {
+                "ok": True, "pending_verify": False, "auto_verified": True,
+                "user": user, "session_token": token,
+                "email_mask": _mask_email(email_norm),
+            }
+        except Exception as _e:  # noqa: BLE001
+            _log.warning("[register] 本地模式自动验证失败,回退验证码流程: %s", _e)
+
+    # ── server 模式:发验证码邮件 ──────────────────────────────────────────────
     from .email import send_verification_email, EmailSendError
     try:
         send_verification_email(email_norm, code)
