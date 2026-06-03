@@ -88,11 +88,18 @@ def _bucket_key(ip: str, username: str) -> str:
 
 
 def _check_rate_limit(ip: str, username: str) -> None:
-    # P2-5: 双独立 bucket — per-IP 和 per-username 任一超阈值即拒绝
-    # 多 worker 部署下此速率限制不安全（每个 worker 独立内存，不共享）
-    _log.debug("rate_limit check: ip=%s username=%s (in-process, unsafe under multi-worker)", ip, username)
+    # P2-5: 双独立 bucket — per-IP 和 per-username 任一超阈值即拒绝。
+    # Redis 可用时用共享锁定键(跨 worker 一致,根治多 worker 限流 ×N 绕过);
+    # 不可用回落进程内(单进程语义)。
     ip_key = ip or "-"
     user_key = (username or "").lower()
+    import redis_bus
+    if redis_bus.get_sync_client() is not None:
+        for scope, k in (("ip", ip_key), ("user", user_key)):
+            rem = redis_bus.lock_remaining(f"login:{scope}:{k}")
+            if rem and rem > 0:
+                raise RateLimited(int(rem), f"{scope}:{k}")
+        return
     now = time.monotonic()
     with _FAIL_LOCK:
         # 检查 IP 锁定
@@ -117,6 +124,16 @@ def _record_login_fail(ip: str, username: str) -> int:
     # P2-5: 分别记录 per-IP 和 per-username bucket
     ip_key = ip or "-"
     user_key = (username or "").lower()
+    import redis_bus
+    if redis_bus.get_sync_client() is not None:
+        ip_cnt = redis_bus.rate_incr(f"loginfail:ip:{ip_key}", _IP_WINDOW_SEC) or 0
+        if ip_cnt >= _IP_MAX_FAILS:
+            redis_bus.lock_set(f"login:ip:{ip_key}", LOGIN_LOCKOUT_SEC)
+        user_cnt = redis_bus.rate_incr(f"loginfail:user:{user_key}", _USER_WINDOW_SEC) or 0
+        if user_cnt >= _USER_MAX_FAILS:
+            redis_bus.lock_set(f"login:user:{user_key}", LOGIN_LOCKOUT_SEC)
+        _write_audit(username, ip, "login_fail", {"count": user_cnt})
+        return user_cnt
     now = time.monotonic()
     with _FAIL_LOCK:
         # per-IP bucket
@@ -139,6 +156,13 @@ def _record_login_fail(ip: str, username: str) -> int:
 def _record_login_success(ip: str, username: str) -> None:
     ip_key = ip or "-"
     user_key = (username or "").lower()
+    import redis_bus
+    if redis_bus.get_sync_client() is not None:
+        for scope, k in (("ip", ip_key), ("user", user_key)):
+            redis_bus.rate_reset(f"loginfail:{scope}:{k}")
+            redis_bus.lock_clear(f"login:{scope}:{k}")
+        _write_audit(username, ip, "login_ok", {})
+        return
     with _FAIL_LOCK:
         _FAIL_BUCKETS_IP.pop(ip_key, None)
         _LOCKED_UNTIL_IP.pop(ip_key, None)
@@ -182,10 +206,25 @@ def _mask_email(email: str) -> str:
 
 def admin_unlock(ip: str, username: str) -> None:
     """admin 手动解锁某个用户/IP（暴露给 /api/admin/login/unlock 用）"""
+    ip_key = ip or "-"
+    user_key = (username or "").lower()
+    # Redis 模式:清共享锁定键 + 失败计数
+    try:
+        import redis_bus
+        if redis_bus.get_sync_client() is not None:
+            for scope, k in (("ip", ip_key), ("user", user_key)):
+                redis_bus.lock_clear(f"login:{scope}:{k}")
+                redis_bus.rate_reset(f"loginfail:{scope}:{k}")
+    except Exception:
+        pass
     key = _bucket_key(ip, username)
     with _FAIL_LOCK:
         _FAIL_BUCKETS.pop(key, None)
         _LOCKED_UNTIL.pop(key, None)
+        _LOCKED_UNTIL_IP.pop(ip_key, None)
+        _LOCKED_UNTIL_USER.pop(user_key, None)
+        _FAIL_BUCKETS_IP.pop(ip_key, None)
+        _FAIL_BUCKETS_USER.pop(user_key, None)
     _write_audit(username, ip, "admin_unlock", {})
 
 

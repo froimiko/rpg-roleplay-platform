@@ -107,13 +107,11 @@ def _deliver(q: asyncio.Queue[StateEvent], event: StateEvent) -> None:
             pass
 
 
-def emit(user_id: int, topic: str, op: str, payload: dict[str, Any] | None = None) -> None:
-    """非阻塞 push 给该 user 的所有订阅者(可从任意线程调用)。
-    队列满就丢最旧那条(背压),保证不阻塞 dispatcher 主路径。
-    """
-    event = StateEvent(user_id=user_id, topic=topic, op=op, payload=payload or {})
+def _local_emit(event: StateEvent) -> None:
+    """投递给*本进程*该 user 的所有订阅者(可从任意线程调用)。
+    队列满就丢最旧那条(背压),保证不阻塞调用方主路径。"""
     with _LOCK:
-        queues = list(_SUBSCRIBERS.get(user_id, ()))  # 锁内取快照,避免迭代时被改
+        queues = list(_SUBSCRIBERS.get(event.user_id, ()))  # 锁内取快照,避免迭代时被改
     loop = _LOOP
     for q in queues:
         if loop is not None and loop.is_running():
@@ -125,6 +123,71 @@ def emit(user_id: int, topic: str, op: str, payload: dict[str, Any] | None = Non
                 pass
         else:
             _deliver(q, event)
+
+
+def emit(user_id: int, topic: str, op: str, payload: dict[str, Any] | None = None) -> None:
+    """非阻塞 push 给该 user 的所有订阅者(可从任意线程调用)。
+
+    多 worker 水平扩展:优先发布到 Redis 频道,由各进程的 listener 统一投递给本进程订阅者
+    (含发布进程自己)→ 订阅者落在哪个 worker 都能收到,根治跨 worker 丢事件。
+    Redis 未配置 / 发布失败 → 回落进程内直接投递(单进程语义,本地开发不变)。
+    """
+    event = StateEvent(user_id=user_id, topic=topic, op=op, payload=payload or {})
+    try:
+        import redis_bus
+        if redis_bus.is_enabled():
+            wire = json.dumps(
+                {"user_id": user_id, "topic": topic, "op": op,
+                 "payload": payload or {}, "ts": event.ts},
+                ensure_ascii=False,
+            )
+            if redis_bus.publish_event(wire):
+                return  # listener 负责投递(含本进程),不再本地直投以免重复
+    except Exception:
+        pass
+    _local_emit(event)
+
+
+async def redis_listener() -> None:
+    """常驻协程(lifespan 启动):订阅 Redis 事件频道,把跨进程事件投递给本进程订阅者。
+    断线自动重连。Redis 未配置则立即返回(纯进程内模式)。"""
+    try:
+        import redis_bus
+        if not redis_bus.is_enabled():
+            return
+        import redis.asyncio as aioredis  # type: ignore
+    except Exception as exc:
+        import logging
+        logging.getLogger("rpg.state_event_bus").info(
+            "[state_event_bus] redis listener 未启用: %s", exc)
+        return
+
+    import logging
+    _log = logging.getLogger("rpg.state_event_bus")
+    url = redis_bus.redis_url()
+    while True:
+        try:
+            client = aioredis.from_url(url, decode_responses=True)
+            pubsub = client.pubsub()
+            await pubsub.subscribe(redis_bus.EVENT_CHANNEL)
+            _log.info("[state_event_bus] redis listener subscribed channel=%s", redis_bus.EVENT_CHANNEL)
+            async for msg in pubsub.listen():
+                if msg.get("type") != "message":
+                    continue
+                try:
+                    d = json.loads(msg["data"])
+                    ev = StateEvent(
+                        user_id=int(d["user_id"]), topic=d["topic"], op=d["op"],
+                        payload=d.get("payload") or {}, ts=float(d.get("ts") or time.time()),
+                    )
+                    _local_emit(ev)
+                except Exception:
+                    _log.exception("[state_event_bus] bad redis event payload")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _log.warning("[state_event_bus] redis listener error, retry in 3s: %s", exc)
+            await asyncio.sleep(3)
 
 
 def subscriber_count(user_id: int) -> int:
