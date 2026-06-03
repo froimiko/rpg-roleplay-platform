@@ -122,20 +122,20 @@
     "black_swan": {
       "title": "黑天鹅事件",
       "enable": "启用",
-      "enable_desc": "GM 在非预期时刻插入打破叙事预期的随机世界事件（sprint 5 黑天鹅子代理）。关闭后叙事保持平稳，不会触发主动事件。",
+      "enable_desc": "GM 在非预期时刻插入打破预期的随机世界事件。关闭后叙事平稳,不触发主动事件。",
       "enable_on": "已开启",
       "enable_off": "已关闭（平稳叙事）"
     },
     "extractor": {
       "title": "叙事提取器（GM 第二步）",
       "enable": "启用",
-      "enable_desc": "把 GM 拆成两步：主模型纯叙事，便宜模型读叙事+state 输出结构化 ops。错误率比单步低 ~5×，成本约 +20%。",
+      "enable_desc": "GM 拆两步:主模型纯叙事,便宜模型读叙事+state 出结构化 ops。错误率约低 5×,成本约 +20%。",
       "enable_on": "开启（两步式 GM）",
       "enable_off": "关闭（单步 GM，向后兼容）",
       "api": "提取器 API",
-      "api_desc": "Anthropic 走 native tool_use（最稳）；Vertex 走 response_mime_type=application/json；其它走 OpenAI 兼容 response_format。",
+      "api_desc": "Anthropic 用 native tool_use 最稳;Vertex 用 JSON mode;其它走 OpenAI 兼容。",
       "model": "提取器模型",
-      "model_desc": "推荐当代旗舰的便宜档：gemini-3.5-flash / claude-haiku-4 / gpt-5.5-nano / qwen-3.7-flash 等。",
+      "model_desc": "选当代旗舰的便宜档,如 gemini-flash / claude-haiku / gpt-nano / qwen-flash。",
       "model_not_in_list": "（未在当前 API 列表）"
     },
     "clarify": {
