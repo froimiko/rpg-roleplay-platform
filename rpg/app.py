@@ -1437,7 +1437,16 @@ from rules_bridge import (
     enter_room as _rb_enter_room,
 )
 from rules_bridge import (
+    grant_item_action as _rb_grant_item_action,
+)
+from rules_bridge import (
     parse_consume_intent as _rb_parse_consume_intent,
+)
+from rules_bridge import (
+    parse_pickup_intent as _rb_parse_pickup_intent,
+)
+from rules_bridge import (
+    pickup_loot_action as _rb_pickup_loot_action,
 )
 from rules_bridge import (
     perform_saving_throw as _rb_saving_throw,
@@ -1463,7 +1472,10 @@ from rules_bridge import (
 
 
 def _coerce_rule_seed(seed: Any) -> int | None:
-    return int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
+    # 安全:玩家 REST body 的 seed 不可信,默认忽略(防穷举 seed 刷暴击/必胜)。
+    # 仅测试/显式 RPG_ALLOW_CLIENT_SEED 时接受。见 rules.seed_policy。
+    from rules.seed_policy import coerce_external_seed
+    return coerce_external_seed(seed)
 
 
 def _canonicalize_exit_target(state: GameState, target: str) -> tuple[str, str]:
@@ -1612,6 +1624,24 @@ def _execute_rules_action(state: GameState, body: dict[str, Any]) -> dict[str, A
             qty = 1
         out = _rb_consume_item_action(state, item_id=item_id, qty=qty,
                                        reason=str(body.get("reason") or ""))
+    elif kind == "grant_item":
+        item_id = str(body.get("item_id") or body.get("item") or body.get("alias") or "")
+        try:
+            qty = int(body.get("qty") or 1)
+        except (TypeError, ValueError):
+            qty = 1
+        out = _rb_grant_item_action(
+            state, item_id=item_id, name=body.get("name"), qty=qty,
+            kind=str(body.get("item_kind") or body.get("kind_hint") or "misc"),
+            reason=str(body.get("reason") or ""),
+        )
+    elif kind == "pickup_loot":
+        item_id = str(body.get("item_id") or body.get("item") or body.get("alias") or "")
+        out = _rb_pickup_loot_action(
+            state, item_id=item_id,
+            location_id=str(body.get("location_id") or "") or None,
+            reason=str(body.get("reason") or ""),
+        )
     elif kind == "move":
         loc = str(body.get("to") or body.get("target") or body.get("move_to") or "")
         canonical, reason = _canonicalize_exit_target(state, loc)
@@ -1678,6 +1708,14 @@ def _chat_rule_candidates(
             "qty": intent["qty"],
             "reason": f"backend parser: {intent['matched']!r}",
         })
+    # 拾取意图：确定性从玩家文本解析"捡起当前房间 loot"，不依赖 LLM。
+    # 与 consume 对称——"捡起暗红矿核" / "拿走药剂" 都从这里入，走 pickup_loot。
+    for intent in _rb_parse_pickup_intent(user_input, state):
+        add({
+            "kind": "pickup_loot",
+            "item_id": intent["item_id"],
+            "reason": f"backend parser: {intent['matched']!r}",
+        })
     for action in curator_actions or []:
         add(action)
     return merged
@@ -1698,7 +1736,8 @@ def _apply_chat_rule_candidates(state: GameState, actions: list[dict[str, Any]] 
     if not scene.get("module_id"):
         return []
 
-    allowed = {"skill_check", "saving_throw", "trap_check", "attack", "short_rest", "move", "consume_item"}
+    allowed = {"skill_check", "saving_throw", "trap_check", "attack", "short_rest",
+               "move", "consume_item", "pickup_loot"}
     # 一种 kind 最多跑一次 — 同一回合不允许双重 attack / 双重 skill_check 等。
     # 但 skill_check + move 可以同回合跑（玩家描述含调查 + 移动）。
     consumed_kinds: set[str] = set()
@@ -1712,7 +1751,11 @@ def _apply_chat_rule_candidates(state: GameState, actions: list[dict[str, Any]] 
             continue
         # 每种 kind 每回合至多一次(防双重 attack / skill_check);但 consume_item 例外 ——
         # 同回合可消耗多个不同物品,按 item_id 而非 kind 去重(否则第二个物品被跳过、不生效)。
-        dedup_key = f"consume_item:{action.get('item_id')}" if kind == "consume_item" else kind
+        # pickup_loot 同理:同回合可拾取多个不同 loot,也按 item_id 去重。
+        if kind == "pickup_loot":
+            dedup_key = f"pickup_loot:{action.get('item_id')}"
+        else:
+            dedup_key = f"consume_item:{action.get('item_id')}" if kind == "consume_item" else kind
         if dedup_key in consumed_kinds:
             continue
         out = _execute_rules_action(state, action)
