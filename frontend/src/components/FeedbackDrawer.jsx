@@ -97,6 +97,7 @@ export function FeedbackDrawer({ open, onClose }) {
     setBusy(false);
     setDone(false);
     setError(null);
+    setRecentTurns([]);  // 防跨存档残留上一次的对话节选
     try {
       const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot();
       setRuntimePreview(snap ? snap.__runtime__ : null);
