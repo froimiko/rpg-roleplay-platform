@@ -1132,7 +1132,7 @@ function MeOverview() {
                   ) : (
                     <div className="pl-achv-progress">
                       <div className="pl-achv-bar"><div className="pl-achv-fill" style={{width: (a.progress / a.target * 100).toFixed(0) + "%"}} /></div>
-                      <span className="muted-2 mono" style={{fontSize: 10.5}}>{a.progress.toLocaleString()} / {a.target.toLocaleString()}</span>
+                      <span className="muted-2 mono" style={{fontSize: 10.5}}>{Number(a.progress || 0).toLocaleString()} / {Number(a.target || 0).toLocaleString()}</span>
                     </div>
                   )}
                 </div>
