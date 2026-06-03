@@ -233,6 +233,17 @@ async def apply_player_directives_phase(
                     "status": "error", "elapsed_ms": 0,
                 })
             else:
+                # 关键:compact_phase(force=True) 把当前 open phase 就地标 closed,但不重开。
+                # 若不补开新 phase,ensure_initial_phase 会因"已存在(closed)phase 行"早退、
+                # detect_phase_boundary 因无 active phase 恒 False → 该存档自此**永久停止**
+                # 自动折叠历史,/compact 之后到最近 6 轮之间的剧情既无原文也无摘要 = GM 失忆
+                # (与 /compact 目的相反)。这里立即开一个新 open phase 接管后续回合。
+                try:
+                    from save_phase_manager import open_new_phase as _open_new_phase
+                    _cur_turn = int((state.data or {}).get("turn") or 0)
+                    _open_new_phase(_sid, turn_index=_cur_turn + 1)
+                except Exception:
+                    pass
                 _summary_excerpt = (_result.get("summary") or "")[:200]
                 yield ("agent", {
                     "phase": "compact",
