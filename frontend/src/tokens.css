@@ -103,6 +103,13 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+/* 横向溢出兜底:flex/grid 子项默认 min-width:auto 会拒绝收缩,宽表格/长 mono 串会把
+   父容器撑破。给 Cloudscape AppLayout 内容层补 min-width:0(允许收缩,内部表格自横滚),
+   并给 body 一道最终兜底,杜绝任何漏网内在宽度产生整页横滚。*/
+[class*="awsui_content_"][class*="awsui_layout"],
+[class*="awsui_main_"],
+[class*="awsui_content-wrapper_"] { min-width: 0 !important; }
+html, body { overflow-x: hidden; max-width: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -170,8 +177,13 @@ textarea { resize: vertical; }
    .pl-vsplit-top 形成嵌套滚动、让 thead 无法相对外层 sticky;先把内层改成
    overflow:visible,只保留 .pl-vsplit-top 这一个滚动容器,再把表头钉在顶部。 */
 .pl-vsplit-top [class*="awsui_wrapper"] {
-  overflow: visible !important;
+  /* 根因修复:原来 overflow:visible 把表格自带的 overflow-x:auto 横滚「安全气囊」
+     一起关掉了 → 宽表不再内部横滚、直接撑破外层 → 整页横向溢出。
+     现在只让纵向 visible(表头 sticky 相对外层吸顶仍生效),横向恢复 auto(宽表自滚)。 */
+  overflow-y: visible !important;
+  overflow-x: auto !important;
 }
+.pl-vsplit, .pl-vsplit-top, .pl-vsplit-bottom { min-width: 0; }
 /* 列头滚动时静止吸顶(搜索/筛选条已移到面板外,面板里只有表格 → top:0 即可) */
 .pl-vsplit-top thead[class*="awsui_thead"] th,
 .pl-vsplit-top thead[class*="awsui_thead"] td {
