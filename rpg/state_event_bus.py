@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -47,6 +48,14 @@ _QUEUE_MAX = 64
 # 安全: 单用户最多并发 SSE 订阅数。防止单用户开无限 SSE 连接吃光 fd/内存（DoS）。
 MAX_SUBSCRIBERS_PER_USER = 10
 
+# 线程安全: emit() 由 GM 工具循环在 *worker 线程* 调用(dispatcher 跑在 to_thread),
+# 而 subscribe/unsubscribe/queue.get 在 *event-loop 线程*。两类线程并发读写
+# _SUBSCRIBERS(set 迭代 vs discard/pop)→ RuntimeError: set changed size;
+# 且 asyncio.Queue 非线程安全,跨线程 put_nowait 会损坏其 future 唤醒逻辑、丢事件。
+# 用 _LOCK 串行化桶读写 + 把实际 put 经 call_soon_threadsafe 投递回 loop 线程。
+_LOCK = threading.Lock()
+_LOOP: asyncio.AbstractEventLoop | None = None
+
 
 class TooManySubscribers(Exception):
     """订阅者超过 per-user 上限。"""
@@ -58,48 +67,72 @@ def subscribe(user_id: int) -> asyncio.Queue[StateEvent]:
     超过 MAX_SUBSCRIBERS_PER_USER 上限时抛 TooManySubscribers, 路由层应
     返回 429 而不是继续累积。
     """
-    bucket = _SUBSCRIBERS[user_id]
-    if len(bucket) >= MAX_SUBSCRIBERS_PER_USER:
-        raise TooManySubscribers(
-            f"user {user_id} 已达 SSE 订阅上限 ({MAX_SUBSCRIBERS_PER_USER}), "
-            "请关掉旧标签页再重试"
-        )
-    q: asyncio.Queue[StateEvent] = asyncio.Queue(maxsize=_QUEUE_MAX)
-    bucket.add(q)
+    global _LOOP
+    try:
+        # subscribe 总在 event-loop 线程的 SSE handler 里调 → 捕获该 loop 供 emit 跨线程投递
+        _LOOP = asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    with _LOCK:
+        bucket = _SUBSCRIBERS[user_id]
+        if len(bucket) >= MAX_SUBSCRIBERS_PER_USER:
+            raise TooManySubscribers(
+                f"user {user_id} 已达 SSE 订阅上限 ({MAX_SUBSCRIBERS_PER_USER}), "
+                "请关掉旧标签页再重试"
+            )
+        q: asyncio.Queue[StateEvent] = asyncio.Queue(maxsize=_QUEUE_MAX)
+        bucket.add(q)
     return q
 
 
 def unsubscribe(user_id: int, q: asyncio.Queue[StateEvent]) -> None:
-    bucket = _SUBSCRIBERS.get(user_id)
-    if bucket is None:
-        return
-    bucket.discard(q)
-    if not bucket:
-        _SUBSCRIBERS.pop(user_id, None)
+    with _LOCK:
+        bucket = _SUBSCRIBERS.get(user_id)
+        if bucket is None:
+            return
+        bucket.discard(q)
+        if not bucket:
+            _SUBSCRIBERS.pop(user_id, None)
+
+
+def _deliver(q: asyncio.Queue[StateEvent], event: StateEvent) -> None:
+    """在 event-loop 线程上执行的实际投递:满则丢最旧(背压)。"""
+    try:
+        q.put_nowait(event)
+    except asyncio.QueueFull:
+        try:
+            q.get_nowait()
+            q.put_nowait(event)
+        except Exception:
+            pass
 
 
 def emit(user_id: int, topic: str, op: str, payload: dict[str, Any] | None = None) -> None:
-    """非阻塞 push 给该 user 的所有订阅者。
+    """非阻塞 push 给该 user 的所有订阅者(可从任意线程调用)。
     队列满就丢最旧那条(背压),保证不阻塞 dispatcher 主路径。
     """
     event = StateEvent(user_id=user_id, topic=topic, op=op, payload=payload or {})
-    for q in list(_SUBSCRIBERS.get(user_id, ())):
-        try:
-            q.put_nowait(event)
-        except asyncio.QueueFull:
-            try:
-                q.get_nowait()
-                q.put_nowait(event)
-            except Exception:
-                pass
+    with _LOCK:
+        queues = list(_SUBSCRIBERS.get(user_id, ()))  # 锁内取快照,避免迭代时被改
+    loop = _LOOP
+    for q in queues:
+        if loop is not None and loop.is_running():
+            # 跨线程安全:把 put 调度回 loop 线程执行
+            loop.call_soon_threadsafe(_deliver, q, event)
+        else:
+            _deliver(q, event)
 
 
 def subscriber_count(user_id: int) -> int:
-    return len(_SUBSCRIBERS.get(user_id, set()))
+    with _LOCK:
+        return len(_SUBSCRIBERS.get(user_id, set()))
 
 
 def reset_for_tests() -> None:
-    _SUBSCRIBERS.clear()
+    global _LOOP
+    with _LOCK:
+        _SUBSCRIBERS.clear()
+    _LOOP = None
 
 
 __all__ = [
