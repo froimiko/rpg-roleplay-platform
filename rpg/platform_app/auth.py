@@ -129,9 +129,14 @@ def _record_login_fail(ip: str, username: str) -> int:
         ip_cnt = redis_bus.rate_incr(f"loginfail:ip:{ip_key}", _IP_WINDOW_SEC) or 0
         if ip_cnt >= _IP_MAX_FAILS:
             redis_bus.lock_set(f"login:ip:{ip_key}", LOGIN_LOCKOUT_SEC)
+            redis_bus.rate_reset(f"loginfail:ip:{ip_key}")  # 锁定即清计数,避免锁到期后一击复锁
         user_cnt = redis_bus.rate_incr(f"loginfail:user:{user_key}", _USER_WINDOW_SEC) or 0
         if user_cnt >= _USER_MAX_FAILS:
             redis_bus.lock_set(f"login:user:{user_key}", LOGIN_LOCKOUT_SEC)
+            # 关键:锁定后清空固定窗口计数器。否则计数 TTL(600s)≫ 锁定 TTL(60s),
+            # 锁到期后计数仍 ≥ 阈值,用户再失败 1 次就立即复锁,反复锁死 ~9 分钟。
+            # 清零后锁到期需重新累积满阈值才再锁,语义与进程内滑动窗口一致。
+            redis_bus.rate_reset(f"loginfail:user:{user_key}")
         _write_audit(username, ip, "login_fail", {"count": user_cnt})
         return user_cnt
     now = time.monotonic()

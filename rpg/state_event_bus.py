@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import time
 from collections import defaultdict
@@ -55,6 +56,9 @@ MAX_SUBSCRIBERS_PER_USER = 10
 # 用 _LOCK 串行化桶读写 + 把实际 put 经 call_soon_threadsafe 投递回 loop 线程。
 _LOCK = threading.Lock()
 _LOOP: asyncio.AbstractEventLoop | None = None
+# 本进程唯一标识:emit 发布到 Redis 时带上,listener 收到自己 origin 的消息就跳过
+# (本进程已在 emit 里本地直投过),避免重复投递。各 worker pid 不同即可区分。
+_ORIGIN = f"p{os.getpid()}"
 
 
 class TooManySubscribers(Exception):
@@ -133,19 +137,22 @@ def emit(user_id: int, topic: str, op: str, payload: dict[str, Any] | None = Non
     Redis 未配置 / 发布失败 → 回落进程内直接投递(单进程语义,本地开发不变)。
     """
     event = StateEvent(user_id=user_id, topic=topic, op=op, payload=payload or {})
+    # 始终先本地直投:本进程订阅者立即收到,不依赖 Redis listener 是否已订阅完成
+    # → 消除"启动/重连窗口里 publish 但本进程 listener 未就绪"导致的本进程丢事件。
+    _local_emit(event)
+    # 再跨进程广播:发布到 Redis 带 _ORIGIN;其它 worker 的 listener 投递,本进程
+    # listener 收到自己 origin 的消息会跳过(上面已本地投过),不重复。
     try:
         import redis_bus
         if redis_bus.is_enabled():
             wire = json.dumps(
-                {"user_id": user_id, "topic": topic, "op": op,
+                {"origin": _ORIGIN, "user_id": user_id, "topic": topic, "op": op,
                  "payload": payload or {}, "ts": event.ts},
                 ensure_ascii=False,
             )
-            if redis_bus.publish_event(wire):
-                return  # listener 负责投递(含本进程),不再本地直投以免重复
+            redis_bus.publish_event(wire)
     except Exception:
         pass
-    _local_emit(event)
 
 
 async def redis_listener() -> None:
@@ -166,6 +173,8 @@ async def redis_listener() -> None:
     _log = logging.getLogger("rpg.state_event_bus")
     url = redis_bus.redis_url()
     while True:
+        client = None
+        pubsub = None
         try:
             client = aioredis.from_url(url, decode_responses=True)
             pubsub = client.pubsub()
@@ -176,6 +185,8 @@ async def redis_listener() -> None:
                     continue
                 try:
                     d = json.loads(msg["data"])
+                    if d.get("origin") == _ORIGIN:
+                        continue  # 自己 publish 的,本进程 emit 已本地投过,跳过免重复
                     ev = StateEvent(
                         user_id=int(d["user_id"]), topic=d["topic"], op=d["op"],
                         payload=d.get("payload") or {}, ts=float(d.get("ts") or time.time()),
@@ -188,6 +199,14 @@ async def redis_listener() -> None:
         except Exception as exc:
             _log.warning("[state_event_bus] redis listener error, retry in 3s: %s", exc)
             await asyncio.sleep(3)
+        finally:
+            # 重连/取消前关掉旧连接,否则反复断线重连会泄漏 pubsub + 底层连接(fd)
+            for _c in (pubsub, client):
+                if _c is not None:
+                    try:
+                        await _c.aclose()
+                    except Exception:
+                        pass
 
 
 def subscriber_count(user_id: int) -> int:
