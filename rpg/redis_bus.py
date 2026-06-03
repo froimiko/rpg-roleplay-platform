@@ -84,17 +84,32 @@ def publish_event(payload: str) -> bool:
 
 # ── 限流(固定窗口原子计数)────────────────────────────────────────────────
 
+# INCR + 条件 EXPIRE 必须原子:否则进程在 INCR 后、EXPIRE 前崩溃 → key 永久无 TTL
+# → 计数永不重置 → 该 IP/用户限流键卡死,跨窗口累加可致过早/永久锁定。Lua 脚本在
+# Redis 单线程下原子执行,消除崩溃窗口;额外 elseif 分支自愈任何已丢失 TTL 的历史卡死键。
+_RATE_INCR_LUA = """
+local c = redis.call('INCR', KEYS[1])
+if c == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+elseif redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return c
+"""
+
+
 def rate_incr(key: str, window_sec: int) -> int | None:
-    """对 key 原子 +1,首次写入时设 TTL=window_sec。返回当前窗口内计数。
-    Redis 不可用 → None,调用方回落进程内限流。"""
+    """对 key 原子 +1,并原子地保证设置 TTL=window_sec。返回当前窗口内计数。
+    Redis 不可用 → None,调用方回落进程内限流。
+
+    用 Lua 脚本把 INCR 与 EXPIRE 合并为单次原子执行 —— 旧实现 incr 后单独 expire,
+    两步之间崩溃会留下永不过期的计数键(限流卡死)。"""
     cli = get_sync_client()
     if cli is None:
         return None
     try:
         rkey = f"rpg:rl:{key}"
-        cnt = cli.incr(rkey)
-        if cnt == 1:
-            cli.expire(rkey, window_sec)
+        cnt = cli.eval(_RATE_INCR_LUA, 1, rkey, window_sec)
         return int(cnt)
     except Exception as exc:
         log.warning("[redis] rate_incr failed: %s", exc)
