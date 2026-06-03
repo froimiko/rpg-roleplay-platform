@@ -22,9 +22,28 @@ function _applyTo(el) {
   } catch (_) { /* 防御:任何 DOM 异常都不影响页面 */ }
 }
 
+function _closeLabel() {
+  // 按页面语言给关闭按钮一个可访问名
+  const lang = (document.documentElement.getAttribute("lang") || "").toLowerCase();
+  return lang.startsWith("en") ? "Close" : "关闭";
+}
+
+function _applyDismiss(el) {
+  try {
+    if (el.getAttribute("aria-label") || el.getAttribute("aria-labelledby")) return;
+    if ((el.textContent || "").trim()) return;
+    el.setAttribute("aria-label", _closeLabel());
+  } catch (_) { /* 防御 */ }
+}
+
 function _scan(root) {
   if (!root || !root.querySelectorAll) return;
   root.querySelectorAll("[data-tip]").forEach(_applyTo);
+  // Cloudscape 模态关闭按钮(variant-modal-dismiss / dismiss-control)无可访问名 → 补"关闭"。
+  // 用 [class*=] 匹配 hash 后的类名,跨 Cloudscape 版本稳健。
+  root.querySelectorAll(
+    'button[class*="dismiss-control"], button[class*="modal-dismiss"]'
+  ).forEach(_applyDismiss);
 }
 
 function _init() {
