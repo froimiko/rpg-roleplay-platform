@@ -1202,6 +1202,12 @@ async def run_gm_phase(
                     _retry_response = "".join(_retry_parts).strip()
                     if _retry_response:
                         # 第二稿覆盖第一稿 — 重新 apply_structured_updates
+                        import secrets as _ctx_secrets
+                        from state_write_context import (
+                            ChatWriteContext,
+                            clear_context as _clear_write_ctx,
+                            set_context as _set_write_ctx,
+                        )
                         _retry_ctx = ChatWriteContext(
                             user_id=int(api_user.get("id")) if api_user else 0,
                             save_id=ctx.early_active_save_id or 0,
