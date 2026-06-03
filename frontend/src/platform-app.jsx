@@ -703,7 +703,7 @@ function UnifiedSearch({ open, onClose, setPage }) {
 
   const scripts = platform.scripts.map(s => ({
     id: "scr-" + s.id, label: s.title, kind: "script",
-    sub: `${s.chapter_count.toLocaleString()} 章 · ${(s.word_count / 10000).toFixed(1)}万字`,
+    sub: `${Number(s.chapter_count || 0).toLocaleString()} 章 · ${((s.word_count || 0) / 10000).toFixed(1)}万字`,
     icon: "book", keywords: s.uid + " " + s.description,
     hash: "scripts",
   }));
