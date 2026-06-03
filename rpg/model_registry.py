@@ -67,8 +67,15 @@ def default_api_for(api_id: str | None) -> dict[str, Any] | None:
 # overlay 合成层统一剔除 —— 对未来其它下线模型同样健壮,无需逐个改存储数据。
 # key 为 "" 表示对所有 provider 生效。
 KNOWN_OFFLINE_MODELS: dict[str, set[str]] = {
-    # gemini-1.5-pro-002 早已被 Google 下线,Vertex 调用返 404 NOT_FOUND。
-    "vertex_ai": {"gemini-1.5-pro-002"},
+    # 已被 Google 下线的 Vertex 模型,调用返 404 NOT_FOUND:
+    # - gemini-1.5-pro-002:早期 1.5 快照,早已下线。
+    # - gemini-2.5-flash-preview-04-17 / gemini-2.5-pro-exp-03-25:带日期的 preview/exp
+    #   临时快照,GA 名(gemini-2.5-flash / gemini-2.5-pro)上线后即停服。
+    "vertex_ai": {
+        "gemini-1.5-pro-002",
+        "gemini-2.5-flash-preview-04-17",
+        "gemini-2.5-pro-exp-03-25",
+    },
 }
 
 
