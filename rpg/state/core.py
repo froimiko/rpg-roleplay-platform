@@ -650,7 +650,10 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
         permissions = self.data.get("permissions", {})
         worldline = self.data.get("worldline", {})
         rel_lines = []
-        for char, status in self.data["relationships"].items():
+        # 只注入最近 N 条关系:relationships dict 无上限,长局 GM 给大量路人/已离场 NPC 登记
+        # 关系后会全量注入吃 token(同 known_events、memory 各 bucket 都已截断,唯独这里漏了)。
+        # 取最近登记的 20 条(dict 按插入序,末尾=较新引入的角色);<20 关系是常态极少触发。
+        for char, status in list(self.data["relationships"].items())[-20:]:
             rel_lines.append(f"  · {char}：{status}")
         rel_text = "\n".join(rel_lines) if rel_lines else "  （尚未与任何人建立明确关系）"
 
