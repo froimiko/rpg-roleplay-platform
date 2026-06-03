@@ -899,12 +899,20 @@ def resend_verification_code(email: str, ip: str = "") -> None:
     if not email_norm or "@" not in email_norm:
         raise ValueError("无效邮箱")
 
-    now = time.monotonic()
-    last = _RESEND_LAST.get(email_norm, 0.0)
-    if now - last < 60:
-        wait = int(60 - (now - last)) + 1
-        raise ValueError(f"发送太频繁，请 {wait} 秒后再试")
-    _RESEND_LAST[email_norm] = now
+    # Redis 共享冷却(workers>1 一致;否则用户轮询不同 worker 可绕过 60s 冷却刷验证码)
+    import redis_bus
+    if redis_bus.get_sync_client() is not None:
+        rem = redis_bus.lock_remaining(f"resend:{email_norm}")
+        if rem and rem > 0:
+            raise ValueError(f"发送太频繁，请 {rem} 秒后再试")
+        redis_bus.lock_set(f"resend:{email_norm}", 60)
+    else:
+        now = time.monotonic()
+        last = _RESEND_LAST.get(email_norm, 0.0)
+        if now - last < 60:
+            wait = int(60 - (now - last)) + 1
+            raise ValueError(f"发送太频繁，请 {wait} 秒后再试")
+        _RESEND_LAST[email_norm] = now
 
     init_db()
     with connect() as db:
@@ -963,6 +971,14 @@ _RESET_MAX_PER_10MIN = 3             # 每邮箱 10 分钟内最多 3 次请求
 
 def _check_reset_rate(email_norm: str) -> None:
     """超过频率限制时抛 ValueError（调用方展示通用 ok 以防枚举）。"""
+    _interval = int(600 / _RESET_MAX_PER_10MIN)  # 每次请求间隔 ≥200s
+    # Redis 共享冷却(workers>1 一致;否则轮询不同 worker 可绕过重置限流刷邮件)
+    import redis_bus
+    if redis_bus.get_sync_client() is not None:
+        if (redis_bus.lock_remaining(f"reset:{email_norm}") or 0) > 0:
+            raise ValueError("rate_limited")
+        redis_bus.lock_set(f"reset:{email_norm}", _interval)
+        return
     now = time.monotonic()
     key = f"r:{email_norm}"
     with _RESET_RATE_LOCK:
@@ -970,7 +986,7 @@ def _check_reset_rate(email_norm: str) -> None:
             _RESET_RATE[key] = now
             return
         elapsed = now - _RESET_RATE[key]
-        if elapsed < 600 / _RESET_MAX_PER_10MIN:  # 简单滑动阈值
+        if elapsed < _interval:  # 简单滑动阈值
             raise ValueError("rate_limited")
         _RESET_RATE[key] = now
 
