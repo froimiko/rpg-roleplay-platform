@@ -444,6 +444,27 @@ window.toast = function(message, opts = {}) {
   return t.id;
 };
 
+// 成就解锁通知:对 unlocked && seen===false 的项弹一次(会话内去重)再标记 seen。
+// 由个人主页加载与 app 外壳(跨页面)共用,保证在任何页面解锁都能弹。
+const __achvToasted = new Set();
+async function flushAchievementToasts(items) {
+  const fresh = (items || []).filter(a => a && a.unlocked && a.seen === false && !__achvToasted.has(a.id));
+  if (!fresh.length) return;
+  fresh.forEach(a => {
+    __achvToasted.add(a.id);
+    window.toast(`🏆 解锁成就:${a.name}`, { kind: "ok", detail: a.desc, duration: 4200 });
+  });
+  try { await window.api.account.achievementsSeen(); } catch (_) {}
+}
+// 外壳跨页面调用:拉成就并弹未看过的解锁(只在登录态)。
+window.__checkAchievements = async function () {
+  if (!(window.RPG_AUTH && window.RPG_AUTH.authed)) return;
+  try {
+    const r = await window.api.account.achievements();
+    await flushAchievementToasts((r && r.items) || []);
+  } catch (_) {}
+};
+
 function useToasts() {
   const [items, setItems] = useStatePL([]);
   React.useEffect(() => {
@@ -948,10 +969,148 @@ function MePage({ subPage = "overview" }) {
 }
 
 
+// ── 成就墙(个人主页 + 公开墙共用) ─────────────────────────────────
+const ACHV_CAT_ORDER = ["启程", "叙事", "探索", "收藏", "坚持", "隐藏"];
+const TIER_RANK = { gold: 3, silver: 2, bronze: 1 };
+function fmtAchvDate(iso) {
+  if (!iso) return "";
+  try { return new Date(iso).toISOString().slice(0, 10); } catch { return ""; }
+}
+
+function AchievementWall({ items }) {
+  const groups = (() => {
+    const m = new Map();
+    (items || []).forEach(a => { if (!m.has(a.category)) m.set(a.category, []); m.get(a.category).push(a); });
+    return [...m.keys()]
+      .sort((x, y) => (ACHV_CAT_ORDER.indexOf(x) < 0 ? 99 : ACHV_CAT_ORDER.indexOf(x)) - (ACHV_CAT_ORDER.indexOf(y) < 0 ? 99 : ACHV_CAT_ORDER.indexOf(y)))
+      .map(k => [k, m.get(k)]);
+  })();
+  return (
+    <CSSpaceBetween size="l">
+      {groups.map(([cat, list]) => (
+        <CSSpaceBetween size="xs" key={cat}>
+          <CSBox variant="awsui-key-label">{cat} <span className="muted-2">{list.filter(a => a.unlocked).length}/{list.length}</span></CSBox>
+          <CSColumnLayout columns={4} variant="text-grid">
+            {list.map(a => (
+              <div key={a.id} className={`pl-achv ${a.unlocked ? "unlocked" : "locked"}${a.tier ? " tier-" + a.tier : ""}`}>
+                <div className="pl-achv-mark">
+                  {a.icon ? <span style={{fontSize: 16}}>{a.icon}</span> : <Icon name={a.unlocked ? "check" : "lock"} size={a.unlocked ? 16 : 14} />}
+                </div>
+                <div className="pl-achv-body">
+                  <strong>{a.name}</strong>
+                  <span className="pl-achv-desc muted">{a.desc}</span>
+                  {a.unlocked ? (
+                    <span className="muted-2 mono" style={{fontSize: 10.5}}>
+                      {a.unlocked_at ? `解锁于 ${fmtAchvDate(a.unlocked_at)}` : "✓ 已达成"}
+                      {a.rarity != null && ` · ${a.rarity}% 玩家解锁`}
+                    </span>
+                  ) : (
+                    <div className="pl-achv-progress">
+                      <div className="pl-achv-bar"><div className="pl-achv-fill" style={{width: (a.pct || 0) + "%"}} /></div>
+                      <span className="muted-2 mono" style={{fontSize: 10.5}}>
+                        {a.target != null ? `${Number(a.value || 0).toLocaleString()} / ${Number(a.target || 0).toLocaleString()}` : `${a.pct || 0}%`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CSColumnLayout>
+        </CSSpaceBetween>
+      ))}
+    </CSSpaceBetween>
+  );
+}
+
+function AchvShareModal({ user, items, unlockedCount, total, onClose }) {
+  const username = (user && user.username) || "";
+  const wallUrl = `${location.origin}/wall?u=${encodeURIComponent(username)}`;
+  const top = (items || []).filter(a => a.unlocked)
+    .sort((a, b) => (TIER_RANK[b.tier] || 0) - (TIER_RANK[a.tier] || 0))
+    .slice(0, 6);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(wallUrl); window.toast("链接已复制", { kind: "ok" }); }
+    catch (_) { window.toast("复制失败，请手动复制", { kind: "warn" }); }
+  };
+  return (
+    <CSModal visible onDismiss={onClose} header="分享成就"
+      footer={<CSBox float="right"><CSSpaceBetween direction="horizontal" size="xs">
+        <CSButton variant="link" onClick={onClose}>关闭</CSButton>
+        <CSButton onClick={() => { onClose(); plNavigate('wall', { search: '?u=' + encodeURIComponent(username) }); }}>查看我的公开墙</CSButton>
+        <CSButton variant="primary" iconName="copy" onClick={copy}>复制链接</CSButton>
+      </CSSpaceBetween></CSBox>}>
+      <CSSpaceBetween size="m">
+        <div className="pl-achv-share-card">
+          <div className="pl-achv-share-head">
+            <div className="pl-achv-share-avatar">{(user.display_name || "?").slice(0, 1)}</div>
+            <div>
+              <strong>{user.display_name}</strong>
+              <div className="muted-2" style={{ fontSize: 12 }}>解锁 {unlockedCount} / {total} 成就</div>
+            </div>
+          </div>
+          <div className="pl-achv-share-grid">
+            {top.map(a => (
+              <div key={a.id} className={`pl-achv-chip tier-${a.tier || 'bronze'}`} title={a.desc}>
+                <span style={{ fontSize: 18 }}>{a.icon || "🏆"}</span>
+                <span className="pl-achv-chip-name">{a.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <CSBox color="text-body-secondary" fontSize="body-s">
+          公开成就墙链接(需在「设置 → 隐私」开启「公开个人主页」后，他人方可访问):
+          <div className="mono" style={{ marginTop: 4, wordBreak: "break-all", fontSize: 12 }}>{wallUrl}</div>
+        </CSBox>
+      </CSSpaceBetween>
+    </CSModal>
+  );
+}
+
+export function PublicAchievementsPage() {
+  const [data, setData] = useStatePL(null);
+  const [err, setErr] = useStatePL(null);
+  const username = (() => { try { return new URLSearchParams(location.search).get("u") || ""; } catch { return ""; } })();
+  useEffectPL(() => {
+    let cancelled = false;
+    (async () => {
+      if (!username) { setErr("缺少用户名"); return; }
+      try { const r = await window.api.account.publicWall(username); if (!cancelled) setData(r); }
+      catch (e) { if (!cancelled) setErr((e && e.message) || "加载失败"); }
+    })();
+    return () => { cancelled = true; };
+  }, [username]);
+  if (err) {
+    const notFound = err === "not found" || /404|not found/i.test(err);
+    return <CSContainer><CSBox textAlign="center" color="text-body-secondary" padding="xxl">
+      {notFound ? "该用户未公开成就墙，或不存在。" : err}
+    </CSBox></CSContainer>;
+  }
+  if (!data) return <CSContainer><CSBox textAlign="center" padding="xxl">加载中…</CSBox></CSContainer>;
+  const items = data.items || [];
+  return (
+    <CSSpaceBetween size="l">
+      <CSContainer>
+        <CSSpaceBetween direction="horizontal" size="m">
+          <div className="pl-achv-share-avatar lg">{(data.display_name || data.username || "?").slice(0, 1)}</div>
+          <div>
+            <CSBox variant="h2">{data.display_name || data.username}</CSBox>
+            <CSBox color="text-body-secondary" fontSize="body-s">@{data.username} · 解锁 {data.unlocked_count} / {data.total} 成就</CSBox>
+          </div>
+        </CSSpaceBetween>
+      </CSContainer>
+      <CSContainer header={<CSHeader variant="h2">成就墙</CSHeader>}>
+        <AchievementWall items={items} />
+      </CSContainer>
+    </CSSpaceBetween>
+  );
+}
+
+
 function MeOverview() {
   const { stats: platStats = {}, saves = [] } = usePlatformData();  // task 45：响应式 platform
   const user = useReactiveUser();  // task 13: MePage 切换 / 保存后即时更新
   const [filter, setFilter] = useStatePL("all");
+  const [shareOpen, setShareOpen] = useStatePL(false);
   // task 48：原使用 ME_ACTIVITY / ME_ACHIEVEMENTS 硬编码示例（『在 雾港·主线·顾承砚
   // 进行了第 312 回合』『破雾之刻』『千言不渝』等）。后端暂无活动/成就接口，改成空态文案。
   // 匿名访客可见 mock 用作 designer offline preview。
@@ -1035,31 +1194,13 @@ function MeOverview() {
         if (cancelled) return;
         const items = (r && r.items) || [];
         setAchv(items);
-        const newly = (r && r.newly_unlocked) || [];
-        if (newly.length) {
-          const byId = {};
-          items.forEach(a => { byId[a.id] = a; });
-          newly.forEach(id => {
-            const a = byId[id];
-            if (a) window.toast(`🏆 解锁成就:${a.name}`, { kind: "ok", detail: a.desc, duration: 4200 });
-          });
-          try { await window.api.account.achievementsSeen(); } catch (_) {}
-        }
+        flushAchievementToasts(items);  // 弹未看过的解锁(会话内去重)
       } catch (_) { if (!cancelled) setAchv([]); }
     })();
     return () => { cancelled = true; };
   }, [IS_ANON, saves.length]);
   const ACHIEVEMENTS = achv || [];
   const unlockedCount = ACHIEVEMENTS.filter(a => a.unlocked).length;
-  // 按类目分组(固定展示顺序)
-  const ACHV_GROUPS = (() => {
-    const order = ["启程", "叙事", "探索", "收藏", "坚持", "隐藏"];
-    const m = new Map();
-    ACHIEVEMENTS.forEach(a => { if (!m.has(a.category)) m.set(a.category, []); m.get(a.category).push(a); });
-    return [...m.keys()]
-      .sort((x, y) => (order.indexOf(x) < 0 ? 99 : order.indexOf(x)) - (order.indexOf(y) < 0 ? 99 : order.indexOf(y)))
-      .map(k => [k, m.get(k)]);
-  })();
 
   return (
     <CSSpaceBetween size="l">
@@ -1123,44 +1264,28 @@ function MeOverview() {
       </CSContainer>
 
       {/* 成就(服务端权威,按类目分组) */}
-      <CSContainer header={<CSHeader variant="h2">成就 <span className="muted-2">{unlockedCount} / {ACHIEVEMENTS.length} 已解锁</span></CSHeader>}>
+      <CSContainer header={<CSHeader variant="h2"
+        actions={!IS_ANON && unlockedCount > 0 && <CSButton iconName="share" onClick={() => setShareOpen(true)}>分享成就</CSButton>}
+      >成就 <span className="muted-2">{unlockedCount} / {ACHIEVEMENTS.length} 已解锁</span></CSHeader>}>
         {ACHIEVEMENTS.length === 0 ? (
           <CSBox color="text-body-secondary" textAlign="center" padding="l">
             {achv === null ? "加载中…" : "暂无成就。"}
           </CSBox>
         ) : (
-          <CSSpaceBetween size="l">
-            {ACHV_GROUPS.map(([cat, list]) => (
-              <CSSpaceBetween size="xs" key={cat}>
-                <CSBox variant="awsui-key-label">{cat} <span className="muted-2">{list.filter(a => a.unlocked).length}/{list.length}</span></CSBox>
-                <CSColumnLayout columns={4} variant="text-grid">
-                  {list.map(a => (
-                    <div key={a.id} className={`pl-achv ${a.unlocked ? "unlocked" : "locked"}${a.tier ? " tier-" + a.tier : ""}`}>
-                      <div className="pl-achv-mark">
-                        {a.icon ? <span style={{fontSize: 16}}>{a.icon}</span> : <Icon name={a.unlocked ? "check" : "lock"} size={a.unlocked ? 16 : 14} />}
-                      </div>
-                      <div className="pl-achv-body">
-                        <strong>{a.name}</strong>
-                        <span className="pl-achv-desc muted">{a.desc}</span>
-                        {a.unlocked ? (
-                          <span className="muted-2 mono" style={{fontSize: 10.5}}>{a.unlocked_at ? `解锁于 ${fmtDate(a.unlocked_at)}` : "✓ 已达成"}</span>
-                        ) : (
-                          <div className="pl-achv-progress">
-                            <div className="pl-achv-bar"><div className="pl-achv-fill" style={{width: (a.pct || 0) + "%"}} /></div>
-                            <span className="muted-2 mono" style={{fontSize: 10.5}}>
-                              {a.target != null ? `${Number(a.value || 0).toLocaleString()} / ${Number(a.target || 0).toLocaleString()}` : `${a.pct || 0}%`}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </CSColumnLayout>
-              </CSSpaceBetween>
-            ))}
-          </CSSpaceBetween>
+          <AchievementWall items={ACHIEVEMENTS} />
         )}
       </CSContainer>
+
+      {shareOpen && (
+        <AchvShareModal
+          user={user}
+          items={ACHIEVEMENTS}
+          unlockedCount={unlockedCount}
+          total={ACHIEVEMENTS.length}
+          publicProfile={!!(meStats && meStats.public_profile)}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
 
       {/* 最近活动 */}
       <CSContainer header={
@@ -4014,6 +4139,18 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
   useEffectPL(() => {
     window.__openFeedback = () => plNavigate('feedback');
     return () => { delete window.__openFeedback; };
+  }, []);
+
+  // 成就解锁通知:外壳挂载 + 数据就绪/存档变化时检查,任何页面解锁都能弹 toast。
+  useEffectPL(() => {
+    const check = () => { window.__checkAchievements && window.__checkAchievements(); };
+    check();
+    window.addEventListener("rpg-data-ready", check);
+    window.addEventListener("rpg-saves-updated", check);
+    return () => {
+      window.removeEventListener("rpg-data-ready", check);
+      window.removeEventListener("rpg-saves-updated", check);
+    };
   }, []);
 
   // 新用户首次进入：user.welcome_dismissed_at 为 null 时弹使用须知弹窗（只弹一次）

@@ -23,6 +23,10 @@ ALLOWED_METRICS = {
     "chapters",
     "login_streak",
     "longest_login_streak",
+    # Phase 2 事件型(均派生自已有表,无新埋点)
+    "max_single_save_rounds",  # 单存档最深回合
+    "night_turns",             # 深夜(亚洲/上海 0-5 点)推进的回合
+    "anchors_completed",       # 已记录的历史锚点数
 }
 ALLOWED_OPS = {">=", ">", "=="}
 _OPS = {">=": operator.ge, ">": operator.gt, "==": operator.eq}
@@ -93,6 +97,37 @@ def build_stats_snapshot(db, user) -> dict[str, Any]:
         """,
         (uid,),
     ).fetchone()
+    # Phase 2:单存档最深回合(与 total_rounds 同源 branch_nodes,保持一致)
+    max_single_row = db.execute(
+        """
+        select coalesce(max(per_save_max), 0) as n from (
+          select max(b.turn_index) as per_save_max
+          from branch_nodes b join game_saves s on s.id = b.save_id
+          where s.user_id = %s
+          group by b.save_id
+        ) t
+        """,
+        (uid,),
+    ).fetchone()
+    # 深夜回合:按 Asia/Shanghai 计 0-5 点推进的节点数(平台以中文用户为主)
+    night_row = db.execute(
+        """
+        select count(*) as n
+        from branch_nodes b join game_saves s on s.id = b.save_id
+        where s.user_id = %s
+          and extract(hour from b.created_at at time zone 'Asia/Shanghai') < 6
+        """,
+        (uid,),
+    ).fetchone()
+    # 已记录历史锚点(save_history_anchors,一行=一个已发生的收束/历史事件)
+    anchors_row = db.execute(
+        """
+        select count(*) as n
+        from save_history_anchors a join game_saves s on s.id = a.save_id
+        where s.user_id = %s
+        """,
+        (uid,),
+    ).fetchone()
     last_login_row = db.execute(
         """
         select created_at from login_audit
@@ -148,6 +183,9 @@ def build_stats_snapshot(db, user) -> dict[str, Any]:
         "chapters": int(sc_row["chapters"] or 0),
         "login_streak": int(streak),
         "longest_login_streak": int(longest),
+        "max_single_save_rounds": int(max_single_row["n"] or 0),
+        "night_turns": int(night_row["n"] or 0),
+        "anchors_completed": int(anchors_row["n"] or 0),
         "last_login_at": (
             last_login_row["created_at"].isoformat()
             if last_login_row and last_login_row["created_at"]
@@ -208,7 +246,8 @@ def eval_rule(rule: dict, snap: dict) -> dict:
     return {"unlocked": unlocked, "pct": pct, "value": value, "target": target}
 
 
-def _project(d: dict, unlocked: bool, res: dict, urow: dict | None) -> dict:
+def _project(d: dict, unlocked: bool, res: dict, urow: dict | None,
+             *, rarity: dict | None = None, seen: bool = True) -> dict:
     hidden = bool(d["hidden"])
     mask = hidden and not unlocked
     return {
@@ -226,12 +265,29 @@ def _project(d: dict, unlocked: bool, res: dict, urow: dict | None) -> dict:
         "pct": 100 if unlocked else res["pct"],
         "value": res["value"],
         "target": res["target"],
+        "seen": bool(seen),
+        "rarity": (rarity.get(d["id"]) if rarity else None),
     }
 
 
+def compute_rarity(db) -> dict:
+    """每条成就的全站解锁占比(%)。rarity[id] = round(100 * 解锁人数 / 总用户数)。"""
+    total = db.execute("select count(*) as n from users").fetchone()["n"] or 0
+    if not total:
+        return {}
+    rows = db.execute(
+        "select achievement_id, count(*) as n from user_achievements group by achievement_id"
+    ).fetchall()
+    return {r["achievement_id"]: round(100 * int(r["n"]) / total, 1) for r in rows}
+
+
 def evaluate(db, user) -> dict:
-    """评估全部成就 + 落新解锁。返回 {items, newly_unlocked}。"""
+    """评估全部成就 + 落新解锁。返回 {items, newly_unlocked}。
+
+    每个 item 带 seen(是否已提示过)与 rarity;前端据 unlocked&!seen 弹 toast。
+    """
     snap = build_stats_snapshot(db, user)
+    rarity = compute_rarity(db)
     defs = db.execute(
         "select * from achievement_defs where enabled order by category, sort_order, id"
     ).fetchall()
@@ -247,10 +303,10 @@ def evaluate(db, user) -> dict:
         try:
             res = eval_rule(d["rule"], snap)
         except Exception:
-            # 损坏的规则不应炸整页:当作未解锁、进度 0
             res = {"unlocked": False, "pct": 0, "value": None, "target": None}
         urow = have.get(d["id"])
         already = urow is not None
+        seen = bool(urow["seen"]) if already else False
         if res["unlocked"] and not already:
             db.execute(
                 "insert into user_achievements (user_id, achievement_id, progress_at_unlock, seen) "
@@ -258,18 +314,46 @@ def evaluate(db, user) -> dict:
                 (user["id"], d["id"], res.get("value")),
             )
             newly.append(d["id"])
+            seen = False  # 刚解锁,未提示
         unlocked = bool(res["unlocked"] or already)
-        items.append(_project(d, unlocked, res, urow))
+        items.append(_project(d, unlocked, res, urow, rarity=rarity, seen=seen))
     return {"items": items, "newly_unlocked": newly}
 
 
 def public_catalog(db) -> list[dict]:
     """匿名/公开目录:全锁态、进度 0、隐藏成就打码。无用户、无落库。"""
+    rarity = compute_rarity(db)
     defs = db.execute(
         "select * from achievement_defs where enabled order by category, sort_order, id"
     ).fetchall()
     out: list[dict] = []
     for d in defs:
         res = {"unlocked": False, "pct": 0, "value": None, "target": None}
-        out.append(_project(d, False, res, None))
+        out.append(_project(d, False, res, None, rarity=rarity))
     return out
+
+
+def public_wall(db, target_user: dict) -> dict:
+    """Phase 3:某用户的公开成就墙投影(只读、不落库)。
+
+    只展示已解锁项的展示信息(隐藏成就解锁后正常显示);未解锁项也返回但打码/无进度。
+    调用方需先校验目标用户的公开可见性。
+    """
+    rarity = compute_rarity(db)
+    defs = db.execute(
+        "select * from achievement_defs where enabled order by category, sort_order, id"
+    ).fetchall()
+    have = {
+        r["achievement_id"]: r
+        for r in db.execute(
+            "select * from user_achievements where user_id = %s", (target_user["id"],)
+        ).fetchall()
+    }
+    items: list[dict] = []
+    for d in defs:
+        urow = have.get(d["id"])
+        unlocked = urow is not None
+        res = {"unlocked": unlocked, "pct": 100 if unlocked else 0, "value": None, "target": None}
+        items.append(_project(d, unlocked, res, urow, rarity=rarity))
+    unlocked_n = sum(1 for i in items if i["unlocked"])
+    return {"items": items, "unlocked_count": unlocked_n, "total": len(items)}

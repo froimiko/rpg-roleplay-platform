@@ -8,9 +8,11 @@ from .engine import (
     ALLOWED_METRICS,
     ALLOWED_OPS,
     build_stats_snapshot,
+    compute_rarity,
     evaluate,
     eval_rule,
     public_catalog,
+    public_wall,
     validate_rule,
 )
 
@@ -18,8 +20,10 @@ __all__ = [
     "ALLOWED_METRICS",
     "ALLOWED_OPS",
     "build_stats_snapshot",
+    "compute_rarity",
     "evaluate",
     "eval_rule",
     "public_catalog",
+    "public_wall",
     "validate_rule",
 ]

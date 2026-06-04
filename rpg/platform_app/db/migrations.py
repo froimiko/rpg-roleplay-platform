@@ -1524,6 +1524,18 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "('streak_100','风雨无阻','历史最长连登达 100 天','⛰️','坚持','gold','{\"metric\":\"longest_login_streak\",\"op\":\">=\",\"target\":100}',160)"
         " on conflict (id) do nothing",
     ]),
+    (59, "achievements_phase2", [
+        # Phase 2:事件/隐藏成就(见 docs/design/I_achievements.md)。
+        # 全部派生自已有表(branch_nodes / save_history_anchors),无新埋点。
+        # hidden=true 的在未解锁时前端打码。
+        "insert into achievement_defs (id, name, description, icon, category, tier, rule, hidden, sort_order) values "
+        "('first_fork','初次分叉','首次开辟一条故事分支','🔀','启程','bronze','{\"metric\":\"branches\",\"op\":\">=\",\"target\":1}',false,25),"
+        "('anchor_10','收束之时','累计记录 10 个历史锚点','⚓','探索','silver','{\"metric\":\"anchors_completed\",\"op\":\">=\",\"target\":10}',false,75),"
+        "('solo_500','长夜独行','在单个存档中推进满 500 回合','🕯️','叙事','gold','{\"metric\":\"max_single_save_rounds\",\"op\":\">=\",\"target\":500}',true,55),"
+        "('night_owl','深夜笔耕','在深夜(0–6 点)累计推进 30 回合','🌙','坚持','silver','{\"metric\":\"night_turns\",\"op\":\">=\",\"target\":30}',true,145),"
+        "('anchor_50','镌刻史册','累计记录 50 个历史锚点','🗿','探索','gold','{\"metric\":\"anchors_completed\",\"op\":\">=\",\"target\":50}',true,85)"
+        " on conflict (id) do nothing",
+    ]),
 ]
 
 

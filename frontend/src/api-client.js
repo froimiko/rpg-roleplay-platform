@@ -287,6 +287,7 @@
       achievements: () => GET(`${API_PREFIX}/me/achievements`),
       achievementsSeen: () => POST(`${API_PREFIX}/me/achievements/seen`, {}),
       achievementsCatalog: () => GET(`/api/achievements`),  // 公开目录(匿名可拉)
+      publicWall: (username) => GET(`/api/u/${encodeURIComponent(username)}/achievements`),  // 公开成就墙
       preferences: (body) => POST(`${API_PREFIX}/me/preference`, body),
       gmStyleSchema: () => GET(`${API_PREFIX}/gm-style/schema`),
       getGmStyle: () => GET(`${API_PREFIX}/me/gm-style`),
