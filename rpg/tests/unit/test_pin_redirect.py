@@ -1,7 +1,7 @@
 """剧本分享审计修复:pin 检索重定向(引用剧本读 pin 目标,非 pin 零影响)。"""
 import contextlib
 
-from platform_app.knowledge.retrieval import _resolve_effective_script_id
+from platform_app.knowledge._pin import effective_kb_script_id as _resolve_effective_script_id
 
 
 class _DB:

@@ -415,7 +415,11 @@ function SharingModeSelector({ script, currentUserId, onChanged }) {
       </CSFormField>
       {mode === 'pinned-snapshot' && (
         <CSSpaceBetween direction="horizontal" size="xs" alignItems="flex-end">
-          <CSFormField label={t('scripts.share.pin_commit_label')} stretch>
+          <CSFormField
+            label={t('scripts.share.pin_commit_label')}
+            description={t('scripts.share.pin_commit_hint', { defaultValue: '选定版本作记录;当前 GM 检索按【目标剧本的最新内容】读取(精确版本回放为后续功能)。floating-latest 则始终跟随目标最新。' })}
+            stretch
+          >
             <CSSelect
               selectedOption={selectedCommitOpt}
               options={commitOptions}
