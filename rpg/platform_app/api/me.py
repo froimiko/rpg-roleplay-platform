@@ -800,7 +800,8 @@ async def api_account_import(request: Request, user=Depends(require_user)):
             raise HTTPException(status_code=400, detail=f"文件过大 (>{_MAX_ACCOUNT_IMPORT_BYTES // 1024 // 1024}MB)")
         if raw[:4] != b"PK\x03\x04":
             raise HTTPException(status_code=400, detail="不是合法的 zip 文件")
-        return json_response(account_io.import_account(user["id"], raw))
+        # 异步作业:返回 job_id,前端用 streamImport 看真实逐项进度(剧本 i/N…)。
+        return json_response(account_io.import_account_job(user["id"], raw))
     except HTTPException:
         raise
     except ValueError as exc:

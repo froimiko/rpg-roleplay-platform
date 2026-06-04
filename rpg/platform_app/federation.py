@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -29,6 +31,30 @@ from . import user_credentials
 from .db import connect, expose, init_db
 from .knowledge import script_pack
 
+# ── 轻量进程内限流(滑动窗口)──────────────────────────────────────────────
+# 200 用户级别足够;多机部署时改 Redis(workers=2 时每键上限 ×2,仍足够防滥用)。
+_rate_lock = threading.Lock()
+_rate_hits: dict[str, list[float]] = {}
+MAX_PATS_PER_USER = 50          # 每用户活跃(未吊销)PAT 上限
+
+
+def rate_ok(key: str, max_calls: int, window_s: float) -> bool:
+    """滑动窗口限流。key 命中数 < max_calls 才放行。线程安全 + 机会式清理。"""
+    now = time.monotonic()
+    with _rate_lock:
+        if len(_rate_hits) > 10000:          # 防 key 膨胀:整体过大时清掉过期窗口
+            for k in list(_rate_hits.keys()):
+                _rate_hits[k] = [t for t in _rate_hits[k] if now - t < window_s]
+                if not _rate_hits[k]:
+                    del _rate_hits[k]
+        hits = [t for t in _rate_hits.get(key, []) if now - t < window_s]
+        if len(hits) >= max_calls:
+            _rate_hits[key] = hits
+            return False
+        hits.append(now)
+        _rate_hits[key] = hits
+        return True
+
 # ── 常量 ────────────────────────────────────────────────────────────────
 PAT_PREFIX = "rpgpat_"
 DEFAULT_OFFICIAL_BASE = "https://rpg-roleplay.stellatrix.icu"
@@ -38,6 +64,13 @@ DEVICE_TTL_SECONDS = 600                      # 设备码 10 分钟有效
 DEVICE_POLL_INTERVAL = 5
 PAT_DEFAULT_TTL_DAYS = 365
 MAX_PACK_BYTES = script_pack.MAX_ZIP_BYTES    # 复用剧本包上限
+
+
+def official_base() -> str:
+    """本服务的规范对外地址。用 PUBLIC_BASE_URL 配置,**不取请求 Host**
+    (防 Host 头注入把 verification_uri 指向攻击者域名 = 反射式 open-redirect)。"""
+    import os
+    return os.environ.get("PUBLIC_BASE_URL", DEFAULT_OFFICIAL_BASE).rstrip("/")
 
 
 def _now() -> datetime:
@@ -57,18 +90,27 @@ def _clean_scopes(scopes: Any) -> list[str]:
 #  PROVIDER:个人访问令牌(PAT)
 # ════════════════════════════════════════════════════════════════════════
 
-def create_pat(user_id: int, name: str, scopes: list[str], ttl_days: int = PAT_DEFAULT_TTL_DAYS) -> dict[str, Any]:
-    """生成 PAT。明文令牌只在此处返回一次,库里只存哈希。"""
+def create_pat(user_id: int, name: str, scopes: list[str], ttl_days: int = PAT_DEFAULT_TTL_DAYS,
+               source: str = "manual") -> dict[str, Any]:
+    """生成 PAT。明文令牌只在此处返回一次,库里只存哈希。source: manual|device。"""
     init_db()
     token = PAT_PREFIX + secrets.token_urlsafe(32)
     token_hash = _hash(token)
     scopes = _clean_scopes(scopes)
     expires_at = _now() + timedelta(days=max(1, min(int(ttl_days or PAT_DEFAULT_TTL_DAYS), 3650)))
     with connect() as db:
+        active = db.execute(
+            "select count(*) as n from personal_access_tokens "
+            "where user_id = %s and revoked_at is null",
+            (user_id,),
+        ).fetchone()
+        if int((dict(active) or {}).get("n", 0)) >= MAX_PATS_PER_USER:
+            raise ValueError(f"活跃令牌已达上限({MAX_PATS_PER_USER}),请先吊销不用的令牌")
         row = db.execute(
-            "insert into personal_access_tokens(user_id, token_hash, name, scopes, expires_at) "
-            "values (%s, %s, %s, %s, %s) returning id, name, scopes, created_at, expires_at",
-            (user_id, token_hash, (name or "")[:120], Jsonb(scopes), expires_at),
+            "insert into personal_access_tokens(user_id, token_hash, name, scopes, expires_at, source) "
+            "values (%s, %s, %s, %s, %s, %s) returning id, name, scopes, created_at, expires_at, source",
+            (user_id, token_hash, (name or "")[:120], Jsonb(scopes), expires_at,
+             "device" if source == "device" else "manual"),
         ).fetchone()
     return {"ok": True, "token": token, "pat": expose(row)}
 
@@ -77,7 +119,7 @@ def list_pats(user_id: int) -> dict[str, Any]:
     init_db()
     with connect() as db:
         rows = db.execute(
-            "select id, name, scopes, created_at, expires_at, last_used_at, revoked_at "
+            "select id, name, scopes, source, created_at, expires_at, last_used_at, revoked_at "
             "from personal_access_tokens where user_id = %s order by id desc",
             (user_id,),
         ).fetchall()
@@ -147,16 +189,22 @@ def device_start(client_name: str, scopes: list[str], verification_uri: str) -> 
     scopes = _clean_scopes(scopes)
     expires_at = _now() + timedelta(seconds=DEVICE_TTL_SECONDS)
     with connect() as db:
+        # 机会式清理过期/终态设备授权行,防表无界增长(放大 DoS)。
+        db.execute(
+            "delete from device_authorizations where expires_at < now() - interval '1 hour'",
+        )
         db.execute(
             "insert into device_authorizations(device_code_hash, user_code, client_name, scopes, "
             "  status, expires_at, interval_seconds) values (%s, %s, %s, %s, 'pending', %s, %s)",
             (_hash(device_code), user_code, (client_name or "")[:120], Jsonb(scopes),
              expires_at, DEVICE_POLL_INTERVAL),
         )
+    sep = "&" if "?" in verification_uri else "?"
     return {
         "device_code": device_code,
         "user_code": user_code,
         "verification_uri": verification_uri,
+        "verification_uri_complete": f"{verification_uri}{sep}code={user_code}",
         "expires_in": DEVICE_TTL_SECONDS,
         "interval": DEVICE_POLL_INTERVAL,
         "scopes": scopes,
@@ -228,7 +276,8 @@ def device_poll(device_code: str) -> dict[str, Any]:
         # approved
         if d.get("pat_id"):
             return {"error": "token_already_issued"}
-        res = create_pat(int(d["user_id"]), d.get("client_name") or "device", list(d.get("scopes") or []))
+        res = create_pat(int(d["user_id"]), d.get("client_name") or "device",
+                         list(d.get("scopes") or []), source="device")
         db.execute(
             "update device_authorizations set pat_id = %s where id = %s",
             (res["pat"]["id"], d["id"]),
@@ -279,18 +328,40 @@ def ext_export_pack(script_id: int) -> tuple[bytes, str]:
 
 
 def ext_publish_pack(user_id: int, zip_bytes: bytes) -> dict[str, Any]:
-    """外部客户端上传整包发布到在线库:导入为该用户新剧本并标记公开。"""
+    """外部客户端上传整包发布到在线库:导入为该用户新剧本。
+
+    安全:**不无条件公开**。导入后走与正常「设为公开」端点(api/scripts.py)一致的闸:
+    非空章节 + review_status='reviewed' 才置 is_public=true;否则只导入为私有草稿
+    + 返回 warning,引导用户在在线服务里复核后再公开。防未审/侵权/空剧本污染公开库。
+    """
     if len(zip_bytes) > MAX_PACK_BYTES:
         raise ValueError(f"pack too large (max {MAX_PACK_BYTES // 1024 // 1024}MB)")
     res = script_pack.import_script_pack(zip_bytes, user_id)
     new_sid = int(res.get("script_id"))
+    warnings = list(res.get("warnings") or [])
     init_db()
     with connect() as db:
-        db.execute(
-            "update scripts set is_public = true, published_at = now() where id = %s and owner_id = %s",
-            (new_sid, user_id),
-        )
-    return {"ok": True, "script_id": new_sid, "is_public": True, "warnings": res.get("warnings") or []}
+        ch = db.execute(
+            "select count(*) as n from script_chapters where script_id = %s", (new_sid,),
+        ).fetchone()
+        chapter_count = int((dict(ch) or {}).get("n", 0))
+        sc = db.execute(
+            "select review_status from scripts where id = %s and owner_id = %s", (new_sid, user_id),
+        ).fetchone()
+        review_status = (dict(sc) or {}).get("review_status", "unreviewed") if sc else "unreviewed"
+        eligible = chapter_count > 0 and review_status == "reviewed"
+        if eligible:
+            db.execute(
+                "update scripts set is_public = true, published_at = now() "
+                "where id = %s and owner_id = %s",
+                (new_sid, user_id),
+            )
+        else:
+            if chapter_count == 0:
+                warnings.append("空剧本(0 章)未公开;导入为私有草稿。")
+            else:
+                warnings.append("剧本未通过 KB 复核,未公开;已导入为私有草稿,请在在线服务复核后再公开。")
+    return {"ok": True, "script_id": new_sid, "is_public": eligible, "warnings": warnings}
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -322,16 +393,23 @@ def connector_get(user_id: int) -> dict[str, Any]:
 
 
 def _connector_auth(user_id: int) -> tuple[str, str]:
-    """返回 (base_url, token)。未连接抛 ValueError。"""
+    """返回 (base_url, token)。未连接抛 ValueError。
+
+    请求时再校一次 base_url(SSRF / DNS rebinding 缓解:存时校过,但攻击者可能
+    在存与用之间翻转 DNS,故每次出站前重新解析校验)。
+    """
     cred = user_credentials.get_credential(user_id, CONNECTOR_API_ID)
     if not cred or not cred.get("key"):
         raise ValueError("尚未连接在线剧本库,请先在「设置 → 在线剧本库」连接")
-    return _normalize_base(cred.get("base_url_override")), cred["key"]
+    base = _normalize_base(cred.get("base_url_override"))
+    user_credentials._validate_base_url(base)
+    return base, cred["key"]
 
 
 def _client(base_url: str, token: str | None = None) -> httpx.Client:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return httpx.Client(base_url=base_url, headers=headers, timeout=30.0, follow_redirects=False)
+    # 整包下载/上传可能数十秒;给 120s,与前端 180s 留余量。follow_redirects=False 防 SSRF 重定向绕过。
+    return httpx.Client(base_url=base_url, headers=headers, timeout=120.0, follow_redirects=False)
 
 
 def connector_test(user_id: int) -> dict[str, Any]:

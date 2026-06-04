@@ -34,6 +34,7 @@ import { ScriptsPage } from '../pages/scripts.jsx';
 import { CardsPage } from '../pages/cards.jsx';
 import { SettingsPage } from '../pages/settings.jsx';
 import { FeedbackPage } from '../pages/feedback.jsx';
+import { DeviceAuthorizePage } from '../pages/device.jsx';
 import { plPathToPage, plNavigate, plPageToPath } from '../router.js';
 
 // AGE-02: splash gate
@@ -75,7 +76,7 @@ const PL_IDS = [
   'admin-logs', 'admin-registration', 'admin-security', 'admin-maintenance',
   'admin-dmca-takedowns', 'admin-dmca-strikes', 'admin-csam-reports', 'admin-aup-actions',
   'admin-feedback',
-  'usage', 'plugins', 'mcp', 'skills', 'apis', 'feedback',
+  'usage', 'plugins', 'mcp', 'skills', 'apis', 'feedback', 'device',
 ];
 function parsePage() {
   return plPathToPage(PL_IDS);
@@ -180,6 +181,7 @@ function PlatformApp() {
   else if (page === 'skills') body = <CapPage kind="skills" />;
   else if (page === 'apis') body = <CapPage kind="apis" />;
   else if (page === 'feedback') body = <FeedbackPage />;
+  else if (page === 'device') body = <DeviceAuthorizePage />;
   else body = <ProfilePage />;
 
   return (

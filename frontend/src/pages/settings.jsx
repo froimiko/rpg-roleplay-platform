@@ -3576,7 +3576,10 @@ function DataMigrationSection() {
   const [importing, setImporting] = useStatePL(false);
   const [importFile, setImportFile] = useStatePL(null);
   const [importResult, setImportResult] = useStatePL(null);
+  const [importJob, setImportJob] = useStatePL(null);   // {stage, stage_progress, stage_total}
   const fileRef = React.useRef(null);
+  const esRef = React.useRef(null);
+  const pollRef = React.useRef(null);
 
   useEffectPL(() => {
     let alive = true;
@@ -3606,25 +3609,61 @@ function DataMigrationSection() {
     }
   };
 
-  const doImport = async () => {
-    if (!importFile) return;
-    setImporting(true);
-    setImportResult(null);
+  const STAGE_LABELS = { scripts: '导入剧本', saves: '导入存档', cards: '导入角色卡', done: '完成' };
+
+  const finishJob = async (jobId) => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (esRef.current) { try { esRef.current.close?.(); } catch {} esRef.current = null; }
     try {
-      const r = await window.api.account.migrateImport(importFile);
-      setImportResult(r);
-      window.__apiToast?.(
-        t('settings.migrate.import_done', { defaultValue: '导入完成' }),
-        { kind: 'ok', duration: 2600,
-          detail: t('settings.migrate.import_summary', {
-            defaultValue: '剧本 {{s}} · 存档 {{v}} · 角色卡 {{c}}',
-            s: r.scripts ?? 0, v: r.saves ?? 0, c: r.cards ?? 0 }) });
+      const s = await window.api.scripts.jobStatus(jobId);
+      const job = s?.job || {};
+      const summary = (job.usage_actual && job.usage_actual.summary) || {};
+      setImportResult({ scripts: summary.scripts ?? 0, saves: summary.saves ?? 0, cards: summary.cards ?? 0, warnings: job.warnings || [] });
+      window.__apiToast?.(t('settings.migrate.import_done', { defaultValue: '导入完成' }), { kind: 'ok', duration: 2600,
+        detail: `剧本 ${summary.scripts ?? 0} · 存档 ${summary.saves ?? 0} · 角色卡 ${summary.cards ?? 0}` });
     } catch (e) {
-      window.__apiToast?.(t('settings.migrate.import_fail', { defaultValue: '导入失败' }), { kind: 'danger', detail: e?.payload?.error || e?.message });
+      window.__apiToast?.(t('settings.migrate.import_fail', { defaultValue: '导入失败' }), { kind: 'danger', detail: e?.message });
     } finally {
-      setImporting(false);
+      setImportJob(null); setImporting(false);
     }
   };
+
+  const doImport = async () => {
+    if (!importFile) return;
+    setImporting(true); setImportResult(null); setImportJob({ stage: 'scripts', stage_progress: 0, stage_total: 0 });
+    let jobId = null;
+    try {
+      const r = await window.api.account.migrateImport(importFile);
+      jobId = r?.job_id;
+      if (!jobId) throw new Error(r?.error || '未返回作业号');
+    } catch (e) {
+      setImporting(false); setImportJob(null);
+      window.__apiToast?.(t('settings.migrate.import_fail', { defaultValue: '导入失败' }), { kind: 'danger', detail: e?.payload?.error || e?.message });
+      return;
+    }
+    const isTerminal = (st) => ['done', 'done_with_errors', 'failed', 'cancelled'].includes(st);
+    // SSE 主路 + 轮询兜底
+    esRef.current = window.api.scripts.streamImport(jobId, {
+      on_update: (jb) => { setImportJob(jb); if (isTerminal(jb.status)) finishJob(jobId); },
+      on_done: () => finishJob(jobId),
+      on_error: () => {
+        if (pollRef.current) return;
+        pollRef.current = setInterval(async () => {
+          try {
+            const s = await window.api.scripts.jobStatus(jobId);
+            const job = s?.job; if (!job) return;
+            setImportJob(job);
+            if (isTerminal(job.status)) finishJob(jobId);
+          } catch {}
+        }, 2000);
+      },
+    });
+  };
+
+  useEffectPL(() => () => {
+    if (esRef.current) { try { esRef.current.close?.(); } catch {} }
+    if (pollRef.current) clearInterval(pollRef.current);
+  }, []);
 
   return (
     <SetGroup
@@ -3663,11 +3702,24 @@ function DataMigrationSection() {
             onChange={(e) => { setImportFile(e.target.files?.[0] || null); setImportResult(null); }}
             style={{ fontSize: 13 }}
           />
-          <CSButton iconName="upload" loading={importing} disabled={!importFile} onClick={doImport}>
+          <CSButton iconName="upload" loading={importing} disabled={!importFile || importing} onClick={doImport}>
             {t('settings.migrate.import_btn', { defaultValue: '导入到当前账号' })}
           </CSButton>
         </CSSpaceBetween>
       </SetRow>
+
+      {importJob && (
+        <CSBox>
+          <div style={{ fontSize: 13, marginBottom: 4 }}>
+            {(STAGE_LABELS[importJob.stage] || importJob.stage || '处理中')}
+            {importJob.stage_total ? ` ${importJob.stage_progress || 0}/${importJob.stage_total}` : '…'}
+          </div>
+          <div style={{ height: 6, background: 'var(--line,#36322d)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${importJob.stage_total ? Math.round(100 * (importJob.stage_progress || 0) / importJob.stage_total) : 30}%`,
+              background: 'var(--accent,#c96442)', transition: 'width .3s' }} />
+          </div>
+        </CSBox>
+      )}
 
       {importResult && (
         <CSAlert type={(importResult.warnings || []).length ? 'warning' : 'success'} header={t('settings.migrate.import_result', { defaultValue: '导入结果' })}>
@@ -3780,9 +3832,9 @@ function ConnectorConnect({ conn, onChange }) {
       <SetRow label="方式一 · 设备码连接(推荐)" description="点连接 → 在浏览器登录在线服务并输入下面的配对码授权,无需手动复制令牌。">
         {device ? (
           <CSAlert type="info" header="在浏览器完成授权">
-            <div>1. 打开:<a href={device.verification_uri} target="_blank" rel="noopener noreferrer">{device.verification_uri}</a></div>
-            <div>2. 在「在线剧本库 → 设备授权」输入配对码:<strong style={{ fontSize: 18, letterSpacing: 2 }}>{device.user_code}</strong></div>
-            <div style={{ marginTop: 6, color: 'var(--text-quiet)' }}>授权后本页自动连接…</div>
+            <div>1. 打开授权页:<a href={device.verification_uri_complete || device.verification_uri} target="_blank" rel="noopener noreferrer">{device.verification_uri_complete || device.verification_uri}</a>(已带配对码,点开确认即可)</div>
+            <div>2. 配对码:<strong style={{ fontSize: 18, letterSpacing: 2 }}>{device.user_code}</strong>(如未自动填入则手动输入)</div>
+            <div style={{ marginTop: 6, color: 'var(--text-quiet)' }}>批准后本页自动连接…</div>
           </CSAlert>
         ) : (
           <CSButton variant="primary" iconName="external" loading={busy} onClick={startDevice}>用设备码连接</CSButton>
@@ -3957,9 +4009,18 @@ function PatManager() {
         <CSToggle checked={scopes.publish} onChange={({ detail }) => setScopes((s) => ({ ...s, publish: detail.checked }))}>发布</CSToggle>
         <CSButton loading={busy} onClick={create}>生成令牌</CSButton>
       </div>
+      {items.length === 0 && <CSBox color="text-body-secondary" fontSize="body-s">还没有令牌。生成一个供本地实例/CLI 连接,或在另一台设备上用设备码连接(会自动出现在这里)。</CSBox>}
       {items.map((p) => (
         <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 13 }}>
-          <span>{p.name || '(未命名)'} · {(p.scopes || []).join(', ')} {p.revoked_at ? '· 已吊销' : ''}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <CSBadge color={p.source === 'device' ? 'green' : 'grey'}>{p.source === 'device' ? '设备授权' : '手动令牌'}</CSBadge>
+            <strong>{p.name || '(未命名)'}</strong>
+            <span style={{ color: 'var(--text-quiet)' }}>{(p.scopes || []).join(', ')}</span>
+            <span style={{ color: 'var(--text-quiet)', fontSize: 12 }}>
+              {p.last_used_at ? '· 最近使用 ' + (window.__fmt?.ago(p.last_used_at) || p.last_used_at) : '· 从未使用'}
+              {p.revoked_at ? ' · 已吊销' : ''}
+            </span>
+          </span>
           {!p.revoked_at && <CSButton variant="inline-link" onClick={() => revoke(p.id)}>吊销</CSButton>}
         </div>
       ))}

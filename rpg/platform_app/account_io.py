@@ -222,8 +222,17 @@ _README = (
 #  导入
 # ──────────────────────────────────────────────────────────────────────────
 
-def import_account(user_id: int, zip_bytes: bytes) -> dict[str, Any]:
-    """从账号数据包重建该用户的数据。返回 {ok, scripts, saves, cards, warnings}。"""
+def import_account(user_id: int, zip_bytes: bytes, progress=None) -> dict[str, Any]:
+    """从账号数据包重建该用户的数据。返回 {ok, scripts, saves, cards, warnings}。
+
+    progress(stage:str, done:int, total:int):可选回调,用于异步作业上报真实进度。
+    """
+    def _p(stage, done, total):
+        if progress:
+            try:
+                progress(stage, done, total)
+            except Exception:
+                pass
     init_db()
     if len(zip_bytes) > MAX_ACCOUNT_ZIP_BYTES:
         raise ValueError(f"账号包过大(max {MAX_ACCOUNT_ZIP_BYTES // 1024 // 1024}MB)")
@@ -260,9 +269,13 @@ def import_account(user_id: int, zip_bytes: bytes) -> dict[str, Any]:
             raise ValueError(f"account_export_version 不支持({av}),需 {ACCOUNT_EXPORT_VERSION}")
 
         # 1. 剧本包 → 建立 id 映射
-        for entry in manifest.get("scripts") or []:
+        scripts_list = manifest.get("scripts") or []
+        total_scripts = len(scripts_list)
+        _p("scripts", 0, total_scripts)
+        for si, entry in enumerate(scripts_list):
             member = entry.get("member")
             origin = entry.get("origin_script_id")
+            _p("scripts", si, total_scripts)
             if not member or member not in names:
                 warnings.append(f"剧本成员缺失:{member}")
                 continue
@@ -278,9 +291,14 @@ def import_account(user_id: int, zip_bytes: bytes) -> dict[str, Any]:
                 warnings.append(f"剧本 {origin} 导入失败:{exc}")
 
         # 2. 存档 → 改写 script_id 后导入
-        for entry in manifest.get("saves") or []:
+        _p("scripts", total_scripts, total_scripts)
+        saves_list = manifest.get("saves") or []
+        total_saves = len(saves_list)
+        _p("saves", 0, total_saves)
+        for vi, entry in enumerate(saves_list):
             member = entry.get("member")
             origin_script = entry.get("origin_script_id")
+            _p("saves", vi, total_saves)
             if not member or member not in names:
                 warnings.append(f"存档成员缺失:{member}")
                 continue
@@ -300,6 +318,8 @@ def import_account(user_id: int, zip_bytes: bytes) -> dict[str, Any]:
                 warnings.append(f"存档 {entry.get('origin_save_id')} 导入失败:{exc}")
 
         # 3. 角色卡
+        _p("saves", total_saves, total_saves)
+        _p("cards", 0, 1)
         if "cards.jsonl" in names:
             for line in zf.read("cards.jsonl").decode("utf-8").splitlines():
                 line = line.strip()
@@ -349,3 +369,72 @@ def _import_preferences(user_id: int, prefs: dict[str, Any]) -> None:
             """,
             (user_id, Jsonb(prefs)),
         )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+#  异步作业:账号导入(复用 import_jobs/SSE,前端 streamImport 看真实进度)
+# ──────────────────────────────────────────────────────────────────────────
+_STAGE_LABELS = {"scripts": "导入剧本", "saves": "导入存档", "cards": "导入角色卡"}
+
+
+def import_account_job(user_id: int, zip_bytes: bytes) -> dict[str, Any]:
+    """建 import_jobs 作业 + 后台线程跑 import_account,逐项上报进度。返回 {ok, job_id}。"""
+    import secrets
+    import threading
+
+    init_db()
+    if len(zip_bytes) > MAX_ACCOUNT_ZIP_BYTES:
+        raise ValueError(f"账号包过大(max {MAX_ACCOUNT_ZIP_BYTES // 1024 // 1024}MB)")
+    job_id = f"acc_imp_{secrets.token_hex(6)}"
+    with connect() as db:
+        db.execute(
+            "insert into import_jobs(job_id, user_id, script_id, kind, status, stage, "
+            "overall_total, stages) values (%s, %s, null, 'account_import', 'pending', 'pending', 3, %s)",
+            (job_id, user_id, Jsonb([
+                {"id": "scripts", "label": "导入剧本", "status": "pending"},
+                {"id": "saves", "label": "导入存档", "status": "pending"},
+                {"id": "cards", "label": "导入角色卡", "status": "pending"},
+            ])),
+        )
+    th = threading.Thread(target=_run_account_import_job, args=(job_id, user_id, zip_bytes), daemon=True)
+    th.start()
+    return {"ok": True, "job_id": job_id}
+
+
+def _run_account_import_job(job_id: str, user_id: int, zip_bytes: bytes) -> None:
+    from . import import_pipeline
+    ctl = import_pipeline.JobController(job_id)
+    sem = getattr(import_pipeline, "_IMPORT_GLOBAL_SEM", None)
+    acquired = False
+    try:
+        if sem is not None:
+            sem.acquire()
+            acquired = True
+        ctl.update(status="running", stage="scripts")
+        order = ["scripts", "saves", "cards"]
+
+        def _progress(stage, done, total):
+            try:
+                idx = order.index(stage)
+            except ValueError:
+                idx = 0
+            ctl.update(stage=stage, stage_progress=int(done), stage_total=int(total),
+                       overall_progress=idx)
+
+        res = import_account(user_id, zip_bytes, progress=_progress)
+        from datetime import datetime, timezone
+        ctl.update(
+            status="done_with_errors" if res.get("warnings") else "done",
+            stage="done", overall_progress=3,
+            warnings=res.get("warnings") or [],
+            usage_actual={"summary": {"scripts": res.get("scripts", 0),
+                                       "saves": res.get("saves", 0),
+                                       "cards": res.get("cards", 0)}},
+            finished_at=datetime.now(timezone.utc),
+        )
+    except Exception as exc:
+        from datetime import datetime, timezone
+        ctl.update(status="failed", error=str(exc)[:500], finished_at=datetime.now(timezone.utc))
+    finally:
+        if acquired and sem is not None:
+            sem.release()

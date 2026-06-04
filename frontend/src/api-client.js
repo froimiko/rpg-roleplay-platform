@@ -274,7 +274,8 @@
       migrateExportUrl: (includeChunks) => BASE + `${API_PREFIX}/me/account/export` + (includeChunks ? "?include_chunks=1" : ""),
       migrateImport: (file) => {
         const fd = new FormData(); fd.append("file", file);
-        return _send(`${API_PREFIX}/me/account/import`, { method: "POST", body: fd });
+        // 多剧本账号包串行恢复,可能数十秒~分钟级 → 给 10 分钟,避免默认 15s 误中断。
+        return _send(`${API_PREFIX}/me/account/import`, { method: "POST", body: fd, signal: timeoutSignal(600000) });
       },
       deactivate: () => POST(`${API_PREFIX}/account/deactivate`, {}),
       deleteAccount: (body) => POST(`${API_PREFIX}/account/delete`, body || {}),
@@ -495,8 +496,9 @@
       connectorSet: (base_url, token) => POST(`${API_PREFIX}/me/library-connector`, { base_url, token }),
       connectorTest: () => POST(`${API_PREFIX}/me/library-connector/test`, {}),
       connectorScripts: (q) => GET(`${API_PREFIX}/me/library-connector/scripts`, q ? { q } : undefined),
-      connectorImport: (remote_script_id) => POST(`${API_PREFIX}/me/library-connector/import`, { remote_script_id }),
-      connectorPublish: (script_id) => POST(`${API_PREFIX}/me/library-connector/publish`, { script_id }),
+      // 整包下载/上传 + DB 恢复,可能数十秒 → 给 3 分钟,避免默认 15s 误中断。
+      connectorImport: (remote_script_id) => POST(`${API_PREFIX}/me/library-connector/import`, { remote_script_id }, { signal: timeoutSignal(180000) }),
+      connectorPublish: (script_id) => POST(`${API_PREFIX}/me/library-connector/publish`, { script_id }, { signal: timeoutSignal(180000) }),
       // 本地客户端:设备码流(引导用户在浏览器授权在线服务)
       deviceStart: (base_url, scopes) => POST(`${API_PREFIX}/me/library-connector/device/start`, { base_url, scopes }),
       devicePoll: (base_url, device_code) => POST(`${API_PREFIX}/me/library-connector/device/poll`, { base_url, device_code }),
@@ -515,7 +517,8 @@
       exportUrl: (sid) => BASE + `${API_PREFIX}/saves/` + sid + "/export",
       importFile: (file) => {
         const fd = new FormData(); fd.append("file", file);
-        return _send(`${API_PREFIX}/saves/import`, { method: "POST", body: fd });
+        // 自包含 bundle(.zip)导入要整包恢复,可能超默认 15s → 给 3 分钟。
+        return _send(`${API_PREFIX}/saves/import`, { method: "POST", body: fd, signal: timeoutSignal(180000) });
       },
     },
     branches: {

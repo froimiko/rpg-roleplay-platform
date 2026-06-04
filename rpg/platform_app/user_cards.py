@@ -435,7 +435,7 @@ def clone_public_card(user_id: int, card_id: int) -> dict[str, Any]:
             )
             select %(uid)s, %(slug)s, 'pc', 'cloned', first_revealed_chapter,
               name, full_name, aliases, identity, background, appearance, personality,
-              speech_style, current_status, secrets, sample_dialogue,
+              speech_style, current_status, '', sample_dialogue,
               tags, metadata, token_budget, priority, importance, true, scope, avatar_path
             from character_cards where id = %(src)s and is_public and card_type='pc'
             on conflict(user_id, slug, card_type) where card_type in ('pc','persona') do nothing

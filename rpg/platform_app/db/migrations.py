@@ -1427,6 +1427,11 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         ")",
         "create index if not exists idx_device_auth_usercode on device_authorizations(user_code)",
     ]),
+    (56, "pat_source", [
+        # PAT 来源:'manual'(用户在设置里手动生成)/ 'device'(设备码流签发)。
+        # 用于「授权设备」与「个人令牌」分类展示(GitHub 式)。
+        "alter table personal_access_tokens add column if not exists source text not null default 'manual'",
+    ]),
 ]
 
 

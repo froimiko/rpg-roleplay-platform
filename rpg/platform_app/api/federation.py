@@ -14,9 +14,30 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from .. import federation
-from ._deps import json_response, require_user
+from ._deps import _client_ip, json_response, require_user
 
 router = APIRouter()
+
+
+def _rate_limit(key: str, max_calls: int, window_s: float, detail: str = "请求过于频繁,请稍后再试"):
+    if not federation.rate_ok(key, max_calls, window_s):
+        raise HTTPException(status_code=429, detail=detail)
+
+
+def _same_origin_or_403(request: Request) -> None:
+    """state-changing cookie POST 的 CSRF 缓解:Origin/Referer 主机须与本服务一致。
+
+    SameSite=lax 默认已挡跨站 fetch POST;但 SameSite 可被配成 none(跨源 landing),
+    故对授权这类敏感操作再加一道同源闸,不单靠 cookie 属性。
+    """
+    host = (request.url.hostname or "").lower()
+    origin = request.headers.get("origin") or request.headers.get("referer") or ""
+    if not origin:
+        return  # 同源浏览器 fetch 通常带 Origin;无头/同源 server 调用放行
+    from urllib.parse import urlparse
+    oh = (urlparse(origin).hostname or "").lower()
+    if oh and host and oh != host:
+        raise HTTPException(status_code=403, detail="跨源请求被拒绝")
 
 
 # ── Bearer PAT 依赖 ───────────────────────────────────────────────────────
@@ -74,6 +95,8 @@ async def api_device_lookup(user_code: str, user=Depends(require_user)):
 
 @router.post("/api/me/device/approve")
 async def api_device_approve(request: Request, user=Depends(require_user)):
+    _same_origin_or_403(request)
+    _rate_limit(f"devapprove:{user['id']}", 20, 60)
     body = await request.json()
     deny = bool(body.get("deny"))
     try:
@@ -87,10 +110,12 @@ async def api_device_approve(request: Request, user=Depends(require_user)):
 # ════════════════════════════════════════════════════════════════════════
 @router.post("/api/ext/device/code")
 async def api_ext_device_code(request: Request):
+    _rate_limit(f"devcode:{_client_ip(request)}", 20, 60)
     body = await request.json()
-    # verification_uri:用户在浏览器里输 user_code 的页面(本服务的设置页)。
-    base = federation._normalize_base(str(request.base_url))
-    verification_uri = f"{base}/Platform.html#settings-account"
+    # verification_uri:GitHub /login/device 式独立授权页。用 official_base() 而非
+    # 请求 Host(防 Host 注入 open-redirect)。
+    base = federation.official_base()
+    verification_uri = f"{base}/device"
     return json_response(federation.device_start(
         body.get("client_name") or "", body.get("scopes") or ["library:read"], verification_uri))
 
@@ -98,19 +123,25 @@ async def api_ext_device_code(request: Request):
 @router.post("/api/ext/device/token")
 async def api_ext_device_token(request: Request):
     body = await request.json()
-    return json_response(federation.device_poll(body.get("device_code") or ""))
+    device_code = body.get("device_code") or ""
+    # 强制轮询间隔(OAuth slow_down 语义):每 device_code 每 ~3.5s 一次。
+    if not federation.rate_ok(f"devpoll:{device_code}", 1, 3.5):
+        return json_response({"error": "slow_down"})
+    return json_response(federation.device_poll(device_code))
 
 
 # ════════════════════════════════════════════════════════════════════════
 #  PROVIDER:外部库 API(Bearer PAT)
 # ════════════════════════════════════════════════════════════════════════
 @router.get("/api/ext/library/scripts")
-async def api_ext_list(q: str | None = None, limit: int = 30, offset: int = 0, pat=Depends(require_pat_read)):
+async def api_ext_list(request: Request, q: str | None = None, limit: int = 30, offset: int = 0, pat=Depends(require_pat_read)):
+    _rate_limit(f"extlist:{_client_ip(request)}", 120, 60)
     return json_response(federation.ext_list_scripts(q, limit, offset))
 
 
 @router.get("/api/ext/library/scripts/{script_id}/pack")
-async def api_ext_pack(script_id: int, pat=Depends(require_pat_read)):
+async def api_ext_pack(script_id: int, request: Request, pat=Depends(require_pat_read)):
+    _rate_limit(f"extpack:{_client_ip(request)}", 30, 60)
     try:
         zip_bytes, filename = federation.ext_export_pack(script_id)
     except PermissionError:
@@ -126,6 +157,7 @@ async def api_ext_pack(script_id: int, pat=Depends(require_pat_read)):
 
 @router.post("/api/ext/library/scripts/publish")
 async def api_ext_publish(request: Request, pat=Depends(require_pat_publish)):
+    _rate_limit(f"extpub:{_client_ip(request)}", 10, 60)
     form = await request.form()
     file = form.get("file")
     if not file or not hasattr(file, "read"):
