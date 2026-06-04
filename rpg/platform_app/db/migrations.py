@@ -1385,6 +1385,48 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "set first_revealed_chapter = greatest(0, (metadata->>'chapter_min')::int) "
         "where (metadata->>'chapter_min') ~ '^[0-9]+$' and first_revealed_chapter = 0",
     ]),
+    (54, "character_cards_public_library", [
+        # 在线角色卡库:用户 PC 卡(card_type='pc')可发布到公开库,他人浏览 + 完整 clone
+        # 到自己集合(复制,非指针)。只列 is_public;clone_count 记热度。
+        "alter table character_cards add column if not exists is_public boolean not null default false",
+        "alter table character_cards add column if not exists published_at timestamptz",
+        "alter table character_cards add column if not exists clone_count integer not null default 0",
+        "create index if not exists idx_character_cards_public "
+        "on character_cards(is_public, published_at desc) where is_public",
+    ]),
+    (55, "federation_pat_and_device", [
+        # 功能 B:本地↔在线剧本库打通。在线服务签发 PAT / 设备码给外部客户端(本地部署),
+        # 客户端用 Bearer PAT 调 /api/ext/library/*。两表都只存令牌的 sha256 哈希,绝不存明文。
+        "create table if not exists personal_access_tokens ("
+        "  id bigserial primary key,"
+        "  user_id bigint not null references users(id) on delete cascade,"
+        "  token_hash text not null unique,"
+        "  name text not null default '',"
+        "  scopes jsonb not null default '[]'::jsonb,"
+        "  created_at timestamptz not null default now(),"
+        "  expires_at timestamptz,"
+        "  last_used_at timestamptz,"
+        "  revoked_at timestamptz"
+        ")",
+        "create index if not exists idx_pat_user on personal_access_tokens(user_id) "
+        "where revoked_at is null",
+        # 设备码流(GitHub CLI 式):客户端拿 device_code 轮询,用户在浏览器输 user_code 批准。
+        "create table if not exists device_authorizations ("
+        "  id bigserial primary key,"
+        "  device_code_hash text not null unique,"
+        "  user_code text not null unique,"
+        "  client_name text not null default '',"
+        "  scopes jsonb not null default '[]'::jsonb,"
+        "  status text not null default 'pending',"  # pending | approved | denied
+        "  user_id bigint references users(id) on delete cascade,"
+        "  pat_id bigint references personal_access_tokens(id) on delete set null,"
+        "  created_at timestamptz not null default now(),"
+        "  expires_at timestamptz not null,"
+        "  interval_seconds integer not null default 5,"
+        "  approved_at timestamptz"
+        ")",
+        "create index if not exists idx_device_auth_usercode on device_authorizations(user_code)",
+    ]),
 ]
 
 

@@ -510,6 +510,8 @@
       "cards_sub": "Global user character card library",
       "cards_npc": "Cards / NPC",
       "cards_npc_sub": "In-save NPC cards, shared across saves",
+      "cards_online": "Online Card Library",
+      "cards_online_sub": "Browse and import character cards others have shared publicly",
       "cards_npc_full": "Cards / NPC",
       "library": "Library",
       "library_sub": "Upload, organize, and download media and document assets",

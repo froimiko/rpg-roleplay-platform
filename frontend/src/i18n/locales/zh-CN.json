@@ -596,6 +596,8 @@
       "cards_sub": "全局用户角色卡库",
       "cards_npc": "角色卡 / NPC",
       "cards_npc_sub": "存档内 NPC 角色卡，跨存档共享",
+      "cards_online": "在线角色卡库",
+      "cards_online_sub": "浏览并导入他人公开分享的角色卡",
       "cards_npc_full": "角色卡 / NPC",
       "library": "库",
       "library_sub": "上传、整理、下载多媒体与文档资产",

@@ -66,11 +66,11 @@ const TWEAK_DEFAULTS = {
 // PL_HASH_ALIASES 里归一。
 const PL_IDS = [
   ...((PL_NAV || []).filter((i) => i.id).map((i) => i.id)),
-  'me', 'me-edit', 'me-settings', 'saves-branches', 'scripts-import', 'cards-npc',
+  'me', 'me-edit', 'me-settings', 'saves-branches', 'scripts-import', 'cards-npc', 'cards-online',
   // 新 IA 子页(Cloudscape 迁移后):剧本 / 开始游戏 / 设置&账户 各模块的左栏子页
   'scripts-library', 'scripts-editor', 'scripts-settings', 'play-settings',
   'settings-models', 'settings-modelparams', 'settings-modules', 'settings-memory',
-  'settings-permissions', 'settings-danger', 'admin-deploy',
+  'settings-permissions', 'settings-account', 'settings-danger', 'admin-deploy',
   'admin-users', 'admin-usage', 'admin-audit', 'admin-health',
   'admin-logs', 'admin-registration', 'admin-security', 'admin-maintenance',
   'admin-dmca-takedowns', 'admin-dmca-strikes', 'admin-csam-reports', 'admin-aup-actions',
@@ -151,12 +151,14 @@ function PlatformApp() {
   else if (page === 'library') body = <LibraryPage />;
   else if (page === 'cards') body = <CardsPage subPage="user" />;
   else if (page === 'cards-npc') body = <CardsPage subPage="npc" />;
+  else if (page === 'cards-online') body = <CardsPage subPage="online" />;
   else if (page === 'settings') body = <SettingsPage section="preferences" />;
   else if (page === 'settings-models') body = <SettingsPage section="models" />;
   else if (page === 'settings-modelparams') body = <SettingsPage section="modelparams" />;
   else if (page === 'settings-modules') body = <SettingsPage section="modules" />;
   else if (page === 'settings-memory') body = <SettingsPage section="memory" />;
   else if (page === 'settings-permissions') body = <SettingsPage section="permissions" />;
+  else if (page === 'settings-account') body = <SettingsPage section="account" />;
   else if (page === 'settings-danger') body = <SettingsPage section="danger" />;
   else if (page === 'admin-deploy') body = <AdminGuard><SettingsPage section="deploy" /></AdminGuard>;
   else if (page === 'admin-users')        body = <AdminGuard><AdminUsersPage /></AdminGuard>;

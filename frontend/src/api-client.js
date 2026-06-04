@@ -269,6 +269,13 @@
       avatarReset: () => POST(`${API_PREFIX}/profile/avatar/reset`, {}),
       visibility: (body) => POST(`${API_PREFIX}/profile/visibility`, body),
       exportData: (body) => POST(`${API_PREFIX}/account/export`, body || {}),
+      // 账号数据迁移(免部署 → 本地):聚合剧本/存档/角色卡/偏好为单个 zip
+      migrateEstimate: () => GET(`${API_PREFIX}/me/account/export/estimate`),
+      migrateExportUrl: (includeChunks) => BASE + `${API_PREFIX}/me/account/export` + (includeChunks ? "?include_chunks=1" : ""),
+      migrateImport: (file) => {
+        const fd = new FormData(); fd.append("file", file);
+        return _send(`${API_PREFIX}/me/account/import`, { method: "POST", body: fd });
+      },
       deactivate: () => POST(`${API_PREFIX}/account/deactivate`, {}),
       deleteAccount: (body) => POST(`${API_PREFIX}/account/delete`, body || {}),
       usage: (days) => GET(`${API_PREFIX}/me/usage`, days ? { days } : undefined),
@@ -474,6 +481,27 @@
       checkout: (sid, commitId) => POST(`${API_PREFIX}/scripts/${sid}/checkout/${commitId}`, {}),
     },
 
+    // ---------- 功能 B:本地↔在线剧本库联邦 ----------
+    federation: {
+      // 在线提供方:PAT 管理(本服务签发给外部客户端)
+      patList: () => GET(`${API_PREFIX}/me/pat`),
+      patCreate: (body) => POST(`${API_PREFIX}/me/pat`, body),
+      patRevoke: (id) => POST(`${API_PREFIX}/me/pat/` + id + "/revoke", {}),
+      // 在线提供方:设备码批准页(登录用户在浏览器批准外部客户端)
+      deviceLookup: (userCode) => GET(`${API_PREFIX}/me/device/lookup`, { user_code: userCode }),
+      deviceApprove: (userCode, deny) => POST(`${API_PREFIX}/me/device/approve`, { user_code: userCode, deny: !!deny }),
+      // 本地客户端:连接器(指向在线服务)
+      connectorGet: () => GET(`${API_PREFIX}/me/library-connector`),
+      connectorSet: (base_url, token) => POST(`${API_PREFIX}/me/library-connector`, { base_url, token }),
+      connectorTest: () => POST(`${API_PREFIX}/me/library-connector/test`, {}),
+      connectorScripts: (q) => GET(`${API_PREFIX}/me/library-connector/scripts`, q ? { q } : undefined),
+      connectorImport: (remote_script_id) => POST(`${API_PREFIX}/me/library-connector/import`, { remote_script_id }),
+      connectorPublish: (script_id) => POST(`${API_PREFIX}/me/library-connector/publish`, { script_id }),
+      // 本地客户端:设备码流(引导用户在浏览器授权在线服务)
+      deviceStart: (base_url, scopes) => POST(`${API_PREFIX}/me/library-connector/device/start`, { base_url, scopes }),
+      devicePoll: (base_url, device_code) => POST(`${API_PREFIX}/me/library-connector/device/poll`, { base_url, device_code }),
+    },
+
     // ---------- Saves & branches ----------
     saves: {
       list: () => GET(`${API_PREFIX}/saves`),
@@ -528,6 +556,10 @@
       myGet: (id) => GET(`${API_PREFIX}/me/character-cards/` + id),
       myUpsert: (body) => POST(`${API_PREFIX}/me/character-cards`, body),
       myDelete: (id) => POST(`${API_PREFIX}/me/character-cards/` + id + "/delete", {}),
+      // 在线角色卡库:发布/取消公开自己的卡 · 浏览公开卡 · 完整克隆进自己卡库
+      setPublic: (id, isPublic) => POST(`${API_PREFIX}/me/character-cards/` + id + "/visibility", { public: !!isPublic }),
+      publicList: (q) => GET(`${API_PREFIX}/cards/public`, q),
+      cloneFromPublic: (id) => POST(`${API_PREFIX}/cards/public/` + id + "/clone", {}),
       importTavern: (file, opts = {}) => {
         const fd = new FormData(); fd.append("file", file);
         if (opts.aiSplit) fd.append("ai_split", "true");
