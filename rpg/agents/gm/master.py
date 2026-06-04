@@ -363,16 +363,36 @@ class GameMaster:
         )
 
     def _active_script_id(self) -> int | None:
-        """从当前 active state 解出 script_id(content_pack id 形如 'script:N')。无 → None。"""
+        """解出当前 active script_id,用于剧本级 gm_style 解析。无 → None。
+
+        两路:① content_pack.id 形如 'script:N'(若 context engine 已填);
+        ② 兜底用 state 里的 _active_save_id 查 game_saves.script_id(权威)。
+        ② 是必需的:resolve_content_pack(state) 不传 script_id 时会落到 '__legacy_novel__'
+        而非 'script:N',只靠 ① 会让剧本级旋钮对大多数存档静默失效。
+        """
         state = getattr(self, "_active_state", None)
         if state is None:
             return None
+        data = getattr(state, "data", None) or {}
+        # ① content_pack.id = "script:N"
         try:
-            from context_providers import resolve_content_pack
-            manifest = resolve_content_pack(state) or {}
-            mid = str(manifest.get("id") or "")
+            mid = str(((data.get("content_pack") or {}).get("id")) or "")
             if mid.startswith("script:"):
                 return int(mid.split(":", 1)[1])
+        except Exception:
+            pass
+        # ② 权威兜底:_active_save_id → game_saves.script_id
+        try:
+            save_id = data.get("_active_save_id")
+            if save_id:
+                from platform_app.db import connect
+                with connect() as db:
+                    row = db.execute(
+                        "select script_id from game_saves where id = %s", (int(save_id),)
+                    ).fetchone()
+                if row:
+                    sid = row["script_id"] if hasattr(row, "__getitem__") else row[0]
+                    return int(sid) if sid is not None else None
         except Exception:
             pass
         return None
