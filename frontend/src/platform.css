@@ -1581,6 +1581,10 @@ button, a, [role="button"], .btn, .iconbtn, summary, label {
 }
 .pl-achv.unlocked { background: var(--panel); border-color: rgba(126, 184, 142, 0.32); }
 .pl-achv.locked { opacity: 0.62; }
+/* 成就分级:已解锁时左缘点亮 bronze/silver/gold 色，未解锁不强调 */
+.pl-achv.unlocked.tier-bronze { border-left: 2px solid rgba(193, 130, 80, 0.75); }
+.pl-achv.unlocked.tier-silver { border-left: 2px solid rgba(176, 184, 196, 0.85); }
+.pl-achv.unlocked.tier-gold   { border-left: 2px solid rgba(214, 178, 92, 0.95); }
 .pl-achv-mark {
   width: 40px; height: 40px;
   border-radius: 999px;

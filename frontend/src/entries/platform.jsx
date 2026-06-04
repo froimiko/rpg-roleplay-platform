@@ -27,7 +27,7 @@ import { PlatformShellCS, ProfilePage, MePage, ModulesPage, LibraryPage, UsagePa
   AdminUsersPage, AdminGlobalUsagePage, AdminAuditPage, AdminHealthPage,
   AdminLogsPage, AdminRegistrationPage, AdminSecurityPage, AdminMaintenancePage,
   AdminDmcaTakedownsPage, AdminDmcaStrikesPage, AdminCsamReportsPage, AdminAupActionsPage,
-  AdminFeedbackPage,
+  AdminFeedbackPage, AdminAchievementsPage,
 } from '../platform-app.jsx';
 import { SavesPage } from '../pages/saves.jsx';
 import { ScriptsPage } from '../pages/scripts.jsx';
@@ -175,6 +175,7 @@ function PlatformApp() {
   else if (page === 'admin-csam-reports')     body = <AdminGuard><AdminCsamReportsPage /></AdminGuard>;
   else if (page === 'admin-aup-actions')      body = <AdminGuard><AdminAupActionsPage /></AdminGuard>;
   else if (page === 'admin-feedback')         body = <AdminGuard><AdminFeedbackPage /></AdminGuard>;
+  else if (page === 'admin-achievements')     body = <AdminGuard><AdminAchievementsPage /></AdminGuard>;
   else if (page === 'usage') body = <UsagePage />;
   else if (page === 'plugins') body = <CapPage kind="plugins" />;
   else if (page === 'mcp') body = <CapPage kind="mcp" />;
