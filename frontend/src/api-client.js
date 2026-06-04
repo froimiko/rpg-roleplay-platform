@@ -355,7 +355,7 @@
       },
       // CSAM Reports
       csamReports: {
-        list: () => GET(`/api/admin/csam/reports`),
+        list: ({ status } = {}) => GET(`/api/admin/csam/reports`, status ? { status } : undefined),
         decision: (id, body) => POST(`/api/admin/csam/reports/${id}/decision`, body),
       },
       // AUP 用户操作 (suspend / unsuspend / terminate)
@@ -758,6 +758,9 @@
   }
   window.withToast = withToast;
 
+  // 别名:部分组件(GmStyleEditor 等)用 window.api.me.* 访问「我的账户」端点,
+  // 而账户方法定义在 api.account 命名空间。补这条别名,二者等价,避免 undefined 报错。
+  if (!api.me) api.me = api.account;
   window.api = api;
   window.dispatchEvent(new CustomEvent("api-ready", { detail: { base: BASE } }));
 })();
