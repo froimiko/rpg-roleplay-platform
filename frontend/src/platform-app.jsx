@@ -3840,11 +3840,12 @@ const getCSModules = (t) => [
     ] },
   { id: 'play', label: t('platform.nav.saves'), group: t('platform.nav.group_play'),
     // NPC 角色卡已移入「剧本」详情面板(NPC 卡属于具体剧本),不再在开始游戏出现。
-    pages: ['saves', 'saves-branches', 'cards', 'modules', 'play-settings'],
+    pages: ['saves', 'saves-branches', 'cards', 'cards-online', 'modules', 'play-settings'],
     sub: [
       { text: t('platform.nav.cs_saves'),          href: '#saves' },
       { text: t('platform.nav.cs_branches'),        href: '#saves-branches' },
       { text: t('platform.nav.cs_user_cards'),      href: '#cards' },
+      { text: t('platform.nav.cards_online', { defaultValue: '在线角色卡库' }), href: '#cards-online' },
       { text: t('platform.nav.modules'),            href: '#modules' },
       { text: t('platform.nav.cs_play_settings'),   href: '#play-settings' },
     ] },
@@ -4035,7 +4036,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
             kind: 'info',
             detail: '点右上"提交反馈"查看详情',
             duration: 5000,
-            action: { label: '查看', onClick: () => setFeedbackOpen(true) },
+            action: { label: '查看', onClick: () => plNavigate('feedback') },
           });
         }
       } catch (_) {}
@@ -4153,7 +4154,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
     if (id === 'signout') {
       (async () => { try { await window.api?.auth?.logout?.(); } catch (_) {} location.replace('Login.html'); })();
     } else if (id === 'feedback') {
-      setFeedbackOpen(true);
+      plNavigate('feedback');
     } else if (id === 'help') {
       if (window.__openHelp) window.__openHelp(helpSlugForPage || 'intro');
     } else { setPage(id); }
@@ -4213,7 +4214,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
           {/* 反馈 + 使用须知 快捷按钮(CS Icon 替代 emoji) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingRight: 4, flexShrink: 0 }}>
             <button
-              onClick={() => setFeedbackOpen(true)}
+              onClick={() => plNavigate('feedback')}
               title={t('platform.menu.feedback')}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(196,155,78,0.35)', background: 'transparent', color: '#c8c2b7', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, whiteSpace: 'nowrap' }}
               onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(196,155,78,0.10)'; e.currentTarget.style.borderColor = 'rgba(196,155,78,0.6)'; }}

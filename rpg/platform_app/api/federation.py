@@ -24,6 +24,19 @@ def _rate_limit(key: str, max_calls: int, window_s: float, detail: str = "请求
         raise HTTPException(status_code=429, detail=detail)
 
 
+def _require_provider() -> None:
+    """provider 角色闸:本地客户端实例不暴露签发/批准/外部库端点(防无鉴权令牌签发面)。"""
+    if not federation.provider_enabled():
+        raise HTTPException(status_code=404, detail="本实例不是在线剧本库提供方")
+
+
+@router.get("/api/ext/provider-info")
+async def api_provider_info():
+    """公开:供前端判断本实例是否为在线库提供方(决定是否展示 /device、令牌管理等)。"""
+    return json_response({"ok": True, "provider_enabled": federation.provider_enabled(),
+                          "base_url": federation.official_base()})
+
+
 def _same_origin_or_403(request: Request) -> None:
     """state-changing cookie POST 的 CSRF 缓解:Origin/Referer 主机须与本服务一致。
 
@@ -49,6 +62,7 @@ def _bearer_token(request: Request) -> str:
 
 
 def require_pat_read(request: Request) -> dict:
+    _require_provider()
     try:
         return federation.verify_pat(_bearer_token(request), required_scope="library:read")
     except PermissionError as exc:
@@ -56,6 +70,7 @@ def require_pat_read(request: Request) -> dict:
 
 
 def require_pat_publish(request: Request) -> dict:
+    _require_provider()
     try:
         return federation.verify_pat(_bearer_token(request), required_scope="library:publish")
     except PermissionError as exc:
@@ -67,11 +82,13 @@ def require_pat_publish(request: Request) -> dict:
 # ════════════════════════════════════════════════════════════════════════
 @router.get("/api/me/pat")
 async def api_list_pat(user=Depends(require_user)):
+    _require_provider()
     return json_response(federation.list_pats(user["id"]))
 
 
 @router.post("/api/me/pat")
 async def api_create_pat(request: Request, user=Depends(require_user)):
+    _require_provider()
     body = await request.json()
     name = (body.get("name") or "").strip()
     scopes = body.get("scopes") or ["library:read"]
@@ -81,12 +98,14 @@ async def api_create_pat(request: Request, user=Depends(require_user)):
 
 @router.post("/api/me/pat/{pat_id}/revoke")
 async def api_revoke_pat(pat_id: int, user=Depends(require_user)):
+    _require_provider()
     return json_response(federation.revoke_pat(user["id"], pat_id))
 
 
 # ── PROVIDER:设备批准页(cookie)─────────────────────────────────────────
 @router.get("/api/me/device/lookup")
 async def api_device_lookup(user_code: str, user=Depends(require_user)):
+    _require_provider()
     info = federation.device_lookup(user_code)
     if not info:
         return json_response({"ok": False, "error": "授权码不存在或已失效"}, status_code=404)
@@ -95,6 +114,7 @@ async def api_device_lookup(user_code: str, user=Depends(require_user)):
 
 @router.post("/api/me/device/approve")
 async def api_device_approve(request: Request, user=Depends(require_user)):
+    _require_provider()
     _same_origin_or_403(request)
     _rate_limit(f"devapprove:{user['id']}", 20, 60)
     body = await request.json()
@@ -110,6 +130,7 @@ async def api_device_approve(request: Request, user=Depends(require_user)):
 # ════════════════════════════════════════════════════════════════════════
 @router.post("/api/ext/device/code")
 async def api_ext_device_code(request: Request):
+    _require_provider()
     _rate_limit(f"devcode:{_client_ip(request)}", 20, 60)
     body = await request.json()
     # verification_uri:GitHub /login/device 式独立授权页。用 official_base() 而非
@@ -122,6 +143,7 @@ async def api_ext_device_code(request: Request):
 
 @router.post("/api/ext/device/token")
 async def api_ext_device_token(request: Request):
+    _require_provider()
     body = await request.json()
     device_code = body.get("device_code") or ""
     # 强制轮询间隔(OAuth slow_down 语义):每 device_code 每 ~3.5s 一次。

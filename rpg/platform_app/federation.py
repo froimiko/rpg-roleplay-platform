@@ -66,6 +66,24 @@ PAT_DEFAULT_TTL_DAYS = 365
 MAX_PACK_BYTES = script_pack.MAX_ZIP_BYTES    # 复用剧本包上限
 
 
+def provider_enabled() -> bool:
+    """本实例是否扮演「在线库提供方」(签发 PAT/设备码、暴露 /api/ext/*)。
+
+    默认仅服务器模式(effective_auth_required)开启;本地单用户自部署(client 角色)关闭——
+    本地实例只该作为「连接到在线库」的客户端,不该自己签发令牌/批准设备(否则一个暴露在网络上的
+    本地实例 = 无鉴权的令牌签发面 = 权限泄漏)。可用 RPG_FEDERATION_PROVIDER=1/0 显式覆盖
+    (供自建在线联邦节点)。"""
+    import os
+
+    from core.config import effective_auth_required
+    raw = (os.environ.get("RPG_FEDERATION_PROVIDER", "") or "").strip()
+    if raw == "1":
+        return True
+    if raw == "0":
+        return False
+    return effective_auth_required()
+
+
 def official_base() -> str:
     """本服务的规范对外地址。用 PUBLIC_BASE_URL 配置,**不取请求 Host**
     (防 Host 头注入把 verification_uri 指向攻击者域名 = 反射式 open-redirect)。"""

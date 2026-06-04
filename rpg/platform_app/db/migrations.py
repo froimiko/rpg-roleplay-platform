@@ -28,6 +28,12 @@ from core.config import migration_lock_timeout_ms as _migration_lock_timeout_ms
 
 MIGRATION_LOCK_TIMEOUT_MS = _migration_lock_timeout_ms()
 
+# embedding 向量维度:默认 768(Google text-embedding-004 / 平台栈)。自部署用别的
+# provider(如 SiliconFlow Qwen3-Embedding-8B=4096、BGE-M3=1024)时,**首次部署前**设
+# EMBED_DIM=<维度>,fresh DB 的 pgvector 列 + HNSW 索引按此维度建,避免写入维度不匹配报错。
+# 已有 DB 不受影响(add column if not exists 不重跑);换维度需重建库或手动 ALTER 后重嵌入。
+_EMBED_DIM = (os.environ.get("EMBED_DIM", "") or "768").strip() or "768"
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  版本化 migration 框架
@@ -207,15 +213,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
     ]),
     (10, "pgvector_columns_and_hnsw", [
         # 仅当 vector 扩展已启用时建 vector 列 + HNSW；否则保持 jsonb fallback
-        # 用 DO 块按运行时条件执行
-        """
+        # 用 DO 块按运行时条件执行(维度 = _EMBED_DIM,默认 768,自部署可 env 覆盖)
+        f"""
         do $$
         begin
           if exists (select 1 from pg_extension where extname = 'vector') then
-            -- 加 vector 列（768 维，gemini embedding 标准；可后续调整）
-            execute 'alter table document_chunks add column if not exists embedding_vec vector(768)';
-            execute 'alter table memories add column if not exists embedding_vec vector(768)';
-            -- HNSW 索引（cosine）
+            -- 加 vector 列(默认 768=gemini 标准;EMBED_DIM 可在首次部署前覆盖)
+            execute 'alter table document_chunks add column if not exists embedding_vec vector({_EMBED_DIM})';
+            execute 'alter table memories add column if not exists embedding_vec vector({_EMBED_DIM})';
+            -- HNSW 索引(cosine)
             execute 'create index if not exists idx_doc_chunks_embedding_hnsw on document_chunks using hnsw (embedding_vec vector_cosine_ops)';
             execute 'create index if not exists idx_memories_embedding_hnsw on memories using hnsw (embedding_vec vector_cosine_ops)';
           end if;
@@ -522,14 +528,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # v19: 对齐现网嵌入。设计原写 BGE-M3(1024),但平台实际可用的是
         # Vertex text-embedding-004(768 维,knowledge.embedding 已封装)。
         # 自托管 BGE-M3 未部署 → 改用 768 复用现有嵌入栈(更省、已 live)。表为空,安全 alter。
-        """
+        # 维度 = _EMBED_DIM(默认 768;自部署 EMBED_DIM 覆盖)。
+        f"""
         do $$
         begin
           if exists (select 1 from pg_extension where extname = 'vector')
              and exists (select 1 from information_schema.columns
                          where table_name='kb_canon_entities' and column_name='embedding') then
             execute 'alter table kb_canon_entities drop column embedding';
-            execute 'alter table kb_canon_entities add column embedding vector(768)';
+            execute 'alter table kb_canon_entities add column embedding vector({_EMBED_DIM})';
           end if;
         end $$;
         """,
@@ -1103,12 +1110,12 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "alter table document_chunks add column if not exists embedded_at timestamptz",
         "alter table character_cards add column if not exists embedded_at timestamptz",
         "alter table worldbook_entries add column if not exists embedded_at timestamptz",
-        """
+        f"""
         do $$
         begin
           if exists (select 1 from pg_extension where extname = 'vector') then
-            execute 'alter table character_cards add column if not exists embedding_vec vector(768)';
-            execute 'alter table worldbook_entries add column if not exists embedding_vec vector(768)';
+            execute 'alter table character_cards add column if not exists embedding_vec vector({_EMBED_DIM})';
+            execute 'alter table worldbook_entries add column if not exists embedding_vec vector({_EMBED_DIM})';
             execute 'create index if not exists idx_character_cards_embedding_hnsw on character_cards using hnsw (embedding_vec vector_cosine_ops)';
             execute 'create index if not exists idx_worldbook_entries_embedding_hnsw on worldbook_entries using hnsw (embedding_vec vector_cosine_ops)';
           end if;

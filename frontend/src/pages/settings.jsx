@@ -3741,10 +3741,14 @@ const DEFAULT_ONLINE_BASE = 'https://rpg-roleplay.stellatrix.icu';
 
 function OnlineLibrarySection() {
   const [conn, setConn] = useStatePL(null);            // {connected, base_url}
+  const [isProvider, setIsProvider] = useStatePL(false); // 本实例是否为在线库提供方(server 模式)
   const reload = useCallbackPL(async () => {
     try { setConn(await window.api.federation.connectorGet()); } catch { setConn({ connected: false, base_url: DEFAULT_ONLINE_BASE }); }
   }, []);
   useEffectPL(() => { reload(); }, [reload]);
+  useEffectPL(() => {
+    window.api?.federation?.providerInfo?.().then((r) => setIsProvider(!!r?.provider_enabled)).catch(() => setIsProvider(false));
+  }, []);
 
   return (
     <SetGroup
@@ -3754,12 +3758,17 @@ function OnlineLibrarySection() {
       <ConnectorConnect conn={conn} onChange={reload} />
       {conn?.connected && <OnlineBrowse />}
       {conn?.connected && <OnlinePublish />}
-      <CSExpandableSection headerText="设备授权(当本机是在线服务时,批准外部客户端)" variant="footer">
-        <DeviceApprove />
-      </CSExpandableSection>
-      <CSExpandableSection headerText="个人访问令牌(供外部客户端连接本服务)" variant="footer">
-        <PatManager />
-      </CSExpandableSection>
+      {/* 提供方专属:仅 server 模式(在线服务节点)展示签发/批准入口;本地客户端不暴露(防权限泄漏)。 */}
+      {isProvider && (
+        <CSExpandableSection headerText="设备授权(批准外部客户端连接本服务)" variant="footer">
+          <DeviceApprove />
+        </CSExpandableSection>
+      )}
+      {isProvider && (
+        <CSExpandableSection headerText="个人访问令牌(供外部客户端连接本服务)" variant="footer">
+          <PatManager />
+        </CSExpandableSection>
+      )}
     </SetGroup>
   );
 }

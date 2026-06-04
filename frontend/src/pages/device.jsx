@@ -23,6 +23,13 @@ export function DeviceAuthorizePage() {
   const [phase, setPhase] = useStatePL('input');      // input | confirm | done | denied | error
   const [busy, setBusy] = useStatePL(false);
   const [err, setErr] = useStatePL('');
+  const [provider, setProvider] = useStatePL(null);   // null=loading, true/false
+
+  useEffectPL(() => {
+    window.api?.federation?.providerInfo?.()
+      .then((r) => setProvider(!!r?.provider_enabled))
+      .catch(() => setProvider(false));
+  }, []);
 
   const lookup = async (c) => {
     const uc = (c || code).trim().toUpperCase();
@@ -52,7 +59,13 @@ export function DeviceAuthorizePage() {
     <div style={{ maxWidth: 520, margin: '48px auto', padding: '0 16px' }}>
       <CSContainer header={<CSHeader variant="h1">授权设备接入</CSHeader>}>
         <CSSpaceBetween size="l">
-          {phase === 'input' && (
+          {provider === false && (
+            <CSAlert type="info" header="此实例不是在线剧本库提供方">
+              本实例是本地/自部署节点,不签发设备授权。设备配对码只能在你要连接的「在线服务」上输入。
+              若你是想连接官方在线库,请在「设置 → 在线剧本库」里发起连接。
+            </CSAlert>
+          )}
+          {provider !== false && phase === 'input' && (
             <CSSpaceBetween size="s">
               <CSBox color="text-body-secondary">
                 在你的设备/本地部署上发起连接后会显示一个配对码,请在此输入以授权。

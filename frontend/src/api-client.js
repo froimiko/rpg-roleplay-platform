@@ -484,6 +484,8 @@
 
     // ---------- 功能 B:本地↔在线剧本库联邦 ----------
     federation: {
+      // 本实例是否为在线库提供方(server 模式开;本地客户端关)→ 决定是否展示 /device、令牌管理
+      providerInfo: () => GET(`${API_PREFIX}/ext/provider-info`),
       // 在线提供方:PAT 管理(本服务签发给外部客户端)
       patList: () => GET(`${API_PREFIX}/me/pat`),
       patCreate: (body) => POST(`${API_PREFIX}/me/pat`, body),
