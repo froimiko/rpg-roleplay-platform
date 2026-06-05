@@ -181,6 +181,18 @@ const SPLIT_RULES = [
   { id: "custom",     labelKey: "scripts.import.rule_custom" },
 ];
 
+function isExpiredUploadError(e) {
+  const text = [
+    e?.message,
+    e?.error,
+    e?.detail,
+    e?.payload?.error,
+    e?.payload?.detail,
+    e?.payload?.message,
+  ].filter(Boolean).join(" ");
+  return /upload_id.*(不存在|过期|expired|not found)|uploaded file.*(expired|missing)/i.test(text);
+}
+
 function ScriptsPage({ subPage = "list" }) {
   return (
     <div className="pl-stack">
@@ -1862,6 +1874,25 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
     try { localStorage.removeItem(PENDING_IMPORT_PIPELINE_KEY); } catch {}
   }, []);
 
+  const cancelUploadQuietly = useCallbackPL((uploadId) => {
+    if (!uploadId) return;
+    try { window.api.uploads.cancel(uploadId).catch(() => {}); } catch (_) {}
+  }, []);
+
+  const discardEstimate = useCallbackPL((notify = false) => {
+    const oldUploadId = estimate?.upload_id;
+    if (oldUploadId) cancelUploadQuietly(oldUploadId);
+    setEstimate(null);
+    setPreviewProgress({ value: 0, label: "" });
+    if (notify) {
+      window.__apiToast?.(t('scripts.import.preview_invalidated'), {
+        kind: "info",
+        detail: t('scripts.import.preview_invalidated_detail'),
+        duration: 2600,
+      });
+    }
+  }, [estimate, cancelUploadQuietly, t]);
+
   // 任务真实进度完全由 ImportJobBanner 内部订阅的 SSE 推上来。
   // wizard 这一层不再:
   //  - 轮询 jobStatus 然后把 stages 全部强写 done (那是撒谎)
@@ -1889,8 +1920,9 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
       window.__apiToast?.(t('scripts.import.file_too_large'), { kind: "danger", detail: t('scripts.import.file_max_size'), duration: 2400 });
       return;
     }
+    discardEstimate(false);
+    clearPendingImport();
     setSelectedFile(file);
-    setEstimate(null);
     setPreviewProgress({ value: 0, label: "" });
     if (!title) setTitle(file.name.replace(/\.(txt|md)$/i, ""));
   };
@@ -2137,13 +2169,41 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
         }
         // ── 阶段 B: 创建剧本 (importScript) — 不写 milestone 数字,只换文案 ──
         setImportProgress(t('scripts.import.import_creating'));
-        const importResp = await window.api.scripts.importScript({
-          upload_id: uploadId,
+        const createScriptFromUpload = (nextUploadId) => window.api.scripts.importScript({
+          upload_id: nextUploadId,
           title: title || selectedFile.name.replace(/\.(txt|md)$/i, ""),
           split_rule: rule || "auto",
           custom_pattern: pattern || "",
           require_llm_credentials: true,
         });
+        const reuploadForExpiredUpload = async () => {
+          setImportProgress(t('scripts.import.upload_expired_retry'));
+          setImportPercent(0);
+          return uploadFileChunks(selectedFile, ({ stage, done, total, percent }) => {
+            if (stage === "init") {
+              setImportPercent(1);
+              setImportProgress(t('scripts.import.upload_init'));
+            } else if (stage === "chunk") {
+              setImportPercent(Math.min(30, Math.round((percent || 0) * 0.30)));
+              setImportProgress(t('scripts.import.upload_progress', { done, total }));
+            } else if (stage === "finish") {
+              setImportPercent(30);
+              setImportProgress(t('scripts.import.upload_finish'));
+            }
+          });
+        };
+        let importResp;
+        try {
+          importResp = await createScriptFromUpload(uploadId);
+        } catch (e) {
+          if (!isExpiredUploadError(e)) throw e;
+          uploadId = await reuploadForExpiredUpload();
+          importResp = await createScriptFromUpload(uploadId);
+        }
+        if (importResp && importResp.ok === false && isExpiredUploadError(importResp)) {
+          uploadId = await reuploadForExpiredUpload();
+          importResp = await createScriptFromUpload(uploadId);
+        }
         if (!importResp || importResp.ok === false) {
           throw new Error((importResp && (importResp.error || importResp.detail)) || t('scripts.import.api_fail'));
         }
@@ -2321,7 +2381,9 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
         require_llm_credentials: true,
       });
       if (!importResp || importResp.ok === false) {
-        throw new Error((importResp && (importResp.error || importResp.detail)) || t('scripts.import.api_fail'));
+        const err = new Error((importResp && (importResp.error || importResp.detail)) || t('scripts.import.api_fail'));
+        err.payload = importResp;
+        throw err;
       }
       const sc = importResp.script || {};
       // 不写 setImportPercent(92):流水线进度由 banner 内部 SSE 接管。
@@ -2373,7 +2435,16 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
         });
       } else {
         const detail = (e && (e.message || (e.payload && (e.payload.error || e.payload.detail)))) || t('scripts.toast.unknown_error');
+        if (isExpiredUploadError(e)) {
+          clearPendingImport();
+          window.__apiToast?.(t('scripts.import.saved_upload_expired'), {
+            kind: "warning",
+            detail: t('scripts.import.saved_upload_expired_detail'),
+            duration: 7000,
+          });
+        } else {
         window.__apiToast?.(t('scripts.toast.import_fail'), { kind: "danger", detail, duration: 5000 });
+        }
       }
     } finally {
       setImportBusy(false);
@@ -2388,7 +2459,11 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
       try { await window.api.scripts.jobCancel(job.id); } catch (e) {}
     }
     setJob(j => ({ ...j, status: "cancelled", cancelled_at: Date.now() }));
-    window.toast?.(t('scripts.toast.import_cancelled'), { kind: "warn", detail: "job " + job.id, duration: 2400 });
+    window.__apiToast?.(t('scripts.toast.import_cancelled'), {
+      kind: "warning",
+      detail: t('scripts.import.result_cancelled_detail', { id: job.id }),
+      duration: 8000,
+    });
   };
 
   const dismissJob = () => {
@@ -2436,7 +2511,11 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
         ? errored.map(s => (s.id || s.label || '?') + ': ' + (s.error || t('scripts.toast.unknown_error'))).join('; ')
         : (prev.error || '');
       if (prev.status === 'cancelled') {
-        // 取消 toast 在 cancelJob 已发,这里不重复
+        window.__apiToast?.(t('scripts.toast.import_cancelled'), {
+          kind: 'warning',
+          detail: t('scripts.import.result_cancelled_detail', { id: prev.id || prev.job_id || '?' }),
+          duration: 8000,
+        });
       } else if (prev.status === 'failed') {
         window.__apiToast?.(t('scripts.toast.import_fail'), { kind: 'danger', detail: detail || t('scripts.toast.unknown_error'), duration: 5000 });
       } else if (hasErr) {
@@ -2529,11 +2608,18 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
               <CSFormField label={t('scripts.import.field_rule')}>
                 <CSSelect selectedOption={{ value: ruleOpt.id, label: ruleLabel }}
                   options={SPLIT_RULES.map(r => ({ value: r.id, label: t(r.labelKey) }))}
-                  onChange={({ detail }) => setRule(detail.selectedOption.value)} />
+                  onChange={({ detail }) => {
+                    const nextRule = detail.selectedOption.value || "auto";
+                    if (nextRule !== rule) discardEstimate(true);
+                    setRule(nextRule);
+                  }} />
               </CSFormField>
               <div style={{ gridColumn: '1 / -1' }}>
                 <CSFormField label={t('scripts.import.field_custom_regex')} description={t('scripts.import.field_custom_regex_desc')}>
-                  <CSInput value={pattern} onChange={({ detail }) => setPattern(detail.value)}
+                  <CSInput value={pattern} onChange={({ detail }) => {
+                    if (detail.value !== pattern && estimate) discardEstimate(false);
+                    setPattern(detail.value);
+                  }}
                     disabled={rule !== 'custom'} placeholder={t('scripts.import.field_custom_regex_placeholder')} />
                 </CSFormField>
               </div>
@@ -2620,7 +2706,12 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
               value={selectedFile ? [selectedFile] : []}
               onChange={({ detail }) => {
                 const f = detail.value?.[0];
-                if (f) onPickFile(f); else setSelectedFile(null);
+                if (f) onPickFile(f);
+                else {
+                  discardEstimate(false);
+                  clearPendingImport();
+                  setSelectedFile(null);
+                }
               }}
               accept=".txt,.md"
               showFileSize
@@ -2675,7 +2766,7 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
                   <CSButton variant="primary" iconName="check" loading={importBusy} disabled={importBusy} onClick={startImport}>
                     {importBusy ? t('scripts.import.import_creating') : t('scripts.import.confirm_import_bg')}
                   </CSButton>
-                  <CSButton disabled={importBusy} onClick={() => setEstimate(null)}>{t('scripts.import.re_estimate')}</CSButton>
+                  <CSButton disabled={importBusy} onClick={() => discardEstimate(false)}>{t('scripts.import.re_estimate')}</CSButton>
                 </>
               )}
               {importBusy && (
@@ -2895,7 +2986,7 @@ function ImportJobResult({ job, onDismiss, onReuse }) {
       }
     >
       {ok && t('scripts.import.tok_consumed', { n: fmtN(totalTokens) })}
-      {cancelled && `job ${job.id}`}
+      {cancelled && t('scripts.import.result_cancelled_detail', { id: job.id })}
       {(failed || partial) && (
         <CSSpaceBetween size="xxs">
           <CSBox>{job.error || (errored.length ? `${errored.length} stage(s) failed` : `job ${job.id}`)}</CSBox>
