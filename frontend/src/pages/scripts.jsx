@@ -1444,7 +1444,26 @@ function ScriptsListView() {
         { id: 'go', header: '', cell: (s) => {
           if (isInternalPlaceholder(s)) return <CSButton variant="inline-link" iconName="status-pending" disabled>{t('scripts.my.play')}</CSButton>;
           const block = scriptPlayBlockReason(s, t);
-          return <CSButton variant="inline-link" iconName={block ? "status-pending" : "caret-right-filled"} disabled={busyId === s.id || !!block} onClick={() => onPlay(s)}>{block ? t('scripts.my.play_blocked') : t('scripts.my.play')}</CSButton>;
+          // 反馈#3:列表「开始」也改下拉——选存档继续 / 开新游戏,不再一键直进后台
+          const svs = platSaves.filter((x) => x.script_id === s.id);
+          return (
+            <CSButtonDropdown variant="normal" expandToViewport disabled={busyId === s.id || !!block}
+              items={[
+                ...(svs.length ? [{
+                  text: t('scripts.my.play_continue_group'),
+                  items: svs.map((sv) => ({ id: 'continue:' + sv.id, text: sv.title || ('#' + sv.id), iconName: 'caret-right-filled' })),
+                }] : []),
+                { id: 'new', text: t('scripts.my.play_new_game'), iconName: 'add-plus' },
+              ]}
+              onItemClick={({ detail }) => {
+                if (detail.id === 'new') { onNewGame(s); return; }
+                if (typeof detail.id === 'string' && detail.id.startsWith('continue:')) {
+                  const sv = svs.find((x) => String(x.id) === detail.id.slice('continue:'.length));
+                  if (sv) onContinueSave(sv);
+                }
+              }}
+            >{block ? t('scripts.my.play_blocked') : t('scripts.my.play')}</CSButtonDropdown>
+          );
         } },
       ]}
     />
