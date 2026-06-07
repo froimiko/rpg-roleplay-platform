@@ -797,6 +797,10 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
             "suggestions": self.suggestions(),
             # A1: 存档级模型覆盖，前端 ModelPicker 据此显示当前选中状态
             "session_model": dict(self.data.get("session_model") or {}),
+            # 酒馆模式:把 state.data["tavern"]（AI 角色卡快照 + persona 绑定 + system_prompt 等）
+            # 透到 /api/state 顶层,供 Tavern 前端读角色名/角色卡视图。普通 game 存档无此 key → 空 dict,
+            # 前端按 falsy 兜底,对 Game Console 零影响。
+            "tavern": copy.deepcopy(self.data.get("tavern") or {}),
         }}
 
     def suggestions(self) -> list[str]:

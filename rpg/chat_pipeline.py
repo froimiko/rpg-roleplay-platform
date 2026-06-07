@@ -28,6 +28,30 @@ from state import GameState, strip_json_state_ops, strip_meta_tool_preamble
 
 log = get_logger(__name__)
 
+
+# 酒馆 v2(R3/B4):tool_call/tool_result 作为 SSE 转发给前端做"可折叠后台工具流"。
+# 为避免淹没沉浸 + 控制 SSE 体积:args 摘要 ≤200 字符,result 片段 ≤300 字符。
+def _summarize_tool_args(args: Any, limit: int = 200) -> str:
+    try:
+        s = json.dumps(args, ensure_ascii=False, default=str)
+    except Exception:
+        s = str(args)
+    return s if len(s) <= limit else s[:limit] + "…"
+
+
+def _snippet_tool_result(result: Any, limit: int = 300) -> str:
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        s = result
+    else:
+        try:
+            s = json.dumps(result, ensure_ascii=False, default=str)
+        except Exception:
+            s = str(result)
+    return s if len(s) <= limit else s[:limit] + "…"
+
+
 # W1 容量优化: RPG_POSTPROC_MODE=async (默认) → GM 流完即入队 Phase 4, 不阻塞 worker。
 # RPG_POSTPROC_MODE=sync → 旧行为 (后处理阻塞主路径, 测试/debug 用)。
 _POSTPROC_MODE = os.environ.get("RPG_POSTPROC_MODE", "async").lower()
@@ -930,7 +954,25 @@ async def run_gm_phase(
         import secrets as _secrets
 
         from tools_dsl.chat_tool_router import build_tool_call_router, build_unified_tool_list
-        unified_tools = build_unified_tool_list(mcp_tools, origin="llm_chat")
+        # 酒馆模式(tavern_gm)隐藏锚点/剧本/战斗/模组类工具,保留 memory/关系/世界书 overlay
+        _gm_mode = None
+        _tavern_bound_script_id = None
+        try:
+            from context_providers.registry import resolve_content_pack
+            _gm_mode = (resolve_content_pack(state).get("gm_policy") or {}).get("mode")
+        except Exception:
+            _gm_mode = None
+        # 酒馆 v2(R2):绑定剧本后,重开剧本读工具(search_canon / lookup_* / get_*)。
+        try:
+            _tv = (getattr(state, "data", {}) or {}).get("tavern") or {}
+            _bsid = _tv.get("bound_script_id")
+            _tavern_bound_script_id = int(_bsid) if _bsid else None
+        except Exception:
+            _tavern_bound_script_id = None
+        unified_tools = build_unified_tool_list(
+            mcp_tools, origin="llm_chat", mode=_gm_mode,
+            bound_script_id=_tavern_bound_script_id,
+        )
         _gm_trace_id = f"gm-{_secrets.token_urlsafe(6)}"
         gm_tool_router = build_tool_call_router(
             user_id=int(api_user.get("id")) if api_user else 0,
@@ -1014,17 +1056,30 @@ async def run_gm_phase(
             # 不累加进 response、不写 history。前端用它显示思考流并重置 idle 计时。
             yield ("reasoning", {"text": event.get("text", "")})
         elif etype == "tool_call":
+            # R3/B4:小负载转发(tool 名 + args 摘要),供前端可折叠工具流;不淹没沉浸正文。
             yield ("tool_call", {
                 "server_id": event.get("server_id", ""),
                 "tool": event.get("tool", ""),
-                "arguments": event.get("arguments", {}),
+                "args_summary": _summarize_tool_args(event.get("arguments", {})),
             })
         elif etype == "tool_result":
+            # R3/B4:转发 ok + result 片段 + error 摘要(裁剪,控制 SSE 体积)。
             yield ("tool_result", {
+                "tool": event.get("tool", ""),
                 "ok": event.get("ok", False),
-                "result": event.get("result"),
-                "error": event.get("error"),
+                "result_snippet": _snippet_tool_result(event.get("result")),
+                "error": _snippet_tool_result(event.get("error"), 200) or None,
             })
+            # 酒馆铁律:agent 设好角色后,开场用角色卡的 first_mes **确定性贴出** —— 绝不让 LLM
+            # 现编开场(用户:不允许开局调用 llm;有 first_mes 就贴、没有就留空)。命中即丢弃本轮
+            # LLM 续写(含可能的前导寒暄),以 first_mes 作本轮唯一可见输出并停掉后续生成。
+            if _gm_mode == "tavern_gm" and event.get("tool") == "set_tavern_character" and event.get("ok"):
+                _fm = str(((getattr(state, "data", {}) or {}).get("tavern") or {}).get("first_mes") or "").strip()
+                response = _fm
+                if _fm:
+                    yield ("token", {"text": _fm})
+                _gm_stop.set()
+                break
         elif etype == "tool_error":
             yield ("tool_error", {
                 "error": event.get("error", ""),

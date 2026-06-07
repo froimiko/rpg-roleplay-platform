@@ -50,6 +50,11 @@ def require_auth_raw() -> str:
 def debug_ui() -> bool:
     return bool(os.getenv("RPG_DEBUG_UI"))
 
+def tiered_tools_enabled() -> bool:
+    """阶梯化工具加载:窗口外的工具不直接塞 schema,而是进「目录」由模型 load_tools 按需加载。
+    默认开;RPG_TIERED_TOOLS=0 关闭 → 退回旧的「前 N 个直接发、其余丢弃」截断行为。"""
+    return os.getenv("RPG_TIERED_TOOLS", "1") != "0"
+
 # ── 网络 ─────────────────────────────────────────────────────────────────
 def cors_origins() -> str | None:
     return os.getenv("RPG_CORS_ORIGINS")
