@@ -965,13 +965,44 @@ def _session_model_app_view(model_catalog: dict[str, Any], sess: tuple | None) -
         return None
 
 
+def _resolve_user_default_model_view(api_user: dict[str, Any] | None, model_catalog: dict[str, Any]) -> dict[str, Any] | None:
+    """新对话/未切档时的默认模型展示 —— 必须与 _get_gm 实际用的优先级链一致:
+    gm.api_id/gm.model_real_name 偏好 → 用户首个已配置模型(first_user_model)。
+
+    BUGFIX(新对话默认模型错用 gemini/opus):此前 _payload 直接用全局 selected_model(那是
+    **服务端**默认,常是用户没配 key 的 gemini/opus),而 _get_gm 真正生成时走 gm 偏好链 →
+    展示/发送的模型与实际可用模型不符,新开局默认落到用户没设的模型。返回 None 时调用方回退
+    全局 selected_model(仅作最后兜底)。"""
+    uid = int(api_user["id"]) if api_user and api_user.get("id") else None
+    if not uid:
+        return None
+    try:
+        from core.llm_backend import (
+            first_user_model as _fum,
+            resolve_preferred_api as _rpa,
+            resolve_preferred_model as _rpm,
+        )
+        _api = _rpa(uid, "gm.api_id")
+        _mdl = _rpm(uid, "gm.model_real_name")
+        if not (_api and _mdl):
+            _ud = _fum(uid)
+            if _ud:
+                _api, _mdl = _ud
+        if _api and _mdl:
+            return _session_model_app_view(model_catalog, (_mdl, _api))
+    except Exception:
+        pass
+    return None
+
+
 def _payload(api_user: dict[str, Any] | None = None) -> dict[str, Any]:
     state = _ensure_loaded(api_user, ensure_gm=False)
     # 安全:模型选择器走每用户视图(全局菜单 + 该用户私有 overlay),
     # 否则一个用户同步的 provider/模型会泄露进所有人的选择器。
     _uid = int(api_user["id"]) if api_user and api_user.get("id") else None
     model_catalog = load_catalog_for_user(_uid)
-    model = selected_model(model_catalog)
+    # 默认模型 = 用户 gm 偏好链(与 _get_gm 一致),回退全局 selected_model。
+    model = _resolve_user_default_model_view(api_user, model_catalog) or selected_model(model_catalog)
     # 修复(游戏内切模型显示回退默认):若当前存档设了 per-save session_model(游戏内 ModelPicker
     # 手动切换),app.* 必须反映它。否则 /api/state 永远回报全局默认 → 前端 Composer 的当前模型
     # 标签 + picker 高亮(selectedKey = app.api_id::app.model_real_name)永远显示默认,用户以为
