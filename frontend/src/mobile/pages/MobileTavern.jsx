@@ -479,41 +479,35 @@ function ImportSheet({ show, onClose, onDropCard, onPickFile, onJsonlFile, onCre
       <div className="sheet-title">新对话</div>
       <div className="sheet-sub">选一张酒馆角色卡开始,兼容 SillyTavern V2 / V3</div>
 
-      {/* 拖 / 选卡 */}
-      <button
-        className="tv-m-import-btn"
-        onClick={() => fileRef.current && fileRef.current.click()}
-      >
+      {/* 拖/选卡 —— 用 <label> 包裹 input 原生触发文件选择器:
+          手机浏览器对 display:none input 的 .click() 多会拦截,改 label 关联 + 视觉隐藏(非 display:none)。 */}
+      <label className="tv-m-import-btn" style={{ position: 'relative' }}>
         <span className="tv-m-import-ic"><Icon name="upload" size={20} /></span>
         <span className="tv-m-import-tx">
           <strong>导入角色卡</strong>
           <span>支持 .png(嵌入元数据) / .json / .webp</span>
         </span>
-      </button>
-      <input
-        ref={fileRef} type="file" accept=".png,.json,.webp"
-        style={{ display: 'none' }}
-        onChange={e => { const f = e.target.files && e.target.files[0]; if (f) { onClose(); onPickFile(f); } e.target.value = ''; }}
-      />
+        <input
+          ref={fileRef} type="file" accept=".png,.json,.webp"
+          style={{ position: 'absolute', width: 1, height: 1, opacity: 0, overflow: 'hidden', pointerEvents: 'none' }}
+          onChange={e => { const f = e.target.files && e.target.files[0]; if (f) { onClose(); onPickFile(f); } e.target.value = ''; }}
+        />
+      </label>
 
       {/* 导入聊天记录 JSONL */}
-      <button
-        className="tv-m-import-btn"
-        onClick={() => jsonlRef.current && jsonlRef.current.click()}
-        style={{ marginTop: 8 }}
-      >
+      <label className="tv-m-import-btn" style={{ marginTop: 8, position: 'relative' }}>
         <span className="tv-m-import-ic"><Icon name="download" size={20} /></span>
         <span className="tv-m-import-tx">
           <strong>导入聊天记录</strong>
           <span>SillyTavern .jsonl → 转成一段新对话</span>
         </span>
         <span className="tv-m-import-fmt">JSONL</span>
-      </button>
-      <input
-        ref={jsonlRef} type="file" accept=".jsonl,.json"
-        style={{ display: 'none' }}
-        onChange={e => { const f = e.target.files && e.target.files[0]; if (f) { onClose(); onJsonlFile(f); } e.target.value = ''; }}
-      />
+        <input
+          ref={jsonlRef} type="file" accept=".jsonl,.json"
+          style={{ position: 'absolute', width: 1, height: 1, opacity: 0, overflow: 'hidden', pointerEvents: 'none' }}
+          onChange={e => { const f = e.target.files && e.target.files[0]; if (f) { onClose(); onJsonlFile(f); } e.target.value = ''; }}
+        />
+      </label>
     </BottomSheet>
   );
 }

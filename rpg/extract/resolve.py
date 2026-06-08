@@ -50,6 +50,16 @@ def _cosine(a, b) -> float:
     return num / (na * nb) if na and nb else 0.0
 
 
+def _clean_name(s: str) -> str:
+    """清洗 LLM 抽出的实体名:去掉误带的所有格/助词尾,避免"博士"与"博士的"被当成两个实体。
+    保守:只去英文 's 与中文尾随"的"(角色名不会以"的"结尾;"博士的XX"里误抽出"博士的")。"""
+    s = (s or "").strip()
+    s = re.sub(r"['’]s$", "", s)        # 英文所有格 's / ’s
+    if len(s) > 1 and s.endswith("的"):       # 中文所有格尾"的"
+        s = s[:-1].strip()
+    return s
+
+
 def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict]:
     """从逐章 ChapterExtract 汇总实体提及。键=(归一名, type)。
 
@@ -61,9 +71,9 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
     acc: dict[tuple[str, str], dict] = {}
     for ex in chapter_extracts:
         for e in getattr(ex, "entities", []):
-            full = (e.get("full_name") or "").strip()
-            cg = (e.get("canonical_guess") or "").strip()
-            sfc = (e.get("surface") or "").strip()
+            full = _clean_name(e.get("full_name"))
+            cg = _clean_name(e.get("canonical_guess"))
+            sfc = _clean_name(e.get("surface"))
             # 选 name 优先级:full_name > canonical_guess > surface,且取最长(欧美名 "Mulelia Zazbarum" 胜 "Mulelia")
             name = max([n for n in (full, cg, sfc) if n], key=len, default="")
             typ = (e.get("type") or "character").strip()
@@ -89,8 +99,10 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
                 if s:
                     rec["surfaces"].add(s)
             for a in (e.get("aliases_in_chapter") or []):
-                if isinstance(a, str) and a.strip():
-                    rec["surfaces"].add(a.strip())
+                if isinstance(a, str):
+                    ca = _clean_name(a)
+                    if ca:
+                        rec["surfaces"].add(ca)
             # v28: full_name / identity / background 取最长(信息量更大的胜出)
             if full and len(full) > len(rec["full_name"]):
                 rec["full_name"] = full

@@ -1581,3 +1581,13 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 /* P5 新游戏向导 spin */
 @keyframes mk-spin { to { transform: rotate(360deg); } }
 .m-root .spin { display:inline-block; animation: mk-spin .6s linear infinite; }
+
+/* 文件选择器修复:手机浏览器对 display:none 的 input[type=file] 拦截 .click()。
+   全局把移动端的文件 input 改为"渲染但视觉隐藏"(!important 覆盖内联 display:none),
+   这样按钮 onClick→ref.click() / label 关联 在 iOS/Android 都能正常弹出文件选择器。 */
+.m-root input[type="file"] {
+  position: absolute !important;
+  width: 1px !important; height: 1px !important;
+  opacity: 0 !important; display: block !important;
+  overflow: hidden; pointer-events: none; z-index: -1;
+}
