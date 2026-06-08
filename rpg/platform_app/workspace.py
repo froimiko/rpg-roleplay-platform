@@ -694,7 +694,11 @@ def _build_initial_snapshot(
             # 就是这个人。名字/身份用原著人物(罗辑),原角色卡名作为「灵魂本名」记入 display_name(罗辑(阿米娅))
             # + aliases,供 UI 显示与提到原卡名时映射回玩家。普通 custom/ai 身份(只是套在卡上的社会定位)
             # 仍保留角色卡名,不改原设计。
-            if id_source == "npc_card" and id_name_label:
+            # 仅「灵魂穿越/双魂同体」时玩家占据/共体该原住民肉身 → 玩家名 = 该原住民(罗辑)。
+            # 「整体穿越」无本地身份、「本世界人」你本就是所选角色卡(阿米娅)→ 都不改名(身份卡只叠加
+            # role/background),否则会出现「阿米娅又叫罗辑」的双重身份(用户反馈)。
+            _po_norm = "soul" if str(player_origin or "").lower() == "isekai" else str(player_origin or "").lower()
+            if id_source == "npc_card" and id_name_label and _po_norm in ("soul", "dual"):
                 _card_name = str(player.get("name") or "").strip()
                 player["name"] = id_name_label  # 罗辑
                 if id_role:

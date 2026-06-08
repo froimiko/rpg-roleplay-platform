@@ -1631,10 +1631,23 @@ function IdentityStep({ scriptId, birthpoint, pickedCard, allRoleOptions, identi
     setIdentityKnown(false);
   };
 
-  // playerOrigin 跟身份卡正交:切换时只同步 identity.player_origin 标记,
-  // 不动 role/background 字段(身份卡是 role overlay,穿越者是 meta 设定)
+  // 身份卡来源随出身条件化(消除矛盾组合):
+  //  灵魂穿越=占据某原住民肉身→全开;整体穿越=彻底外来者无本地身份→仅不挂;
+  //  双魂同体=须有共体的原住民本体→不能不挂;本世界人=你就是该角色→不能再选另一个原著人物。
+  const ALLOWED_SOURCES = {
+    soul: ['none', 'npc', 'ai', 'manual'],
+    body: ['none'],
+    dual: ['npc', 'ai', 'manual'],
+    native: ['none', 'ai', 'manual'],
+  };
+  const allowedSources = ALLOWED_SOURCES[playerOrigin] || ['none', 'npc', 'ai', 'manual'];
+
+  // 切出身:若当前身份来源与新出身不兼容,重置到首个允许来源(并清掉已选身份);否则只同步标记。
   React.useEffect(() => {
-    if (identity && identity.player_origin !== playerOrigin) {
+    if (!allowedSources.includes(identitySource)) {
+      clearIdentity();
+      setIdentitySource(allowedSources[0]);
+    } else if (identity && identity.player_origin !== playerOrigin) {
       setIdentity({ ...identity, player_origin: playerOrigin });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1728,10 +1741,10 @@ function IdentityStep({ scriptId, birthpoint, pickedCard, allRoleOptions, identi
       <div key="id-source" style={{ ...panel, display: 'grid', gap: 12 }}>
         <div style={{ display: 'grid', gap: 4 }}>
           <span style={{ ...labelEyebrow }}>{t('saves.identity.step2')} · {t('saves.identity.id_section_label')}</span>
-          <span style={{ fontSize: 12, color: 'var(--muted, #968f85)', lineHeight: 1.55 }}>{t('saves.identity.id_section_hint', { name: pickedName })}</span>
+          <span style={{ fontSize: 12, color: 'var(--muted, #968f85)', lineHeight: 1.55 }}>{t(`saves.identity.id_section_hint_${playerOrigin}`, { name: pickedName, defaultValue: t('saves.identity.id_section_hint', { name: pickedName }) })}</span>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }} role="radiogroup" aria-label={t('saves.identity.id_section_label')}>
-          {[['none', 'src_none'], ['npc', 'src_npc'], ['ai', 'src_ai'], ['manual', 'src_manual']].map(([sid, lk]) => {
+          {[['none', 'src_none'], ['npc', 'src_npc'], ['ai', 'src_ai'], ['manual', 'src_manual']].filter(([sid]) => allowedSources.includes(sid)).map(([sid, lk]) => {
             const sel = identitySource === sid;
             return (
               <button key={sid} type="button" role="radio" aria-checked={sel} onClick={() => chooseSource(sid)}
