@@ -1596,6 +1596,17 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "alter table game_saves add constraint chk_game_save_needs_script check (save_kind <> 'game' or script_id is not null)",
         "create index if not exists idx_game_saves_kind on game_saves(user_id, save_kind, archived_at, updated_at desc)",
     ]),
+    (66, "branch_commit_turn_index_backfill", [
+        # BUGFIX(分支回退多删一轮)的存量回填:历史上 seed_tree 用顺序计数器给 round commit 的
+        # turn_index 编号(1,2,3),与全系统其余处(snapshot_for_history / record_runtime_turn /
+        # resolve_commit_id_by_message)的 `history_len//2` 约定不一致 —— 当 history 以"无玩家输入的
+        # 开场"(酒馆 first_mes / 导入存档开场)起手时,开场被记成 turn_index=1 而非 0,其后回合整体 +1,
+        # 前端按 msg_index//2 回退会多截一轮。seed.py 已改用 history_len//2;此处把存量 commit 对齐。
+        # 幂等:仅更新「turn_index 与快照 history 长度//2 不符」的 commit;jsonb_typeof 守 array 防脏快照报错。
+        "update branch_commits set turn_index = jsonb_array_length(state_snapshot->'history')/2 "
+        "where jsonb_typeof(state_snapshot->'history') = 'array' "
+        "and turn_index <> (jsonb_array_length(state_snapshot->'history')/2)",
+    ]),
 ]
 
 
