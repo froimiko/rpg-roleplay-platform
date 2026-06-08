@@ -394,9 +394,12 @@ def _startup_auth_banner() -> None:
         log.info(f"[启动] 部署模式={mode} 鉴权=不强制 (源={source}) — 仅适用于单用户本地使用")
 
 
-def _require_api_user(request: Request, *, admin: bool = False) -> dict[str, Any] | None:
+def _require_api_user(request: Request, *, admin: bool = False, strict_admin: bool = False) -> dict[str, Any] | None:
     user = platform_current_user(request)
-    if not _api_auth_required():
+    # SEC(C-1): self-hosted/local 模式(_api_auth_required()==False)默认对所有请求短路放行,
+    # 但 MCP 注册/启动这类「= 以服务进程身份执行任意代码」的端点必须在 local 模式也强制 admin,
+    # 否则被探测到本地端口即未认证 RCE。strict_admin=True 关掉该短路。
+    if not _api_auth_required() and not (strict_admin and admin):
         return user
     if not user:
         raise HTTPException(status_code=401, detail="需要登录")

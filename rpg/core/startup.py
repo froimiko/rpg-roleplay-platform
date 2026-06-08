@@ -280,8 +280,11 @@ def _build_csp(dev: bool) -> str:
             "api.minimax.chat hunyuan.tencentcloudapi.com"
         )
     else:
+        # SEC(M-15): 原 prod connect-src 含裸 `https:` 等价 https://*:* → 任意 XSS 后可向任意
+        # HTTPS 主机外泄。去掉通配,仅留 'self' + wss(SSE/WS)+ 已知 AI/分析主机显式白名单。
+        # (浏览器不直连 LLM provider,后端代理;LLM base_url 仅在设置页作占位文本展示。)
         connect_src = (
-            "'self' wss: https: "
+            "'self' wss: "
             "api.anthropic.com api.openai.com api.deepseek.com "
             "dashscope.aliyuncs.com ark.cn-beijing.volces.com "
             "api.minimax.chat hunyuan.tencentcloudapi.com"

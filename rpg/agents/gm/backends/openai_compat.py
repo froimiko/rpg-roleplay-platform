@@ -71,6 +71,11 @@ class _OpenAICompatBackend:
         kwargs: dict[str, Any] = {
             "api_key": key,
             "timeout": httpx.Timeout(_read_to, connect=10.0),
+            # SEC(H-5): OpenAI SDK 默认 follow_redirects=True → base_url_override(admin/local 可设)
+            # 配合 301 可把携 api_key 的请求重定向到内网/元数据。自带不跟随重定向的 http_client。
+            "http_client": httpx.Client(
+                timeout=httpx.Timeout(_read_to, connect=10.0), follow_redirects=False,
+            ),
         }
         if effective_base:
             kwargs["base_url"] = effective_base

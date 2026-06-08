@@ -228,6 +228,13 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
     global _last_openai_embed_error
     effective_url = (base_url.rstrip("/") if base_url else "https://api.openai.com/v1") + "/embeddings"
 
+    # SEC(H-4): 默认 opener 跟随 ≤10 次重定向 → 即便 base_url 存入时过了 _validate_base_url,
+    # 攻击者端点也能 301 跳到 169.254.169.254 / 内网,且携 Authorization。禁止跟随重定向。
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+    _opener = urllib.request.build_opener(_NoRedirect())
+
     def _post(with_dim: bool) -> list[list[float]]:
         body = {"model": model, "input": texts, "encoding_format": "float"}
         if with_dim and EMBED_DIM:
@@ -237,7 +244,7 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with _opener.open(req, timeout=60) as resp:
             data = _json.loads(resp.read())
         items = sorted(data["data"], key=lambda x: x["index"])
         return [item["embedding"] for item in items]
