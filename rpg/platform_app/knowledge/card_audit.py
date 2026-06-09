@@ -81,24 +81,30 @@ def _build_user_prompt(title: str, cards: list[dict]) -> str:
 
 
 def _resolve_audit_model(user_id: int, api_id: str, model: str) -> tuple[str, str]:
-    """优先用前端当场传入的 (api_id, model);否则读 card_audit.* 偏好;再否则回退提取器默认。"""
+    """解析本次复核用的模型 —— 复用程序既有的模型解析设计,**不硬编码任何模型**:
+      1. 前端当场传入的 (api_id, model)(用户在公用选择器里选的);
+      2. card_audit.* 偏好(用户在选择器里改过会写这);
+      3. 用户的【默认模型】—— first_user_model 已内含 gm.* 偏好 + BYOK(= 设置里设的默认模型)。
+    三步都拿不到 → 返回空,由调用方的凭证预检转 credentials_required 引导用户去配,绝不回落到
+    某个写死的便宜档。
+    """
     from platform_app import import_pipeline
+    from core.llm_backend import (
+        first_user_model,
+        resolve_preferred_api,
+        resolve_preferred_model,
+    )
     api_id = (api_id or "").strip()
     model = (model or "").strip()
-    if not api_id or not model:
-        try:
-            from agents._harness import resolve_api_and_model
-            a2, m2 = resolve_api_and_model(
-                user_id, "card_audit.api_id", "card_audit.model_real_name",
-                default_api="", default_model="",
-            )
-            api_id = api_id or (a2 or "")
-            model = model or (m2 or "")
-        except Exception:
-            pass
-    if not api_id or not model:
-        api_id, model = import_pipeline._resolve_extractor_llm(user_id)
-    return import_pipeline._normalize_llm_api_id(api_id), model
+    if not (api_id and model):
+        api_id = api_id or (resolve_preferred_api(user_id, "card_audit.api_id") or "")
+        model = model or (resolve_preferred_model(user_id, "card_audit.model_real_name") or "")
+    if not (api_id and model):
+        fu = first_user_model(user_id)  # gm.* 偏好优先 + 仅 BYOK 命中 = 用户的默认模型
+        if fu:
+            api_id = api_id or fu[0]
+            model = model or fu[1]
+    return import_pipeline._normalize_llm_api_id(api_id) if api_id else "", model
 
 
 def audit_character_cards(user_id: int, script_id: int, api_id: str = "", model: str = "",

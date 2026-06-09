@@ -1001,11 +1001,10 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
             </CSBox>
             <AgentModelPicker
               prefPrefix="card_audit"
+              fallbackPrefix="gm"
               variant="bare"
               header={undefined}
-              description={t('scripts.audit.model_desc', { defaultValue: '选择本次复核用的模型(默认你的常用模型,可改;复核质量越好的模型越准)。' })}
-              defaultModel="deepseek-v4-flash"
-              persistOnMount
+              description={t('scripts.audit.model_desc', { defaultValue: '选择本次复核用的模型(默认你设置的默认模型,可改;复核质量越好的模型越准)。' })}
               configHash="settings-models"
               onChange={(api_id, model) => setAuditSel({ api_id, model })}
             />
