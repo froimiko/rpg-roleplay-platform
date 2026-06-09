@@ -622,6 +622,8 @@
       scriptUpsert: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards", body),
       scriptDelete: (sid, cid) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid + "/delete", {}),
       scriptEnabled: (sid, cid, on) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid + "/enabled", { enabled: !!on }),
+      // 手动指定剧本主角(清其它卡主角标记 + 锁定不被重新提取覆盖)。仅 owner。
+      scriptSetProtagonist: (sid, cid) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid + "/protagonist", {}),
     },
 
     // ---------- Chat history (SillyTavern JSONL import) ----------

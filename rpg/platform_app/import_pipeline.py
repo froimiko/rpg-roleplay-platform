@@ -1865,25 +1865,38 @@ def _rerank_cards_by_canon_importance(script_id: int) -> None:
     """
     try:
         with connect() as db:
+            # 人工锁定的主角(metadata.protagonist_locked=true)优先于 canon importance:
+            # 用户手动纠正过主角后,重新提取不能再按 LLM importance 把它覆盖回去
+            # (见 character_cards.set_character_card_protagonist)。有锁时:① 锁定卡完全
+            # 不动(WHERE 排除),② 其它 canon 卡一律 is_protagonist=false 且不抢 110 位。
+            has_lock = bool(db.execute(
+                "select 1 from character_cards "
+                "where script_id=%s and card_type='npc' "
+                "and coalesce((metadata->>'protagonist_locked')::boolean, false) limit 1",
+                (script_id,),
+            ).fetchone())
             db.execute(
                 """
                 with imp as (
                   select name, importance,
                          row_number() over (order by importance desc) as rk
                   from kb_canon_entities
-                  where script_id=%s and type='character'
+                  where script_id=%(sid)s and type='character'
                 )
                 update character_cards cc
-                set priority = case when imp.rk = 1 then 110
+                set priority = case when %(has_lock)s then greatest(50, 110 - imp.rk)
+                                    when imp.rk = 1 then 110
                                     else greatest(50, 110 - imp.rk) end,
                     metadata = cc.metadata || jsonb_build_object(
-                        'is_protagonist', imp.rk = 1,
+                        'is_protagonist', case when %(has_lock)s then false else imp.rk = 1 end,
                         'canon_importance', imp.importance,
                         'canon_rank', imp.rk
                     )
-                from imp where cc.script_id=%s and cc.name = imp.name
+                from imp
+                where cc.script_id=%(sid)s and cc.name = imp.name
+                  and coalesce((cc.metadata->>'protagonist_locked')::boolean, false) = false
                 """,
-                (script_id, script_id),
+                {"sid": script_id, "has_lock": has_lock},
             )
     except Exception as exc:
         import logging as _logging

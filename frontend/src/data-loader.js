@@ -173,6 +173,10 @@ function normalizeScript(s) {
     updated_at: fmtAgo(s.updated_at) || s.updated_at_human || "—",
     is_public: !!s.is_public,
     clone_count: s.clone_count || 0,
+    // owner 判定字段必须透传(原来只在 _raw 里 → ScriptDetailPanel 的 s.owner_id===currentUserId
+    // 恒 undefined===id → isOwner 恒 false,作者改不了自己剧本的叙事风格/分享模式)。
+    owner_id: s.owner_id,
+    is_subscribed: !!s.is_subscribed,
     _raw: s,
   };
 }
@@ -319,7 +323,15 @@ async function bootstrap() {
   window.MOCK_PLATFORM = platform;
   window.MOCK_STATE = state;
   // 让 mount 脚本可同步读到登录态（不必 await 整个 ready Promise）
-  window.RPG_AUTH = { authed, online: true };
+  // owner 判定(剧本级叙事风格/分享模式/版本回滚等"仅作者可写"的 UI)依赖 RPG_AUTH.user_id,
+  // 历史上这里只写 {authed,online} → user_id 恒 undefined → currentUserId 恒 null →
+  // isOwner 对作者本人也恒 false(实测:剧本作者改不了自己剧本的叙事风格)。补齐 user_id + user。
+  window.RPG_AUTH = {
+    authed,
+    online: true,
+    user_id: (authed && platform && platform.user && platform.user.id != null) ? platform.user.id : null,
+    user: (authed && platform) ? platform.user : null,
+  };
   // task 45：未登录 / Login 页除外的所有页面都给横幅
   if (!authed && !/Login\.html/.test(location.pathname)) {
     injectDemoBanner();
@@ -338,7 +350,15 @@ window.__refreshPlatform = async function () {
     const [{ platform, authed }, state] = await Promise.all([hydratePlatform(), hydrateGameState()]);
     window.MOCK_PLATFORM = platform;
     window.MOCK_STATE = state;
-    window.RPG_AUTH = { authed, online: true };
+    // owner 判定(剧本级叙事风格/分享模式/版本回滚等"仅作者可写"的 UI)依赖 RPG_AUTH.user_id,
+  // 历史上这里只写 {authed,online} → user_id 恒 undefined → currentUserId 恒 null →
+  // isOwner 对作者本人也恒 false(实测:剧本作者改不了自己剧本的叙事风格)。补齐 user_id + user。
+  window.RPG_AUTH = {
+    authed,
+    online: true,
+    user_id: (authed && platform && platform.user && platform.user.id != null) ? platform.user.id : null,
+    user: (authed && platform) ? platform.user : null,
+  };
     window.dispatchEvent(new CustomEvent("rpg-data-ready", { detail: { platform, state, authed } }));
     // 顶栏「刷新」按钮调本函数时,各 page 走自己的 reload(剧本/存档/角色卡 useEffect
     // 监听这些事件触发重拉数据)。否则 platform 元数据更新了,但 ScriptsPage 列表

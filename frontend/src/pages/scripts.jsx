@@ -527,6 +527,22 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
 
   const isOwner = currentUserId && s.owner_id === currentUserId;
 
+  // 手动把某 NPC 卡设为主角(AI canon importance 误判时纠正)。设完重拉列表刷新「主角」徽标。
+  const [protagBusy, setProtagBusy] = useStatePL(null); // 正在设置的 card id
+  const onSetProtagonist = async (c) => {
+    if (!c || !c.id) return;
+    setProtagBusy(c.id);
+    try {
+      await window.api.cards.scriptSetProtagonist(s.id, c.id);
+      window.__apiToast?.(t('scripts.toast.protagonist_set', { name: c.name || 'NPC', defaultValue: `已将「${c.name || 'NPC'}」设为主角` }), { kind: 'ok' });
+      setNpc(null); // 触发 NPC 列表重新拉取
+    } catch (e) {
+      window.__apiToast?.(t('scripts.toast.protagonist_fail', { defaultValue: '设为主角失败' }), { kind: 'danger', detail: e?.message });
+    } finally {
+      setProtagBusy(null);
+    }
+  };
+
   const doFork = async () => {
     setForkBusy(true);
     try {
@@ -835,7 +851,16 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
                   <CSBox color="text-body-secondary" fontSize="body-s">{cardSnippet(c, 200) || '—'}</CSBox>
                 ) },
                 { id: 'act', content: (c) => (
-                  <CSButton variant="inline-link" iconName="edit" onClick={() => setNpcEdit({ card: c, isNew: false })}>{t('scripts.editor.view_edit')}</CSButton>
+                  <CSSpaceBetween direction="horizontal" size="xs">
+                    <CSButton variant="inline-link" iconName="edit" onClick={() => setNpcEdit({ card: c, isNew: false })}>{t('scripts.editor.view_edit')}</CSButton>
+                    {isOwner && !(c.metadata && c.metadata.is_protagonist) && (
+                      <CSButton variant="inline-link" iconName="user-profile"
+                        loading={protagBusy === c.id}
+                        onClick={() => onSetProtagonist(c)}>
+                        {t('scripts.editor.set_protagonist', { defaultValue: '设为主角' })}
+                      </CSButton>
+                    )}
+                  </CSSpaceBetween>
                 ) },
               ],
             }}
