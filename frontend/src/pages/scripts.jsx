@@ -287,14 +287,14 @@ function VersionHistoryDrawer({ script, currentUserId, onClose }) {
 
   const onRollback = async (commit) => {
     if (!await window.__confirm({
-      title: t('scripts.version.rollback_confirm', { id: commit.id?.slice(0, 8) }),
+      title: t('scripts.version.rollback_confirm', { id: String(commit.id ?? '').slice(0, 8) }),
       danger: true,
       confirmText: t('scripts.version.rollback_btn'),
     })) return;
     setRollingBack(commit.id);
     try {
       await window.api.scripts.checkout(script.id, commit.id);
-      window.__apiToast?.(t('scripts.version.rollback_ok', { id: commit.id?.slice(0, 8) }), { kind: 'ok' });
+      window.__apiToast?.(t('scripts.version.rollback_ok', { id: String(commit.id ?? '').slice(0, 8) }), { kind: 'ok' });
       try { window.dispatchEvent(new CustomEvent('rpg-scripts-updated')); } catch (_) {}
       onClose && onClose();
     } catch (e) {
@@ -342,7 +342,7 @@ function VersionHistoryDrawer({ script, currentUserId, onClose }) {
               id: 'commit', header: t('scripts.version.col_commit'), width: 110,
               cell: (c) => (
                 <CSSpaceBetween direction="horizontal" size="xxs" alignItems="center">
-                  <span className="mono" style={{ fontSize: 12 }}>{(c.id || '').slice(0, 8)}</span>
+                  <span className="mono" style={{ fontSize: 12 }}>{String(c.id || '').slice(0, 8)}</span>
                   {script.head_commit_id && c.id === script.head_commit_id && (
                     <CSBadge color="green">{t('scripts.version.badge_current')}</CSBadge>
                   )}
