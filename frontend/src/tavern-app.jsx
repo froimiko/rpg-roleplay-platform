@@ -312,6 +312,36 @@ export function ToolCallBlock({ ops }) {
   );
 }
 
+/* ── 思考流折叠块(reasoning)─────────────────────────────────────────
+ * 与正文(NarrativeBlock)上下分区共存,绝不互斥:正文永远以正常散文样式渲染,
+ * 思考流单独折叠成一行(默认折叠,标签「思考过程」),展开看完整推理文本。
+ * thinking=true(本轮 content 尚未到达)时显示「思考中…」+ spinner;一旦正文开始
+ * 到达就把 spinner 收掉、退回可折叠条。流结束(streaming=false)绝不再显示 spinner。
+ * 复用 mobile ThinkingBlock 的同构形态(分区共存),非 NarrativeBlock 的互斥旧逻辑。 */
+export function TavernThinkingBlock({ text, thinking }) {
+  const [open, setOpen] = useState(false);
+  const t = (text == null ? '' : String(text));
+  if (!t.trim() && !thinking) return null;
+  return (
+    <div className={`tvp-thinking${open ? ' open' : ''}`}>
+      <button
+        type="button"
+        className="tvp-thinking-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {thinking
+          ? <span className="gc-spinner spin" aria-hidden="true" />
+          : <Icon name={open ? 'chevron_down' : 'chevron_right'} size={11} />}
+        <span className="tvp-thinking-label">{thinking ? '思考中…' : '思考过程'}</span>
+      </button>
+      {open && t.trim() && (
+        <div className="tvp-thinking-body">{t}</div>
+      )}
+    </div>
+  );
+}
+
 export function TavernChatArea({ history, running, saveId, charName, charInitial, personaName, hasError, errorMsg, onRetry, lastMeta, elapsedLabel }) {
   const ref = useRef(null);
   const atBottomRef = useRef(true);
@@ -351,15 +381,25 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
           const commitId = m && (m.commit_id || m.node_id);
           if (m.role === 'assistant') {
             const toolOps = m && m._toolOps;
+            const isStreaming = !m.streaming_done && i === total - 1 && running;
+            const hasContent = !!(m.content && String(m.content).trim());
+            // 思考流是独立可折叠块,与正文分区共存(绝不互斥)。
+            // 「思考中…」spinner 只在:本条仍在流式 && 正文还没到 时显示;
+            // 一旦正文到达或流结束,退回静态「思考过程」折叠条(无 spinner)。
+            const thinkingSpinner = isStreaming && !hasContent;
             return (
               <React.Fragment key={`a-${i}`}>
                 {Array.isArray(toolOps) && toolOps.length > 0 && <ToolCallBlock ops={toolOps} />}
+                {(m._thinking || thinkingSpinner) && (
+                  <TavernThinkingBlock text={m._thinking} thinking={thinkingSpinner} />
+                )}
+                {/* 正文永远走正常散文样式(NarrativeBlock),不再把整条消息渲染成思考气泡。
+                    不传 thinking → 关掉 NarrativeBlock 的互斥思考分支。 */}
                 <NarrativeBlock
                   text={m.content} ts={m.ts}
                   msgIndex={i} saveId={saveId} commitId={commitId}
-                  thinking={m._thinking}
                   hideMeta
-                  streaming={!m.streaming_done && i === total - 1 && running}
+                  streaming={isStreaming}
                   meta={i === total - 1 ? lastMeta : null}
                 />
               </React.Fragment>
