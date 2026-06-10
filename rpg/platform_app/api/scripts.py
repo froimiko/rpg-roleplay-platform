@@ -975,7 +975,7 @@ async def api_public_scripts(q: str | None = None, limit: int = 30, offset: int 
         rows = db.execute(
             f"""
             SELECT s.id, s.title, s.description, s.chapter_count, s.word_count,
-                   s.clone_count, s.published_at, s.owner_id,
+                   s.clone_count, s.published_at, s.cover_image_url, s.owner_id,
                    u.display_name AS author, u.username AS author_username
             FROM scripts s JOIN users u ON u.id = s.owner_id
             WHERE {where}
@@ -1000,7 +1000,8 @@ async def api_public_script_detail(script_id: int, user=Depends(require_user)):
         row = db.execute(
             """
             SELECT s.id, s.title, s.description, s.chapter_count, s.word_count,
-                   s.clone_count, s.published_at, s.content_fingerprint, s.owner_id,
+                   s.clone_count, s.published_at, s.content_fingerprint, s.cover_image_url,
+                   s.owner_id,
                    u.display_name AS author, u.username AS author_username
             FROM scripts s JOIN users u ON u.id = s.owner_id
             WHERE s.id = %s AND s.is_public

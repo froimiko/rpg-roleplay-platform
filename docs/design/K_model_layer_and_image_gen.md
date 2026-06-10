@@ -100,15 +100,62 @@
 - 用户头像 / 角色卡头像 / 角色卡立绘（`avatar_path` 透传）。
 - 剧本封面：`scripts` 加 `cover_image_url` 列 + 库列表/详情两视图渲染。
 
+## Phase 2 实施契约（细 · 子代理按此执行）
+
+### 共享接口
+- **生图→附着目标**：`POST /api/images/generate` body 加可选 `attach:{type,id}`，type ∈ `user_avatar|card_avatar|script_cover`。worker `store_image` 完成后按 type 把 url 写目标(**ownership 校验**:card/script 必属该 user)：`character_cards.avatar_path`(card_avatar,id=card_id) / `users.avatar_url`(user_avatar,无 id) / `scripts.cover_image_url`(script_cover,id=script_id)。attach 透传进 `enqueue_image_generation` 的 payload，worker 末尾执行。
+- **状态查询**：`GET /api/images/{id}` 返 `{id,status,url,error,kind}`，给前端 modal 轮询(每 2s 至 done/failed)。
+- `scripts` 加 `cover_image_url text not null default ''`(migration **v69**)；script 列表/详情 API DTO 带出该字段(现有不带则 A 补)。
+- 前端 `AvatarImg`：props `{src,name,size,shape,className}`，src 有值渲 `<img>`(onError 回退首字母)，否则首字母 div(复用现有 `.pl-card-avatar`/`gc-msg-avatar`/`tv-chat-avatar` 样式，className 传入)。
+- 前端 `GenerateImageModal`：props `{open,onClose,kind,attach,defaultPrompt,onDone}`，内含 `<AgentModelPicker prefPrefix="image_gen" fallbackPrefix="gm" capabilityFilter="image_gen">` + prompt textarea + 生成按钮 → `window.api.images.generate({prompt,kind,api_id,model,attach})` → 轮询 `GET /api/images/{id}` 至 done → `onDone(url)`;`credentials_required` → 提示去配 key(复用现有范式)。
+
+### 文件归属（3 路并发互斥）
+- **P2-A backend**：`migrations.py`(v69 scripts.cover_image_url) + `image_jobs.py`(payload 收 attach + worker done 后写目标+ownership) + `platform_app/api/images.py`(generate 收 attach 透传 + 新增 `GET /api/images/{id}`)。script DTO 若不带 cover 字段,在其所在 api 文件补(只读取/补该字段,别动他人逻辑)。
+- **P2-B frontend-components**：新 `frontend/src/components/AvatarImg.jsx` + 新 `frontend/src/components/GenerateImageModal.jsx` + `frontend/src/api-client.js`(加 `api.images.generate(body)` / `api.images.get(id)`)。
+- **P2-C frontend-surfaces**：`frontend/src/pages/cards.jsx`(卡头像/立绘→AvatarImg + "AI 生成头像"按钮 attach card_avatar) + `frontend/src/platform-app.jsx`(用户头像→AvatarImg + "AI 生成"按钮 attach user_avatar) + `frontend/src/pages/scripts.jsx`(封面→AvatarImg + "生成封面"按钮 list&detail attach script_cover)。用 B 的组件(按上述 props),别自造。
+
 ## Phase 3 — 即时生图（依赖 Phase 1）
 - 酒馆聊天 + 游戏消息流：`NarrativeBlock` 支持图片块；composer 生图按钮。
 - 配额 / 保留策略（高频产图防撑盘）；OSS 接口在此前需就绪或同步上。
+
+## Phase 3 实施契约（细 · 子代理按此执行）
+
+### 共享接口
+- `ai_images` 加 `save_id text`(nullable)(migration **v70**) + 索引 `(user_id, save_id, created_at desc)`。`create_image_record` 加 `save_id` 参数；`enqueue_image_generation` 加 `save_id`，透传 payload；worker 经 create_image_record 落库。
+- **每日配额(确定性)**：`enqueue_image_generation` 起点查该 user 近 24h `ai_images` 行数(非 failed)，≥ `RPG_IMAGE_DAILY_CAP`(env,默认 50) 则**不入队**，返回 `{error:"quota_exceeded", status:"failed"}`(generate 端点/工具据此回报)。
+- **list 端点**：`GET /api/images/list?save_id=X` → owner 校验 → `[{id,url,kind,prompt,status,created_at}]`(按 created_at)。
+- `generate_image` 工具 executor 把 save 级 `save_id`(dispatcher 注入)透传给 enqueue；`POST /api/images/generate` body 收可选 `save_id`(composer 传)。
+- `GenerateImageModal` 加可选 prop `saveId`,并进 generate body。
+- SSE：worker 已发 `topic='image' op='ready' {image_id,url,kind}`(Phase 1)。前端订阅,对当前 save 追加图片块。
+- 保留策略：提供 `cleanup_old_chat_images(days)` 函数(删 kind in chat/game 且超 N 天的 ai_images + 本地文件);**本期只提供函数,调度(worker 定时/cron)留待后续,在报告里标注**。
+
+### 文件归属（3 路并发互斥）
+- **P3-A backend**：`migrations.py`(v70) + `image_jobs.py`(enqueue 加 save_id+quota) + `platform_app/api/images.py`(generate 收 save_id + `GET /api/images/list` + 配额错误回报) + `platform_app/api/images.py` 里加 `cleanup_old_chat_images` + `tools_dsl/command_tools_image.py`(executor 透传 save_id)。
+- **P3-B frontend-composer**：`frontend/src/game-composer.jsx`(加"生图"按钮→`GenerateImageModal kind saveId`) + `frontend/src/components/GenerateImageModal.jsx`(加 saveId prop 进 body) + `frontend/src/api-client.js`(加 `api.images.list(saveId)`)。
+- **P3-C frontend-render**：`frontend/src/game-app.jsx`(ChatArea 末尾渲染本 save 生成图块:挂载时 `api.images.list(saveId)` 拉取 + 订阅 SSE `image` topic 实时追加) + `frontend/src/entries/game-console.jsx`(透传 saveId/接 SSE) + `frontend/src/tavern-app.jsx`(同样接入,复用 game 的渲染/SSE)。SSE 订阅看现有 `state-event-bridge.js` 怎么订阅 topic。
 
 ## Phase 4 — 人设图自动维护 + 历史（依赖 Phase 1）
 - `character_cards` 加 `persona_hash` + `auto_image_sync`。
 - 新表 `card_persona_images(id, card_id, image_url, persona_hash, card_row_version, source, status, is_current, prompt_snapshot, created_at)`；partial unique index 保证 `is_current` 每卡唯一；历史走 `card_id + created_at desc`。
 - `user_cards.upsert_persona()` 返回后检测 `persona_hash` 变化且 `auto_image_sync=true` → 异步入队重生 → 完成翻 `is_current`。
 - 历史查看 UI。
+
+## Phase 4 实施契约（细 · 子代理按此执行）
+
+### 共享接口
+- **migration v71**：`character_cards` 加 `persona_hash text not null default ''` + `auto_image_sync boolean not null default false`；新表
+  `card_persona_images(id bigint gen pk, card_id bigint not null references character_cards(id) on delete cascade, image_url text not null default '', persona_hash text not null default '', card_row_version bigint not null default 1, source text not null default 'manual', status text not null default 'done', is_current boolean not null default false, prompt_snapshot text not null default '', created_at timestamptz default now())`；`create unique index ... on card_persona_images(card_id) where is_current`（保证每卡当前图唯一）+ `index(card_id, created_at desc)`。
+- **persona_hash**：`compute_persona_hash(card)` = `sha256(name||''||identity||''||appearance||''||personality||''||background)`（A 定义于 user_cards.py，导出复用）。
+- **附着类型 persona_image**：worker 收 `attach={type:'persona_image', id:card_id, persona_hash, source}`，store_image 后(ownership 校验 card 属 user)：① 该卡所有行 `is_current=false` ② insert card_persona_images(is_current=true, image_url=url, persona_hash, card_row_version=卡当前 row_version, source, prompt_snapshot, status='done') ③ `update character_cards set avatar_path=url where id=card_id and user_id`。
+- **helper(A 放 image_jobs.py)**：`list_persona_images(user_id, card_id)->[...]`(owner 校验,按 created_at desc) / `set_current_persona_image(user_id, card_id, image_id)`(校验归属→该卡 is_current 全 false→该 image_id 置 true→卡 avatar_path 设为该图 url)。auto_image_sync 开关写 user_cards.py。
+
+### 钩子（A，user_cards.py）
+- `upsert_persona` 和 `upsert_user_card`(card_type pc/persona)返回新行后：算 `new_hash=compute_persona_hash(row)`；读旧 `persona_hash`；**若变化且 `auto_image_sync=true`** → `enqueue_image_generation(user_id, prompt=人设拼成的提示, kind='persona', attach={type:'persona_image', id:card_id, persona_hash:new_hash, source:'auto_sync'})`(api_id/model 走 image_gen 偏好回退；缺 key 优雅 failed)；**无论是否触发,都把 `persona_hash` 更新为 new_hash**(下次比较用)。失败只 log 不影响 upsert 主流程。
+
+### 文件归属（3 路并发互斥）
+- **P4-A backend**：`migrations.py`(v71) + `user_cards.py`(compute_persona_hash + upsert 钩子 + auto_image_sync 开关函数) + `image_jobs.py`(worker persona_image 分支 + list/set_current helper)。
+- **P4-B backend-api**：`platform_app/api/me.py` 加端点：`POST /api/me/character-cards/{id}/auto-image-sync`{enabled}、`POST /api/me/character-cards/{id}/generate-persona-image`(手动触发=enqueue persona_image，origin api_direct，source manual)、`GET /api/me/character-cards/{id}/persona-images`(历史)、`POST /api/me/character-cards/{id}/persona-images/{image_id}/set-current`(回滚)。调 A 的 helper。
+- **P4-C frontend**：`frontend/src/pages/cards.jsx`(卡详情/编辑加 auto_image_sync 开关 + "AI 生成人设图"按钮[复用 GenerateImageModal 或直接调端点] + 人设图历史画廊:缩略图列+人设版本/时间+点击设为当前) + `frontend/src/api-client.js`(加对应 4 个方法)。
 
 ## 合规 / 存储 已决（用户拍板）
 - **NSFW = 纯 BYOK 免责，平台不过滤**（provider 端仍会硬拒，UI 明示 + 落免责，复用 `policy_notice.py`）。

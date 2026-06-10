@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
 import { fmtBytes, ResizableSplit } from '../platform-app.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
+import AvatarImg from '../components/AvatarImg.jsx';
+import GenerateImageModal from '../components/GenerateImageModal.jsx';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSHeader from '@cloudscape-design/components/header';
 import CSCards from '@cloudscape-design/components/cards';
@@ -259,9 +261,13 @@ function CardSheet({ card, kind = 'user' }) {
     <CSSpaceBetween size="l">
       {/* 头部:头像首字 + 名 + 身份 + 别名/标签 */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-        <div style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'var(--accent-soft, rgba(201,100,66,.16))', color: 'var(--accent, #c96442)',
-          fontFamily: "'Noto Serif SC', serif", fontSize: 24, fontWeight: 600 }}>{initial}</div>
+        <AvatarImg
+          src={raw.avatar_path}
+          name={raw.name || '?'}
+          size={52}
+          shape="rounded"
+          className="pl-card-avatar serif"
+        />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontFamily: "'Noto Serif SC', serif", fontSize: 19, fontWeight: 600, color: 'var(--text, #ebe7df)' }}>
             {raw.name || t('cards.detail.unnamed')}
@@ -763,18 +769,144 @@ function UserCardsView() {
   );
 }
 
+/* 人设图历史画廊 — 仅 persona/pc 卡显示 */
+function PersonaImageGallery({ cardId, onAvatarRefresh }) {
+  const [images, setImages] = useStatePL(null);   // null=未加载, []=空
+  const [loading, setLoading] = useStatePL(false);
+  const [setting, setSetting] = useStatePL(null); // 正在 set-current 的 image_id
+
+  const load = useCallbackPL(async () => {
+    setLoading(true);
+    try {
+      const r = await window.api.cards.personaImages(cardId);
+      setImages(Array.isArray(r) ? r : (r?.images || r?.items || []));
+    } catch (e) {
+      window.__apiToast?.('加载人设图历史失败', { kind: 'danger', detail: e?.message });
+      setImages([]);
+    } finally { setLoading(false); }
+  }, [cardId]);
+
+  // 挂载时自动加载
+  useEffectPL(() => { load(); }, [load]);
+
+  const doSetCurrent = async (img) => {
+    if (img.is_current || setting) return;
+    setSetting(img.id);
+    try {
+      await window.api.cards.personaSetCurrent(cardId, img.id);
+      window.__apiToast?.('已设为当前人设图', { kind: 'ok', duration: 2000 });
+      // 刷新列表
+      await load();
+      // 通知父组件更新头像显示
+      if (onAvatarRefresh) onAvatarRefresh(img.image_url);
+    } catch (e) {
+      window.__apiToast?.('设为当前失败', { kind: 'danger', detail: e?.message });
+    } finally { setSetting(null); }
+  };
+
+  const fmtDate = (s) => {
+    if (!s) return '—';
+    try {
+      const d = new Date(s);
+      return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (_) { return s; }
+  };
+  const sourceLabel = { auto_sync: '自动', manual: '手动', import: '导入' };
+
+  if (loading && images === null) {
+    return <CSBox color="text-body-secondary" padding="s">正在加载历史…</CSBox>;
+  }
+  if (!images || images.length === 0) {
+    return (
+      <CSBox color="text-body-secondary" padding="s">
+        暂无人设图历史。点「生成人设图」生成第一张。
+      </CSBox>
+    );
+  }
+
+  return (
+    <CSSpaceBetween size="m">
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <CSButton iconName="refresh" variant="inline-link" loading={loading} onClick={load}>刷新</CSButton>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+        {images.map((img) => {
+          const isCurrent = !!img.is_current;
+          const isSettingThis = setting === img.id;
+          return (
+            <div
+              key={img.id}
+              onClick={() => doSetCurrent(img)}
+              style={{
+                width: 110,
+                cursor: isCurrent ? 'default' : 'pointer',
+                borderRadius: 8,
+                border: isCurrent
+                  ? '2px solid var(--accent, #c96442)'
+                  : '2px solid var(--line, #36322d)',
+                overflow: 'hidden',
+                background: 'var(--panel, #211f1d)',
+                opacity: isSettingThis ? 0.6 : 1,
+                transition: 'border-color .15s, opacity .15s',
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ width: 110, height: 110, overflow: 'hidden', position: 'relative' }}>
+                <AvatarImg
+                  src={img.image_url}
+                  name="?"
+                  size={110}
+                  shape="square"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                />
+                {isCurrent && (
+                  <div style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0,
+                    background: 'rgba(201,100,66,.85)', color: '#fff',
+                    fontSize: 10, textAlign: 'center', padding: '2px 0', fontWeight: 600, letterSpacing: '.04em',
+                  }}>当前</div>
+                )}
+              </div>
+              <div style={{ padding: '5px 7px', fontSize: 10.5, color: 'var(--text-quiet, #9a948c)', lineHeight: 1.5 }}>
+                <div>{sourceLabel[img.source] || img.source || '—'}</div>
+                <div style={{ color: 'var(--muted, #b8b2a8)' }}>{fmtDate(img.created_at)}</div>
+                {!isCurrent && (
+                  <div style={{ marginTop: 3, color: 'var(--accent-soft, rgba(201,100,66,.8))', fontSize: 10 }}>
+                    {isSettingThis ? '设置中…' : '点击设为当前'}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </CSSpaceBetween>
+  );
+}
+
 /* 角色卡详情面板 —— 选中后在列表下方展开(对齐剧本/存档)。
    Tabs:角色信息(KeyValuePairs)/ 设定(只读展示)/ 角色设置(内联编辑表单)。 */
 function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
   const { t } = useTranslation();
   const raw = card._raw || card;
+  // 是否为 persona/pc 卡(显示人设图功能)
+  const cardType = raw.card_type || (kind === 'npc' ? 'npc' : kind === 'user' ? 'persona' : kind);
+  const isPersonaOrPc = cardType === 'persona' || cardType === 'pc';
   const [tab, setTab] = useStatePL('info');
   const [form, setForm] = useStatePL(null);
   const [saving, setSaving] = useStatePL(false);
+  const [genAvatarOpen, setGenAvatarOpen] = useStatePL(false);
+  const [avatarUrl, setAvatarUrl] = useStatePL(raw.avatar_path || null);
+  // Phase 4: 人设图状态
+  const [autoSync, setAutoSync] = useStatePL(!!raw.auto_image_sync);
+  const [autoSyncBusy, setAutoSyncBusy] = useStatePL(false);
+  const [genPersonaBusy, setGenPersonaBusy] = useStatePL(false);
   useEffectPL(() => {
     setTab('info');
     setForm(cardFormInit(raw));
     setSaving(false);  // 切卡时重置:防上一张卡的保存挂起态残留 → 新卡保存键卡死 loading
+    setAvatarUrl(raw.avatar_path || null);
+    setAutoSync(!!raw.auto_image_sync);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.id]);
   const u = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -784,6 +916,29 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
     try { await onSave(cardFormPayload(form, card)); }
     finally { setSaving(false); }
   };
+
+  const doToggleAutoSync = async (checked) => {
+    setAutoSync(checked);
+    setAutoSyncBusy(true);
+    try {
+      await window.api.cards.personaAutoSync(raw.id ?? card.id, checked);
+      window.__apiToast?.(checked ? '已开启人设自动同步' : '已关闭人设自动同步', { kind: 'ok', duration: 1800 });
+    } catch (e) {
+      setAutoSync(!checked); // 回滚
+      window.__apiToast?.('操作失败', { kind: 'danger', detail: e?.message });
+    } finally { setAutoSyncBusy(false); }
+  };
+
+  const doGenPersonaImage = async () => {
+    setGenPersonaBusy(true);
+    try {
+      await window.api.cards.personaGenerate(raw.id ?? card.id);
+      window.__apiToast?.('已加入生成队列，完成后将自动更新人设图', { kind: 'ok', duration: 2800 });
+    } catch (e) {
+      window.__apiToast?.('生成请求失败', { kind: 'danger', detail: e?.message });
+    } finally { setGenPersonaBusy(false); }
+  };
+
   const fullName = raw.full_name && raw.full_name !== raw.name ? raw.full_name : null;
   const chapterGate = (kind === 'npc' && raw.first_revealed_chapter > 1) ? raw.first_revealed_chapter : null;
 
@@ -791,11 +946,31 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
   const sourceLabel = { extracted: t('cards.detail.source_extracted'), user: t('cards.detail.source_user'), persona: t('cards.detail.source_persona'), platform: t('cards.detail.source_platform') };
   const scopeLabel = { script: t('cards.detail.scope_script'), private: t('cards.detail.scope_private'), public: t('cards.detail.scope_public') };
 
+  const genAvatarDefaultPrompt = [raw.name, raw.appearance].filter(Boolean).join('，') || raw.name || '';
+
   return (
+    <>
+    {genAvatarOpen && (
+      <GenerateImageModal
+        open={genAvatarOpen}
+        onClose={() => setGenAvatarOpen(false)}
+        kind="card"
+        attach={{ type: 'card_avatar', id: raw.id ?? card.id }}
+        defaultPrompt={genAvatarDefaultPrompt}
+        onDone={(url) => {
+          setAvatarUrl(url);
+          setGenAvatarOpen(false);
+        }}
+      />
+    )}
     <CSContainer header={
       <CSHeader variant="h2"
         actions={
           <CSSpaceBetween direction="horizontal" size="xs">
+            <CSButton iconName="gen-ai" onClick={() => setGenAvatarOpen(true)}>AI 生成头像</CSButton>
+            {isPersonaOrPc && (
+              <CSButton iconName="gen-ai" loading={genPersonaBusy} onClick={doGenPersonaImage}>生成人设图</CSButton>
+            )}
             <CSButton variant="primary" iconName="check" loading={saving} onClick={doSave}>{t('cards.detail.btn_save')}</CSButton>
             <CSButton iconName="copy" onClick={onDuplicate}>{t('cards.detail.btn_duplicate')}</CSButton>
             {kind === 'user' && <CSButton href={window.api.cards.exportTavern(card.id)} target="_blank" iconName="download">{t('cards.detail.btn_export')}</CSButton>}
@@ -829,8 +1004,57 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
             <CSBox><CSButton variant="primary" iconName="check" loading={saving} onClick={doSave}>{t('cards.detail.btn_save')}</CSButton></CSBox>
           </CSSpaceBetween>
         ) },
+        // Phase 4: 人设图标签页 — 仅 persona/pc 卡显示
+        ...(isPersonaOrPc ? [{
+          id: 'persona_images',
+          label: '人设图',
+          content: (
+            <CSSpaceBetween size="l">
+              {/* 自动维护开关 */}
+              <CSContainer header={<CSHeader variant="h3">自动维护设置</CSHeader>}>
+                <CSSpaceBetween size="s">
+                  <CSToggle
+                    checked={autoSync}
+                    disabled={autoSyncBusy}
+                    onChange={({ detail }) => doToggleAutoSync(detail.checked)}
+                  >
+                    人设更新时自动同步人设图
+                  </CSToggle>
+                  <CSBox color="text-body-secondary" fontSize="body-s">
+                    开启后，每次保存角色卡时若人设内容（名字/外貌/性格/背景）发生变化，将自动触发重新生成人设图。需要已配置生图模型 API Key。
+                  </CSBox>
+                </CSSpaceBetween>
+              </CSContainer>
+
+              {/* 手动生成 */}
+              <CSContainer header={<CSHeader variant="h3" actions={
+                <CSButton iconName="gen-ai" loading={genPersonaBusy} onClick={doGenPersonaImage}>立即生成</CSButton>
+              }>手动生成人设图</CSHeader>}>
+                <CSBox color="text-body-secondary" fontSize="body-s">
+                  根据当前角色的外貌、性格等描述生成人设图，加入异步队列后将自动更新头像。
+                </CSBox>
+              </CSContainer>
+
+              {/* 历史画廊 */}
+              <CSExpandableSection
+                variant="container"
+                headerText="人设图历史"
+                headerDescription="点击缩略图可将其设为当前人设图（同时更新头像）"
+                defaultExpanded
+              >
+                {tab === 'persona_images' && (
+                  <PersonaImageGallery
+                    cardId={raw.id ?? card.id}
+                    onAvatarRefresh={(url) => setAvatarUrl(url)}
+                  />
+                )}
+              </CSExpandableSection>
+            </CSSpaceBetween>
+          ),
+        }] : []),
       ]} />
     </CSContainer>
+    </>
   );
 }
 
@@ -1066,7 +1290,7 @@ function TavernImportModal({ open, onClose, onConfirm }) {
                 <div className="pl-import" style={{borderStyle: "solid", gap: 8, padding: "12px 14px"}}>
                   <div className="muted-2" style={{fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.14em"}}>{t('cards.import.preview_label')} · {parsed.format}</div>
                   <div className="pl-card-head" style={{margin: 0}}>
-                    <div className="pl-card-avatar serif">{parsed.name.slice(0, 1)}</div>
+                    <AvatarImg src={parsed.avatar_url || parsed.avatar_path || null} name={parsed.name} size={null} shape="rounded" className="pl-card-avatar serif" />
                     <div className="pl-card-id" style={{flex: 1}}>
                       <strong>{parsed.name}</strong>
                       <span className="muted-2" style={{fontSize: 11.5}}>{t('cards.import.preview_stats', { dialogues: parsed.example_count, tags: parsed.tags?.length || 0 })}</span>
@@ -1136,7 +1360,7 @@ function TavernImportModal({ open, onClose, onConfirm }) {
                 <div className="pl-import" style={{borderStyle: "solid", gap: 8, padding: "12px 14px"}}>
                   <div className="muted-2" style={{fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.14em"}}>{t('cards.import.chat_preview_label')}</div>
                   <div className="pl-card-head" style={{margin: 0}}>
-                    <div className="pl-card-avatar serif">{chatParsed.charName.slice(0, 1)}</div>
+                    <AvatarImg src={null} name={chatParsed.charName} size={null} shape="rounded" className="pl-card-avatar serif" />
                     <div className="pl-card-id" style={{flex: 1}}>
                       <strong>{chatParsed.charName}</strong>
                       <span className="muted-2" style={{fontSize: 11.5}}>{t('cards.import.chat_preview_stats', { msgs: chatParsed.msgCount, user: chatParsed.userName })}</span>

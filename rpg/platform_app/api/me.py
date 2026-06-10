@@ -653,6 +653,59 @@ async def api_import_json_card(request: Request, user=Depends(require_user)):
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
+# ── 人设图自动同步 / 手动生成 / 历史 (Phase 4) ───────────────────────────
+
+@router.post("/api/me/character-cards/{card_id}/auto-image-sync")
+async def api_set_auto_image_sync(request: Request, card_id: int, user=Depends(require_user)):
+    """开关人设图自动同步。Body: {enabled: bool}。"""
+    from .. import user_cards
+    body = await request.json()
+    try:
+        return json_response(user_cards.set_auto_image_sync(user["id"], card_id, bool(body.get("enabled"))))
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@router.post("/api/me/character-cards/{card_id}/generate-persona-image")
+async def api_generate_persona_image(request: Request, card_id: int, user=Depends(require_user)):
+    """手动触发为指定角色卡生成人设图。Body: {prompt?: str}（prompt 留空则 worker 端自动构建）。"""
+    from .. import image_jobs
+    body = await request.json()
+    prompt = (body.get("prompt") or "").strip()
+    result = image_jobs.enqueue_image_generation(
+        user["id"],
+        prompt,
+        "persona",
+        attach={"type": "persona_image", "id": card_id, "source": "manual"},
+        origin="api_direct",
+    )
+    # 下层返回 {error: "quota_exceeded"|"credentials_required", ...} 时透传 4xx
+    if isinstance(result, dict):
+        err = result.get("error", "")
+        if err == "quota_exceeded":
+            return json_response({"ok": False, "error": "quota_exceeded", "detail": "已达每日生图配额上限"}, status_code=429)
+        if err == "credentials_required":
+            return json_response({"ok": False, "error": "credentials_required", "detail": "请先在设置中配置生图服务的 API Key"}, status_code=402)
+    return json_response(result)
+
+
+@router.get("/api/me/character-cards/{card_id}/persona-images")
+async def api_list_persona_images(card_id: int, user=Depends(require_user)):
+    """列出指定角色卡的全部人设图历史（按创建时间倒序）。"""
+    from .. import image_jobs
+    return json_response(image_jobs.list_persona_images(user["id"], card_id))
+
+
+@router.post("/api/me/character-cards/{card_id}/persona-images/{image_id}/set-current")
+async def api_set_current_persona_image(card_id: int, image_id: int, user=Depends(require_user)):
+    """将指定人设图设为当前图（同时更新角色卡 avatar_path）。"""
+    from .. import image_jobs
+    try:
+        return json_response(image_jobs.set_current_persona_image(user["id"], card_id, image_id))
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
 # ── 酒馆聊天记录导入 ──────────────────────────────────────────────────
 @router.post("/api/me/chats/import-tavern")
 async def api_import_tavern_chat(request: Request, user=Depends(require_user)):

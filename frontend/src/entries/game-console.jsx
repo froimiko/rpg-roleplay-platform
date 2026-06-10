@@ -1617,6 +1617,8 @@ function App() {
             togglePlus={() => { setShowPlus((s) => !s); setShowSlash(false); setShowModel(false); setShowPerm(false); }}
             toggleModel={() => { setShowModel((s) => !s); setShowSlash(false); setShowPlus(false); setShowPerm(false); }}
             togglePerm={() => { setShowPerm((s) => !s); setShowSlash(false); setShowPlus(false); setShowModel(false); }}
+            saveId={(activeSave && activeSave.id) || (game && game._raw && game._raw.save_id) || null}
+            imageGenKind="game"
           />
           {showUsage && lastUsage && (
             <div className="gc-usage-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', alignItems: 'center', padding: '3px 12px 4px', fontSize: 11, lineHeight: 1.5, color: 'var(--muted)', fontFamily: 'var(--font-mono, ui-monospace, Menlo, monospace)' }}>

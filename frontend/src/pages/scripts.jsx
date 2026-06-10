@@ -17,6 +17,8 @@ import { WorldbookEditorView } from './script-edit-worldbook.jsx';
 import { useScriptRebuild, ModuleRebuildPanel } from './script-modules-panel.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import GmStyleEditor from '../components/GmStyleEditor.jsx';
+import AvatarImg from '../components/AvatarImg.jsx';
+import GenerateImageModal from '../components/GenerateImageModal.jsx';
 import { ModuleStatusCard } from '../components/ModuleStatusCard.jsx';
 import { ModuleMatrixOverview } from '../components/ModuleMatrixOverview.jsx';
 import { RebuildJobBanner } from '../components/RebuildJobBanner.jsx';
@@ -519,10 +521,14 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
   // Fork inline confirmation state
   const [forkBusy, setForkBusy] = useStatePL(false);
   const [forkConfirm, setForkConfirm] = useStatePL(false);
+  // 生成封面
+  const [genCoverOpen, setGenCoverOpen] = useStatePL(false);
+  const [coverUrl, setCoverUrl] = useStatePL(s.cover_image_url || null);
 
   useEffectPL(() => {
     setWb(null); setNpc(null); setTl(null); setOv(null);
     setTab('overview'); setHistoryOpen(false); setForkConfirm(false);
+    setCoverUrl(s.cover_image_url || null);
   }, [s.id]);
 
   const isOwner = currentUserId && s.owner_id === currentUserId;
@@ -645,8 +651,24 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
   const rb = useScriptRebuild(s.id);
   const playBlock = scriptPlayBlockReason(s, t);
 
+  const genCoverDefaultPrompt = [s.title, s.description].filter(Boolean).slice(0, 2).join('，');
+
   return (
     <>
+    {genCoverOpen && (
+      <GenerateImageModal
+        open={genCoverOpen}
+        onClose={() => setGenCoverOpen(false)}
+        kind="cover"
+        attach={{ type: 'script_cover', id: s.id }}
+        defaultPrompt={genCoverDefaultPrompt}
+        onDone={(url) => {
+          setCoverUrl(url);
+          setGenCoverOpen(false);
+          window.__apiToast?.('封面已生成', { kind: 'ok' });
+        }}
+      />
+    )}
     {historyOpen && (
       <VersionHistoryDrawer
         script={s}
@@ -658,6 +680,7 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
       <CSHeader variant="h2"
         actions={
           <CSSpaceBetween direction="horizontal" size="xs">
+            <CSButton iconName="gen-ai" onClick={() => setGenCoverOpen(true)}>生成封面</CSButton>
             {/* 反馈#3:开始游戏改下拉——可选继续某个存档 / 开新游戏,不再有存档就直接进后台 */}
             <CSButtonDropdown variant="primary" expandToViewport disabled={!!playBlock}
               items={[
@@ -755,6 +778,17 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
       <CSTabs activeTabId={tab} onChange={({ detail }) => setTab(detail.activeTabId)} tabs={[
         { id: 'overview', label: t('scripts.editor.tab_overview'), content: (
           <CSSpaceBetween size="l">
+            {/* 剧本封面 */}
+            {coverUrl && (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <img
+                  src={coverUrl}
+                  alt={s.title}
+                  style={{ maxWidth: 280, maxHeight: 180, width: '100%', objectFit: 'cover', borderRadius: 8, display: 'block' }}
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              </div>
+            )}
             <CSKeyValuePairs columns={4} items={[
               { label: t('scripts.my.chapters'), value: (s.chapter_count || 0).toLocaleString() },
               { label: t('scripts.my.words'), value: `${((s.word_count || 0) / 10000).toFixed(1)} ${t('scripts.my.wan')}` },
@@ -1113,6 +1147,15 @@ function ScriptsLibraryView() {
             </CSSpaceBetween>
           ),
           sections: [
+            { id: 'cover', content: (s) => s.cover_image_url ? (
+              <AvatarImg
+                src={s.cover_image_url}
+                name={s.title}
+                size={null}
+                shape="rounded"
+                className=""
+              />
+            ) : null },
             { id: 'author', content: (s) => (
               <CSBox fontSize="body-s" color="text-body-secondary">{t('scripts.public.shared_by', { author: s.author || s.author_username || t('scripts.public.anon') })}</CSBox>
             ) },

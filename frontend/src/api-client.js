@@ -626,6 +626,15 @@
       scriptSetProtagonist: (sid, cid) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid + "/protagonist", {}),
       // 按需 AI 复核全部 NPC 卡(合并同人/锁定主角/删非人名)。model 由公用选择器传入(可空,后端读偏好兜底)。
       auditCards: (sid, api_id, model) => POST(`${API_PREFIX}/scripts/` + sid + "/audit-cards", { api_id, model }),
+      // Phase 4 — 人设图自动维护(persona/pc 类卡)
+      // POST /api/me/character-cards/{id}/auto-image-sync  {enabled}
+      personaAutoSync: (id, enabled) => POST(`${API_PREFIX}/me/character-cards/` + id + "/auto-image-sync", { enabled: !!enabled }),
+      // POST /api/me/character-cards/{id}/generate-persona-image  → {image_id, status}
+      personaGenerate: (id) => POST(`${API_PREFIX}/me/character-cards/` + id + "/generate-persona-image", {}),
+      // GET  /api/me/character-cards/{id}/persona-images  → [{id, image_url, source, is_current, created_at, persona_hash, status}]
+      personaImages: (id) => GET(`${API_PREFIX}/me/character-cards/` + id + "/persona-images"),
+      // POST /api/me/character-cards/{id}/persona-images/{image_id}/set-current  → {ok}
+      personaSetCurrent: (id, imageId) => POST(`${API_PREFIX}/me/character-cards/` + id + "/persona-images/" + imageId + "/set-current", {}),
     },
 
     // ---------- Chat history (SillyTavern JSONL import) ----------
@@ -750,6 +759,18 @@
       report: (q) => GET(`${API_PREFIX}/models/report`, q),
       capabilities: () => GET(`${API_PREFIX}/models/capabilities`),
       capabilityLabels: () => GET(`${API_PREFIX}/models/capabilities/labels`),
+    },
+
+    // ---------- Images (AI 生图, Phase 1/2) ----------
+    // POST /api/images/generate → {image_id, status:'pending'}
+    // GET  /api/images/{id}    → {id, status, url, error, kind}
+    // GET  /api/images/file/{name} → FileResponse(静态文件)
+    // GET  /api/images/list?save_id=X → [{id,url,kind,prompt,status,created_at}]
+    images: {
+      generate: (body) => POST(`/api/images/generate`, body),
+      get: (id) => GET(`/api/images/` + encodeURIComponent(id)),
+      file: (name) => BASE + `/api/images/file/` + encodeURIComponent(name),
+      list: (saveId) => GET(`/api/images/list?save_id=` + encodeURIComponent(saveId)),
     },
 
     // ---------- Tools / MCP / Skills ----------

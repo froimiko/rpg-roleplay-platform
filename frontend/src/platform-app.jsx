@@ -31,6 +31,8 @@ import {
 import PolicyNoticeBanner from './components/PolicyNoticeBanner.jsx';
 import { FeedbackQuickModal } from './components/FeedbackQuickModal.jsx';
 import HelpDrawerRoot from './components/HelpDrawer.jsx';
+import AvatarImg from './components/AvatarImg.jsx';
+import GenerateImageModal from './components/GenerateImageModal.jsx';
 // Cloudscape shell(AWS 控制台架构 + 暖色主题)
 import CSTopNavigation from '@cloudscape-design/components/top-navigation';
 import CSAppLayout from '@cloudscape-design/components/app-layout';
@@ -1357,6 +1359,8 @@ function MeEditProfile() {
   const [resetAvatarOpen, setResetAvatarOpen] = useStatePL(false);
   const [saving, setSaving] = useStatePL(false);
   const avatarInputRef = React.useRef(null);
+  const [genAvatarOpen, setGenAvatarOpen] = useStatePL(false);
+  const [avatarUrl, setAvatarUrl] = useStatePL(user._raw?.avatar_url || null);
 
   // 从 /api/me/profile 拉真实资料(后端合并了 profile_extras:邮箱/手机/真名/性别/
   // 生日/所在地/网站/代词/语言/时区)。只取表单已知字段,避免把 stats 等无关键污染进 form。
@@ -1419,7 +1423,9 @@ function MeEditProfile() {
       const res = await window.api.account.avatar(file);
       window.__apiToast?.("头像已更新", { kind: "ok" });
       if (res && res.avatar_url) {
-        // bust page-level avatar cache
+        // 更新本地 state（AvatarImg 响应式）
+        setAvatarUrl(res.avatar_url + '?t=' + Date.now());
+        // bust page-level avatar cache（保留兼容老代码）
         document.querySelectorAll(".pl-me-avatar.large, .pl-user-avatar").forEach(el => {
           el.style.backgroundImage = `url(${res.avatar_url}?t=${Date.now()})`;
         });
@@ -1445,13 +1451,34 @@ function MeEditProfile() {
       {/* 头像 */}
       <CSContainer header={<CSHeader variant="h2">头像</CSHeader>}>
         <CSSpaceBetween size="m">
+          {genAvatarOpen && (
+            <GenerateImageModal
+              open={genAvatarOpen}
+              onClose={() => setGenAvatarOpen(false)}
+              kind="avatar"
+              attach={{ type: 'user_avatar' }}
+              defaultPrompt={form.display_name ? `${form.display_name} 的用户头像` : '用户头像'}
+              onDone={(url) => {
+                setAvatarUrl(url + '?t=' + Date.now());
+                setGenAvatarOpen(false);
+                window.__apiToast?.('AI 头像已生成', { kind: 'ok' });
+              }}
+            />
+          )}
           <div className="pl-me-avatar-row">
-            <div className="pl-me-avatar large">{form.display_name.slice(0, 1)}</div>
+            <AvatarImg
+              src={avatarUrl}
+              name={form.display_name || user.display_name || '?'}
+              size={null}
+              shape="circle"
+              className="pl-me-avatar large"
+            />
             <div className="pl-me-avatar-actions">
               <CSBox color="text-body-secondary" fontSize="body-s">支持 PNG / JPG / WEBP，建议 512×512。最大 2 MB。</CSBox>
               <CSSpaceBetween direction="horizontal" size="xs">
                 <CSButton iconName="upload" onClick={() => setUploadOpen(true)}>上传新头像</CSButton>
                 <CSButton iconName="remove" onClick={() => setResetAvatarOpen(true)}>使用默认</CSButton>
+                <CSButton iconName="gen-ai" onClick={() => setGenAvatarOpen(true)}>AI 生成头像</CSButton>
               </CSSpaceBetween>
             </div>
           </div>

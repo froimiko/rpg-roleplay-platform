@@ -118,6 +118,10 @@ def _execute_generate_image(state: Any, args: dict[str, Any]) -> str | dict[str,
         # count == 0：自主调用第 1 张，计数后入队
         state.data["_turn_images_generated"] = count + 1
 
+    # ── save_id 透传：dispatcher 已把 env.save_id 注入 args["save_id"]（覆盖 LLM 传值）
+    # user_id 查询时已用过 save_id_raw；直接复用，转为 str 传给 enqueue。
+    enqueue_save_id: str | None = str(save_id_raw) if save_id_raw is not None else None
+
     # ── 入队 ──────────────────────────────────────────────────────────────
     try:
         result = enqueue_image_generation(
@@ -128,11 +132,20 @@ def _execute_generate_image(state: Any, args: dict[str, Any]) -> str | dict[str,
             model=model,
             origin=origin,
             extra=extra if extra else None,
+            save_id=enqueue_save_id,
         )
+        # 每日配额超限
+        if result.get("error") == "quota_exceeded":
+            log.warning(
+                "[image_gate] quota_exceeded user=%s save_id=%s",
+                user_id, enqueue_save_id,
+            )
+            return "【生图配额】今日生图次数已达上限，请明天再试。"
+
         image_id = result.get("image_id")
         log.info(
-            "[image_jobs] generate_image enqueued image_id=%s user=%s kind=%s origin=%s",
-            image_id, user_id, kind, origin,
+            "[image_jobs] generate_image enqueued image_id=%s user=%s kind=%s origin=%s save_id=%s",
+            image_id, user_id, kind, origin, enqueue_save_id,
         )
         return f"生图已入队：image_id={image_id}，status=pending。生成完成后通过 SSE 推送 URL。"
     except Exception as exc:

@@ -13,6 +13,8 @@ v28 migration: user_personas 和 user_character_cards 已合并入 character_car
 """
 from __future__ import annotations
 
+import hashlib
+import logging
 import re
 from typing import Any
 
@@ -21,6 +23,28 @@ from psycopg.types.json import Jsonb
 from platform_app.api._card_dto import card_to_dto
 
 from .db import connect, init_db
+
+log = logging.getLogger(__name__)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  人设 hash（Phase 4）
+# ══════════════════════════════════════════════════════════════════════
+def compute_persona_hash(card: dict) -> str:
+    """计算人设相关字段的 SHA-256 指纹，用于检测人设是否变化。
+
+    字段顺序：name | identity | appearance | personality | background。
+    缺字段时当空串处理；分隔符使用 ASCII NUL(\\x00)，避免字段内容拼接歧义。
+    """
+    parts = [
+        str(card.get("name") or ""),
+        str(card.get("identity") or ""),
+        str(card.get("appearance") or ""),
+        str(card.get("personality") or ""),
+        str(card.get("background") or ""),
+    ]
+    raw = "\x00".join(parts).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 _SLUG_RE = re.compile(r"[^0-9A-Za-z_一-鿿]+")
 _VALID_SCOPES = {"private", "global", "public"}
@@ -166,6 +190,11 @@ def upsert_persona(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 " where user_id = %s and card_type = 'persona'",
                 (int(row["id"]), user_id),
             )
+    # Phase 4 钩子：检测 persona_hash 变化，按需入队生图（失败只 log）
+    if row:
+        _card_dto_for_hook = card_to_dto(row, persona_role_alias=True) or {}
+        new_hash = compute_persona_hash(_card_dto_for_hook)
+        _maybe_enqueue_persona_image(user_id, int(row["id"]), new_hash, _card_dto_for_hook)
     return card_to_dto(row, persona_role_alias=True) or {}
 
 
@@ -177,6 +206,84 @@ def delete_persona(user_id: int, persona_id: int) -> dict[str, Any]:
             (persona_id, user_id),
         ).fetchone()
     return {"ok": True, "deleted": bool(cur), "id": persona_id}
+
+
+def set_auto_image_sync(user_id: int, card_id: int, enabled: bool) -> dict[str, Any]:
+    """开启/关闭指定卡的人设图自动同步开关。仅 owner 可操作。"""
+    init_db()
+    with connect() as db:
+        result = db.execute(
+            "update character_cards set auto_image_sync = %s where id = %s and user_id = %s",
+            (bool(enabled), int(card_id), user_id),
+        )
+    if result.rowcount == 0:
+        raise ValueError("card 不存在或无权访问")
+    return {"ok": True, "card_id": int(card_id), "auto_image_sync": bool(enabled)}
+
+
+def _maybe_enqueue_persona_image(
+    user_id: int,
+    card_id: int,
+    new_hash: str,
+    row: Any,
+) -> None:
+    """upsert 后钩子：若 persona_hash 有变化则更新 hash，并在 auto_image_sync=true 时入队生图。
+
+    此函数捕获所有异常，失败只 log，不影响 upsert 主流程的返回。
+    """
+    try:
+        with connect() as db:
+            old_row = db.execute(
+                "select persona_hash, auto_image_sync from character_cards where id = %s",
+                (int(card_id),),
+            ).fetchone()
+            if old_row is None:
+                return
+            old_hash: str = str(old_row.get("persona_hash") or "")
+            auto_sync: bool = bool(old_row.get("auto_image_sync"))
+
+            # 无论是否触发生图，都更新 persona_hash
+            if old_hash != new_hash:
+                db.execute(
+                    "update character_cards set persona_hash = %s where id = %s",
+                    (new_hash, int(card_id)),
+                )
+
+        if old_hash != new_hash and auto_sync:
+            # 用人设字段拼出生图提示串
+            name = str(row.get("name") or "")
+            identity = str(row.get("identity") or "")
+            appearance = str(row.get("appearance") or "")
+            personality = str(row.get("personality") or "")
+            parts = [p for p in [name, identity, appearance, personality] if p]
+            prompt = "，".join(parts) if parts else name or "character"
+            try:
+                from platform_app.image_jobs import enqueue_image_generation
+                enqueue_image_generation(
+                    user_id,
+                    prompt=prompt,
+                    kind="persona",
+                    attach={
+                        "type": "persona_image",
+                        "id": int(card_id),
+                        "persona_hash": new_hash,
+                        "source": "auto_sync",
+                    },
+                )
+                log.info(
+                    "[user_cards] persona_image enqueued card_id=%s user=%s",
+                    card_id, user_id,
+                )
+            except Exception as enq_exc:
+                log.warning(
+                    "[user_cards] enqueue_image_generation failed card_id=%s user=%s: %s",
+                    card_id, user_id, enq_exc,
+                )
+    except Exception as exc:
+        log.warning(
+            "[user_cards] _maybe_enqueue_persona_image failed card_id=%s user=%s: %s",
+            card_id, user_id, exc,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -321,6 +428,11 @@ def upsert_user_card(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 """,
                 {**fields, "user_id": user_id},
             ).fetchone()
+    # Phase 4 钩子：pc/persona 卡检测 persona_hash 变化，按需入队生图（失败只 log）
+    if row:
+        _card_dto_for_hook = card_to_dto(row) or {}
+        new_hash = compute_persona_hash(_card_dto_for_hook)
+        _maybe_enqueue_persona_image(user_id, int(row["id"]), new_hash, _card_dto_for_hook)
     return card_to_dto(row) or {}
 
 

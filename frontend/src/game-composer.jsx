@@ -6,6 +6,7 @@ import { useState as useStateC, useRef as useRefC, useEffect as useEffectC } fro
 import { Icon } from './game-icons.jsx';
 import { chatComposerKey } from './responsive.jsx';
 import { useTranslation } from 'react-i18next';
+import GenerateImageModal from './components/GenerateImageModal.jsx';
 
 const SLASH_COMMANDS = [
   { id: "status", trigger: "/status", labelKey: "game.command.status_label", groupKey: "game.command.group_query", hint: "/status" },
@@ -797,6 +798,10 @@ function Composer({
   // 酒馆模式复用:可选隐藏左下角的控制按钮 + 自定义占位符。默认 false → Game Console 不受影响。
   hideSlash = false, hidePermission = false, hideContinue = false, hideAttach = false,
   placeholder,
+  // 生图按钮相关
+  saveId: composerSaveId,
+  imageGenKind = 'game',
+  hideImageGen = false,
 }) {
   const { t } = useTranslation();
   const taRef = useRefC(null);
@@ -809,6 +814,7 @@ function Composer({
   const modelTriggerRef = useRefC(null);
   const permTriggerRef = useRefC(null);
   const slashTriggerRef = useRefC(null);  // task 141: 让 CommandMenu 能识别 trigger 不误关
+  const [showImageGen, setShowImageGen] = useStateC(false);
   const isWriting = composerMode === "writing";
   const [enterToSend, setEnterToSend] = useStateC(() => {
     try { return localStorage.getItem("rpg.game.enterToSend") !== "0"; }
@@ -1016,6 +1022,11 @@ function Composer({
                 <Icon name="slash" size={14} />
               </button>
             )}
+            {!hideImageGen && (
+              <button className="iconbtn" onClick={() => setShowImageGen(true)} data-tip="AI 生图">
+                <Icon name="image" size={14} />
+              </button>
+            )}
             {/* task 130: 一键继续推进 — 玩家被动场景 (昏迷/旁观/过场) 直接让 GM 推一段 */}
             {!hideContinue && !running && (
               <button
@@ -1076,6 +1087,16 @@ function Composer({
         {showPlus && <AttachMenu onPick={onAttachPick} onClose={togglePlus} triggerRef={plusTriggerRef} />}
         {showModel && <ModelPopover current={model} onPick={(id) => { setModel(id); toggleModel(); }} align="right" gameState={gameState} onClose={toggleModel} triggerRef={modelTriggerRef} />}
         {showPerm && <PermissionPopover current={permission} onPick={(id) => { setPermission(id); togglePerm(); }} onClose={togglePerm} triggerRef={permTriggerRef} />}
+        {showImageGen && (
+          <GenerateImageModal
+            open={showImageGen}
+            onClose={() => setShowImageGen(false)}
+            kind={imageGenKind}
+            saveId={composerSaveId}
+            defaultPrompt=""
+            onDone={() => {}}
+          />
+        )}
       </div>
     </div>
   );

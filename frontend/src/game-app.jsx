@@ -8,6 +8,7 @@ import { RpgMarkdown } from './markdown-render.jsx';
 import { BranchGraph } from './branch-graph.jsx';
 import { useBreakpoint, useResizable, ResizeHandle } from './responsive.jsx';
 import { stripNarrativeOps } from './narrative-strip.js';
+import AvatarImg from './components/AvatarImg.jsx';
 
 // ----------------------------- LEFT RAIL ---------------------------------
 function LeftRail({ collapsed, onToggle, state, runState, onNew, onSave, onSwitchSave, onMemoryMode, currentSaveId, saves, resizeHandle, mobileOpen }) {
@@ -732,6 +733,111 @@ function PlayerBlock({ text, ts, attachments, msgIndex, saveId, commitId, speake
 
 }
 
+// ── Phase 3: 会话生成图片区 ───────────────────────────────────────────────
+// 挂载/saveId 变化时拉取已有图片(status==='done' && url),并订阅 SSE image topic 实时追加。
+// 组件卸载时取消订阅,防泄漏。
+function SaveImagesStrip({ saveId }) {
+  const [images, setImages] = useStateA([]);
+  const [lightbox, setLightbox] = useStateA(null); // 当前放大的 url
+
+  // 1. 挂载/saveId 变化时拉取历史图片
+  useEffectA(() => {
+    if (saveId == null) { setImages([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await window.api.images.list(saveId);
+        if (cancelled) return;
+        const done = Array.isArray(list)
+          ? list.filter((img) => img.status === 'done' && img.url)
+          : [];
+        setImages(done);
+      } catch (_) { /* 静默:后端未实装时不崩 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [saveId]);
+
+  // 2. 订阅 SSE image topic，实时追加 ready 事件
+  useEffectA(() => {
+    if (saveId == null) return;
+    const handler = (ev) => {
+      const { op, payload } = (ev && ev.detail) || {};
+      if (op !== 'ready') return;
+      const { image_id, url, kind } = payload || {};
+      if (!image_id || !url) return;
+      setImages((prev) => {
+        if (prev.some((img) => img.id === image_id)) return prev;
+        return [...prev, { id: image_id, url, kind: kind || 'game', status: 'done' }];
+      });
+    };
+    window.addEventListener('rpg-image-updated', handler);
+    return () => window.removeEventListener('rpg-image-updated', handler);
+  }, [saveId]);
+
+  if (!images.length) return null;
+
+  return (
+    <div style={{
+      margin: '12px 0 4px',
+      padding: '10px 12px',
+      background: 'var(--surface-2, rgba(255,255,255,0.03))',
+      border: '1px solid var(--line-soft, rgba(255,255,255,0.07))',
+      borderRadius: 8,
+    }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+        本局生成的图片 ({images.length})
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {images.map((img) => (
+          <button
+            key={img.id}
+            onClick={() => setLightbox(img.url)}
+            style={{
+              border: 0, padding: 0, background: 'transparent', cursor: 'pointer',
+              borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+            }}
+            title={img.prompt || img.kind || '生成图片'}
+          >
+            <AvatarImg
+              src={img.url}
+              name={img.kind || 'img'}
+              size={80}
+              shape="rounded"
+              className=""
+            />
+          </button>
+        ))}
+      </div>
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 8000,
+            background: 'rgba(0,0,0,0.82)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <img
+            src={lightbox}
+            alt="生成图片"
+            style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setLightbox(null)}
+            style={{
+              position: 'absolute', top: 20, right: 24,
+              background: 'rgba(255,255,255,0.12)', border: 0, color: '#fff',
+              borderRadius: 99, width: 36, height: 36, fontSize: 18,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >×</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, hasError, errorMessage, saveId, onRetry, onShowSse }) {
   const ref = useRefA(null);
   // task 21：实战存档 history 可能有 100+ 条；一次性渲染整个数组 + 每次 setGame
@@ -853,6 +959,8 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
             </div>
           </div>
         }
+        {/* Phase 3: 本局生成图片区 — 消息列表末尾追加，不影响现有渲染 */}
+        <SaveImagesStrip saveId={saveId} />
       </div>
       {/* task 133: Claude 风格"回到底部"浮按钮 — 用户上滚时显示。
           task 46: 位置贴右侧而不是 center,bottom 拉到 90px 避开 composer 输入框,
@@ -1515,4 +1623,4 @@ function TopBar({ state, saveUpdatedAt, onOpenTweaks, onOpenSearch, onOpenHistor
 
 }
 
-export { LeftRail, RunSteps, ThinkingPill, ChatArea, NarrativeBlock, PlayerBlock, TopBar, HistoryDrawer, SearchDrawer, GameToastStack, GameSettingsModal };
+export { LeftRail, RunSteps, ThinkingPill, ChatArea, NarrativeBlock, PlayerBlock, TopBar, HistoryDrawer, SearchDrawer, GameToastStack, GameSettingsModal, SaveImagesStrip };

@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom';
 
 import { Icon } from './game-icons.jsx';
 import { useResizable } from './responsive.jsx';
-import { NarrativeBlock, PlayerBlock, GameToastStack } from './game-app.jsx';
+import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip } from './game-app.jsx';
 import { Composer } from './game-composer.jsx';
 import { TavernImportModal, CardSheet, CardEditFields, cardFormInit, cardFormPayload } from './pages/cards.jsx';
 
@@ -435,6 +435,8 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
             </div>
           </div>
         )}
+        {/* Phase 3: 本对话生成图片区 */}
+        <SaveImagesStrip saveId={saveId} />
       </div>
       {showJump && (
         <button
@@ -1052,6 +1054,7 @@ export default function TavernApp() {
         ) : (
           <TavernChatArea
             history={history} running={running}
+            saveId={activeId}
             charName={charName} charInitial={charInitial} personaName={personaName}
             hasError={hasError} onRetry={onRetry}
           />
@@ -1069,6 +1072,8 @@ export default function TavernApp() {
               attachments={[]} removeAttachment={() => {}}
               showSlash={false} showPlus={false} showModel={false} showPerm={false}
               toggleSlash={() => {}} togglePlus={() => {}} toggleModel={() => {}} togglePerm={() => {}}
+              saveId={activeId != null ? String(activeId) : null}
+              imageGenKind="chat"
             />
           </div>
         )}

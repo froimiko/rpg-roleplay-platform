@@ -5,9 +5,16 @@ Phase 1 Agent A 实现：
   - ai_images CRUD helpers
   - GET  /api/images/file/{filename}                  静态文件服务
   - POST /api/images/generate                         触发异步生图（入队给 Agent C 的 worker）
+
+Phase 3 增量：
+  - create_image_record 加 save_id 参数
+  - POST /api/images/generate 收 save_id + 配额 quota_exceeded 回报
+  - GET  /api/images/list?save_id=X                   按存档列生图记录
+  - cleanup_old_chat_images(days)                      清理旧 chat/game 图片（调度待办）
 """
 from __future__ import annotations
 
+import os
 import secrets
 from pathlib import Path
 from typing import Any
@@ -72,16 +79,20 @@ def create_image_record(
     api_id: str | None = None,
     model: str | None = None,
     params: dict | None = None,
+    save_id: str | None = None,
 ) -> int:
-    """INSERT 一行 ai_images，返回新行 id。"""
+    """INSERT 一行 ai_images，返回新行 id。
+
+    save_id: 可选，关联游戏存档 ID（Phase 3 新增）。
+    """
     from psycopg.types.json import Jsonb
 
     init_db()
     with connect() as db:
         row = db.execute(
             """
-            insert into ai_images (user_id, kind, api_id, model, prompt, params, status)
-            values (%s, %s, %s, %s, %s, %s, 'pending')
+            insert into ai_images (user_id, kind, api_id, model, prompt, params, status, save_id)
+            values (%s, %s, %s, %s, %s, %s, 'pending', %s)
             returning id
             """,
             (
@@ -91,6 +102,7 @@ def create_image_record(
                 model or None,
                 prompt,
                 Jsonb(params or {}),
+                save_id or None,
             ),
         ).fetchone()
     if not row:
@@ -211,10 +223,17 @@ async def api_image_file(filename: str) -> FileResponse:
 async def api_generate_image(request: Request):
     """UI 按钮入口：接收生图请求，入队异步 job，立即返回 {image_id, status}。
 
-    body: {prompt, kind, api_id?, model?, ref?}
+    body: {prompt, kind, api_id?, model?, ref?, attach?, save_id?}
 
-    worker 由 Agent C 的 platform_app.image_jobs 实现；此处仅按约定签名调用：
-        enqueue_image_generation(user_id, prompt, kind, api_id=, model=, origin=, extra=) -> dict
+    attach 可选，格式：
+      {"type": "user_avatar"}
+      {"type": "card_avatar",  "card_id": <int>}
+      {"type": "script_cover", "script_id": <int>}
+    worker 完成后把 url 写回目标（带 ownership 校验）。
+
+    save_id 可选：关联游戏存档，用于 GET /api/images/list 按存档查询（Phase 3）。
+
+    若触发每日配额限制，返回 {ok: False, code: "quota_exceeded", status: "failed"}。
     """
     user = require_user(request)
     user_id: int = int(user["id"])
@@ -232,10 +251,18 @@ async def api_generate_image(request: Request):
     api_id: str | None = body.get("api_id") or None
     model: str | None = body.get("model") or None
     ref: str | None = body.get("ref") or None
+    attach: dict | None = body.get("attach") or None
+    save_id: str | None = str(body.get("save_id") or "").strip() or None
 
-    # 调用 Agent C 提供的 enqueue_image_generation。
-    # 该模块由 Agent C 建（platform_app/image_jobs.py），整合前 import 可能失败——
-    # 正常：此文件交付时 Agent C 尚未完成，整合期再对接。
+    # 校验 attach 结构（仅做基本格式检查，ownership 校验在 worker 侧）
+    if attach is not None:
+        attach_type = attach.get("type") or ""
+        if attach_type not in ("user_avatar", "card_avatar", "script_cover"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"attach.type 无效: {attach_type!r}，合法值：user_avatar / card_avatar / script_cover",
+            )
+
     from platform_app.image_jobs import enqueue_image_generation  # type: ignore[import]
 
     result: dict = enqueue_image_generation(
@@ -246,5 +273,143 @@ async def api_generate_image(request: Request):
         model=model,
         origin="api_direct",
         extra={"ref": ref} if ref else None,
+        attach=attach,
+        save_id=save_id,
     )
+
+    # 每日配额超限：enqueue 返回 error="quota_exceeded"
+    if result.get("error") == "quota_exceeded":
+        return json_response(
+            {"ok": False, "code": "quota_exceeded", "status": "failed"},
+            status_code=429,
+        )
+
     return json_response({"ok": True, **result})
+
+
+@router.get("/api/images/list")
+async def api_list_images(request: Request):
+    """按存档列出该用户的生图记录（仅 owner 可查）。
+
+    query: save_id (必填)
+    返回：[{id, url, kind, prompt, status, created_at}] 按 created_at desc 排序。
+    """
+    user = require_user(request)
+    user_id: int = int(user["id"])
+
+    save_id: str = str(request.query_params.get("save_id") or "").strip()
+    if not save_id:
+        raise HTTPException(status_code=400, detail="save_id 不能为空")
+
+    init_db()
+    with connect() as db:
+        rows = db.execute(
+            """
+            select id, url, kind, prompt, status, created_at
+              from ai_images
+             where user_id = %s and save_id = %s
+             order by created_at desc
+            """,
+            (user_id, save_id),
+        ).fetchall()
+
+    results = [
+        {
+            "id": r["id"],
+            "url": r["url"] or "",
+            "kind": r["kind"] or "",
+            "prompt": r["prompt"] or "",
+            "status": r["status"] or "pending",
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+    return json_response({"ok": True, "images": results})
+
+
+@router.get("/api/images/{image_id}")
+async def api_get_image(image_id: int, request: Request):
+    """查询单张生图记录，仅 owner 可查。
+
+    返回：{id, status, url, error, kind}
+    status: pending | generating | done | failed
+    """
+    user = require_user(request)
+    user_id: int = int(user["id"])
+
+    record = get_image_record(image_id)
+    if record is None or int(record.get("user_id") or 0) != user_id:
+        raise HTTPException(status_code=404, detail="图片记录不存在或无权访问")
+
+    return json_response({
+        "ok": True,
+        "id": record["id"],
+        "status": record.get("status") or "pending",
+        "url": record.get("url") or "",
+        "error": record.get("error") or "",
+        "kind": record.get("kind") or "",
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  保留策略：清理旧 chat/game 图片
+# ══════════════════════════════════════════════════════════════════════
+
+def cleanup_old_chat_images(days: int = 14) -> int:
+    """删除 kind in ('chat','game') 且超过 days 天的 ai_images 行及对应本地文件。
+
+    返回删除的行数。
+
+    调度待办：
+      本期只提供函数体，不绑定任何调度器。
+      建议后续在 postproc worker 的定时任务中（或独立 cron）每天调用一次：
+        from platform_app.api.images import cleanup_old_chat_images
+        cleanup_old_chat_images(days=14)
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    init_db()
+    with connect() as db:
+        # 先取出要删的行（需要 url 来定位本地文件）
+        rows = db.execute(
+            """
+            select id, url from ai_images
+             where kind in ('chat', 'game')
+               and created_at < now() - (%s || ' days')::interval
+            """,
+            (str(int(days)),),
+        ).fetchall()
+
+        if not rows:
+            return 0
+
+        ids = [int(r["id"]) for r in rows]
+
+        # 删 DB 行
+        db.execute(
+            "delete from ai_images where id = any(%s::bigint[])",
+            (ids,),
+        )
+
+    # 尝试删本地文件（失败逐条忽略，不影响已删 DB 行）
+    deleted_files = 0
+    for r in rows:
+        url: str = r["url"] or ""
+        # URL 格式：/api/images/file/{filename}
+        if url.startswith("/api/images/file/"):
+            filename = url[len("/api/images/file/"):]
+            # 安全检查：只允许纯文件名
+            if filename and "/" not in filename and "\\" not in filename and not filename.startswith("."):
+                target = _IMAGE_ROOT / filename
+                try:
+                    target.unlink(missing_ok=True)
+                    deleted_files += 1
+                except Exception as exc:
+                    _log.debug("[cleanup_old_chat_images] unlink failed %s: %s", filename, exc)
+
+    _log.info(
+        "[cleanup_old_chat_images] deleted %d rows / %d files (days=%d)",
+        len(ids), deleted_files, days,
+    )
+    return len(ids)
