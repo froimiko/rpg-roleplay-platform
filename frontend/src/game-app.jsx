@@ -23,9 +23,13 @@ function LeftRail({ collapsed, onToggle, state, runState, onNew, onSave, onSwitc
         <div className="gc-brand">
           <div className="gc-brand-mark"><Icon name="logo" size={14} /></div>
           <div className="gc-brand-text">
-            {/* task 45：剧本名/阶段从真实 state 派生。优先 state._raw.save_title（task 21 写入），
-                兜底 state.app.title，最后才走 MOCK_NOVEL（仅 designer offline 还会保留）。 */}
-            <strong>{(state && (state._raw?.save_title || state.app?.title)) || (window.MOCK_NOVEL && window.MOCK_NOVEL.script_title) || "RPG Roleplay"}</strong>
+            {/* task 45：剧本名/阶段从真实 state 派生。已登录态加载中不再退到 MOCK_NOVEL，
+                避免首屏慢半拍闪出 designer 示例小说名。 */}
+            <strong>{(() => {
+              const realTitle = state && (state._raw?.save_title || state.app?.title);
+              const allowMockTitle = !(window.RPG_AUTH && window.RPG_AUTH.authed);
+              return realTitle || (allowMockTitle && window.MOCK_NOVEL && window.MOCK_NOVEL.script_title) || "RPG Roleplay";
+            })()}</strong>
             <span className="muted-2" style={{ fontSize: 11 }}>RPG Roleplay · {(state && state.world && state.world.timeline && state.world.timeline.current_phase) || "—"}</span>
           </div>
         </div>
