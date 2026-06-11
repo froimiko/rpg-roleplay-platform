@@ -147,6 +147,12 @@ def set_credential(user_id: int, api_id: str, plaintext_key: str, base_url_overr
         sync_result = list_remote_models(api_id, user_id=user_id)
         if sync_result.get("ok") and sync_result.get("models"):
             replace_synced_models(user_id, api_id, sync_result["models"])
+        else:
+            # 换 key 后新 key 列不出模型(provider 不支持 /models 或调用失败)：必须清掉
+            # 旧 key 同步来的 overlay，否则游戏控制台模型列表会一直残留旧 key 的模型，
+            # 表现为「换 key 后模型列表不刷新」(OSS issue #22)。清空后该 provider 回退
+            # 全局策展菜单(key 无关，始终可用)；用户可再手动「拉取远程模型」补齐。
+            replace_synced_models(user_id, api_id, [])
     except Exception as _sync_exc:
         try:
             _logging.getLogger(__name__).warning(
@@ -166,6 +172,16 @@ def delete_credential(user_id: int, api_id: str) -> dict[str, Any]:
             "delete from user_api_credentials where user_id = %s and api_id = any(%s)",
             (user_id, _credential_aliases(canonical)),
         )
+    # 删 key 后清掉该 provider 的 per-user 模型 overlay：否则旧 key「拉取远程模型」同步来的
+    # 模型清单仍残留在游戏控制台模型列表里，删了 key 也不消失(OSS issue #22)。best-effort，
+    # 清 overlay 失败不影响删 key 主流程。覆盖所有别名，防 normalize 后落到不同 api_id。
+    try:
+        from platform_app.user_models import replace_synced_models
+        for _alias in {canonical, *_credential_aliases(canonical)}:
+            if _alias:
+                replace_synced_models(user_id, _alias, [])
+    except Exception:
+        pass
     return {"ok": True, "deleted": True, "api_id": canonical}
 
 
