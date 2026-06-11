@@ -1040,14 +1040,16 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
         }
       >{card.name}{fullName && <CSBox display="inline" color="text-status-inactive" fontSize="body-s" padding={{ left: 's' }}>{fullName}</CSBox>}</CSHeader>
     }>
-      {/* 图片优先的角色海报 — 生成/上传/图库/预览一站式，空态优雅引导 */}
-      <div style={{ maxWidth: 480, margin: '2px auto 16px' }}>
-        <CharacterCardHero
-          card={{ id: raw.id, name: raw.name, identity: raw.identity || raw.role, appearance: raw.appearance, avatar_path: avatarUrl }}
-          editable
-          onChanged={(u) => setAvatarUrl(u)}
-        />
-      </div>
+      {/* 图片优先的角色海报 — 宽屏左右分栏(图列左 sticky + 信息列右),窄屏堆叠 */}
+      <div className="msplit">
+        <div className="msplit__media">
+          <CharacterCardHero
+            card={{ id: raw.id, name: raw.name, identity: raw.identity || raw.role, appearance: raw.appearance, avatar_path: avatarUrl }}
+            editable
+            onChanged={(u) => setAvatarUrl(u)}
+          />
+        </div>
+        <div className="msplit__body">
       <CSTabs activeTabId={tab} onChange={({ detail }) => setTab(detail.activeTabId)} tabs={[
         { id: 'info', label: t('cards.detail.tab_info'), content: (
           <CSKeyValuePairs columns={4} items={[
@@ -1126,6 +1128,8 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
           ),
         }] : []),
       ]} />
+        </div>
+      </div>
     </CSContainer>
     </>
   );

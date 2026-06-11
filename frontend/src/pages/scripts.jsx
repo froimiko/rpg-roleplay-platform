@@ -496,6 +496,42 @@ function SharingModeSelector({ script, currentUserId, onChanged }) {
 /* 剧本详情面板 —— 选中某剧本后在列表下方展开(对齐存档页结构)。
    Tabs:概览 / 参数(剧本覆盖设定) / 世界书(worldbook) / 知识库人物 / NPC 角色卡 / 时间线锚点。
    世界书 / NPC 角色卡 / 时间线锚点按需懒加载。 */
+// 剧本封面:宽高比自适应海报(模糊填充 + contain),竖/方/横封面都完整显示;悬停更换 + 点击放大。
+function CoverFrame({ src, title, isOwner, onEdit }) {
+  const [aspect, setAspect] = React.useState(null);
+  const [light, setLight] = React.useState(false);
+  React.useEffect(() => { setAspect(null); }, [src]);
+  React.useEffect(() => {
+    if (!light) return;
+    const h = (e) => { if (e.key === 'Escape') setLight(false); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [light]);
+  const onLoad = (e) => {
+    const w = e.target && e.target.naturalWidth, h = e.target && e.target.naturalHeight;
+    if (w && h) { const r = Math.max(0.62, Math.min(1.78, w / h)); setAspect(`${r.toFixed(4)} / 1`); }
+  };
+  return (
+    <div className="mh-hero" style={{ ...(aspect ? { aspectRatio: aspect } : { aspectRatio: '16 / 9' }), cursor: 'zoom-in' }} onClick={() => setLight(true)}>
+      <img src={src} className="mh-hero__fill" alt="" aria-hidden="true" loading="lazy" />
+      <img src={src} className="mh-hero__img" alt={title} loading="lazy" onLoad={onLoad} />
+      <div className="mh-hero__scrim" />
+      <div className="mh-hero__meta"><div className="mh-hero__name" style={{ fontSize: 20 }}>{title}</div></div>
+      {isOwner && (
+        <div className="mh-hero__actions">
+          <span className="mh-chip" onClick={(e) => { e.stopPropagation(); onEdit && onEdit(); }}>✦ 更换封面</span>
+        </div>
+      )}
+      {light && (
+        <div className="mlb-backdrop" onClick={() => setLight(false)} role="dialog" aria-modal="true">
+          <img src={src} alt={title} style={{ maxWidth: '92vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 10, boxShadow: '0 12px 60px rgba(0,0,0,.7)' }} onClick={(e) => e.stopPropagation()} />
+          <button onClick={() => setLight(false)} aria-label="关闭" style={{ position: 'absolute', top: 20, right: 24, width: 38, height: 38, borderRadius: 99, border: 0, background: 'rgba(255,255,255,.14)', color: '#fff', fontSize: 19, cursor: 'pointer' }}>×</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatus, currentUserId,
   pendingTab, onPendingTabConsumed,
   onPlay, onContinueSave, onNewGame, onChapters, onReview, onExtractDone, onEmbed, onExport, onToggleVisibility, onDelete, onUnsubscribe, onEditOverrides, onReload }) {
@@ -780,43 +816,24 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
       <div data-detail-tabs>
       <CSTabs activeTabId={tab} onChange={({ detail }) => setTab(detail.activeTabId)} tabs={[
         { id: 'overview', label: t('scripts.editor.tab_overview'), content: (
-          <CSSpaceBetween size="l">
-            {/* 剧本封面:图片优先 */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div className="msplit">
+            <div className="msplit__media">
+              {/* 剧本封面:图片优先 + 宽高比自适应(竖/方/横都完整显示) */}
               {coverUrl ? (
-                <div className="mh-hero" style={{ width: '100%', maxWidth: 320, borderRadius: 8, overflow: 'hidden', aspectRatio: '16/9', background: 'var(--color-background-container-content, #1e1c1b)' }}>
-                  <AvatarImg
-                    src={coverUrl}
-                    name={s.title}
-                    size={null}
-                    shape="rounded"
-                    zoomable
-                    aspectRatio="16/9"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
-                </div>
+                <CoverFrame src={coverUrl} title={s.title} isOwner={isOwner} onEdit={() => setCoverStudioOpen(true)} />
               ) : (
-                <div style={{
-                  width: '100%', maxWidth: 320, aspectRatio: '16/9',
-                  borderRadius: 8, border: '1px dashed var(--color-border-divider-default, #444)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  gap: 6, color: 'var(--color-text-body-secondary, #888)',
-                  background: 'var(--color-background-container-content, #1e1c1b)',
-                }}>
-                  <Icon name="image" size={28} />
-                  <span style={{ fontSize: 13 }}>暂无封面</span>
-                  {isOwner && (
-                    <button
-                      onClick={() => setCoverStudioOpen(true)}
-                      className="mh-chip"
-                      style={{ marginTop: 4, cursor: 'pointer', fontSize: 12, padding: '3px 10px',
-                        background: 'transparent', border: '1px solid var(--color-border-divider-default, #555)',
-                        borderRadius: 4, color: 'var(--color-text-interactive-default, #e8c97a)' }}
-                    >✦ 添加封面</button>
-                  )}
+                <div className="mh-hero mh-hero--empty" style={{ aspectRatio: '16 / 9', cursor: isOwner ? 'pointer' : 'default' }}
+                  onClick={isOwner ? () => setCoverStudioOpen(true) : undefined}>
+                  <div className="mh-empty__inner">
+                    <div className="mh-empty__icon">🎬</div>
+                    <div className="mh-empty__title">{s.title}</div>
+                    <div className="mh-empty__hint">{isOwner ? '点击：生成 / 上传 / 选图库' : '暂无封面'}</div>
+                  </div>
                 </div>
               )}
             </div>
+            <div className="msplit__body">
+            <CSSpaceBetween size="l">
             <CSKeyValuePairs columns={4} items={[
               { label: t('scripts.my.chapters'), value: (s.chapter_count || 0).toLocaleString() },
               { label: t('scripts.my.words'), value: `${((s.word_count || 0) / 10000).toFixed(1)} ${t('scripts.my.wan')}` },
@@ -864,7 +881,9 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
                 })}
               </CSColumnLayout>
             </CSSpaceBetween>
-          </CSSpaceBetween>
+            </CSSpaceBetween>
+            </div>
+          </div>
         ) },
         { id: 'params', label: t('scripts.editor.tab_params'), content: (
           <CSSpaceBetween size="s">

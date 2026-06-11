@@ -16,6 +16,7 @@ export default function CharacterCardHero({ card, editable = true, onChanged }) 
   const [light, setLight] = useState(false);
   const [drag, setDrag] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [aspect, setAspect] = useState(null);   // 图片自然宽高比(clamp 后)，覆盖 CSS 默认
   const inputRef = useRef(null);
 
   const raw = card || {};
@@ -23,6 +24,20 @@ export default function CharacterCardHero({ card, editable = true, onChanged }) 
   const name = raw.name || '未命名角色';
   const sub = raw.identity || raw.appearance || '';
   const api = (typeof window !== 'undefined' && window.api) || {};
+
+  // 换图时重置比例，待新图 onLoad 重新测量
+  useEffect(() => { setAspect(null); }, [url]);
+
+  // 读图片自然尺寸 → 比例 clamp 到 [0.62(竖) , 1.78(横)]：
+  // 竖图/方图/横图都能优雅展示，极端长图也不会把卡撑爆（超出部分由模糊填充兜底）。
+  const onImgLoad = useCallback((e) => {
+    const w = e.target && e.target.naturalWidth;
+    const h = e.target && e.target.naturalHeight;
+    if (w && h) {
+      const r = Math.max(0.62, Math.min(1.78, w / h));
+      setAspect(`${r.toFixed(4)} / 1`);
+    }
+  }, []);
 
   useEffect(() => {
     if (!light) return;
@@ -56,11 +71,12 @@ export default function CharacterCardHero({ card, editable = true, onChanged }) 
         onDragLeave={editable ? (e) => { e.preventDefault(); setDrag(false); } : undefined}
         onDrop={editable ? onDrop : undefined}
         onClick={url ? () => setLight(true) : (editable ? () => setStudio(true) : undefined)}
-        style={url ? { cursor: 'zoom-in' } : {}}
+        style={{ ...(url ? { cursor: 'zoom-in' } : {}), ...(aspect ? { aspectRatio: aspect } : {}) }}
       >
         {url ? (
           <>
-            <img src={url} className="mh-hero__img" alt={name} loading="lazy" />
+            <img src={url} className="mh-hero__fill" alt="" aria-hidden="true" loading="lazy" />
+            <img src={url} className="mh-hero__img" alt={name} loading="lazy" onLoad={onImgLoad} />
             <div className="mh-hero__scrim" />
             <div className="mh-hero__meta">
               <div className="mh-hero__name">{name}</div>

@@ -3,32 +3,43 @@
    全部复用 tokens.css 变量，与暖暗色 + 衬线 + 赭橙 accent 一致。 */
 
 /* ── 角色海报 Hero（卡详情头图）────────────────────────────── */
+/* 宽高比自适应：默认竖版立绘比例，真实比例由 JS 按图片自然尺寸 inline 覆盖。
+   竖图/方图/横图都用「模糊填充背景 + contain 主图」完整显示，绝不裁切。 */
 .mh-hero {
   position: relative;
   width: 100%;
-  aspect-ratio: 3 / 2;
+  aspect-ratio: 3 / 4;
   border-radius: var(--r-3, 8px);
   overflow: hidden;
   background: var(--panel-2);
   box-shadow: var(--shadow-2);
   isolation: isolate;
 }
-.mh-hero__img {
-  position: absolute; inset: 0;
+/* 模糊填充背景：任何比例的图都优雅铺满 letterbox 区（对标 IG / Discord 媒体卡） */
+.mh-hero__fill {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
   width: 100%; height: 100%;
   object-fit: cover; display: block;
+  filter: blur(30px) saturate(1.25) brightness(.6);
+  transform: scale(1.18);
+  opacity: .6;
+}
+.mh-hero__img {
+  position: absolute; inset: 0; z-index: 1;
+  width: 100%; height: 100%;
+  object-fit: contain; display: block;   /* contain：整图完整可见，配合模糊填充不留黑边 */
   transition: transform .6s cubic-bezier(.2,.7,.2,1), filter .3s;
 }
 .mh-hero:hover .mh-hero__img { transform: scale(1.035); }
 /* 底部压暗渐变 + 顶部轻压，给文字/操作留可读性 */
 .mh-hero__scrim {
-  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
   background:
     linear-gradient(to top, rgba(15,13,12,.82) 0%, rgba(15,13,12,.30) 32%, rgba(15,13,12,0) 56%),
     linear-gradient(to bottom, rgba(15,13,12,.34) 0%, rgba(15,13,12,0) 22%);
 }
 .mh-hero__meta {
-  position: absolute; left: 18px; right: 18px; bottom: 14px; z-index: 2;
+  position: absolute; left: 18px; right: 18px; bottom: 14px; z-index: 3;
   display: flex; flex-direction: column; gap: 2px;
 }
 .mh-hero__name {
@@ -43,7 +54,7 @@
 }
 /* hover 才浮现的操作角标 */
 .mh-hero__actions {
-  position: absolute; top: 12px; right: 12px; z-index: 3;
+  position: absolute; top: 12px; right: 12px; z-index: 4;
   display: flex; gap: 8px;
   opacity: 0; transform: translateY(-4px);
   transition: opacity .22s, transform .22s;
@@ -184,4 +195,45 @@
   .mh-drop { min-height: 180px; padding: 18px; }
   .mh-empty__icon { font-size: 26px; }
   .mh-empty__title { font-size: 14px; }
+}
+
+/* ── 左右分栏（宽屏图列 + 信息列；窄屏自动堆叠）──────────────── */
+.msplit { display: flex; gap: var(--s-7, 24px); align-items: flex-start; }
+.msplit__media {
+  width: clamp(248px, 32%, 392px); flex-shrink: 0;
+  position: sticky; top: 8px;          /* 滚动信息列时立绘保持可见 */
+}
+.msplit__body { flex: 1; min-width: 0; }
+@media (max-width: 859px) {
+  .msplit { flex-direction: column; gap: var(--s-5, 16px); }
+  .msplit__media { width: 100%; max-width: 420px; margin: 0 auto; position: static; top: auto; }
+}
+
+/* ── 聊天内嵌图片（GPT 风：图片是回复的一部分，不是独立的图片消息）──── */
+.rpg-chat-imgs { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 2px; }
+.rpg-chat-img {
+  position: relative; display: block; border: 0; padding: 0; cursor: zoom-in;
+  border-radius: var(--r-3, 8px); overflow: hidden; background: var(--panel-2);
+  box-shadow: var(--shadow-1); line-height: 0;
+  transition: transform .12s, box-shadow .2s;
+}
+.rpg-chat-img:hover { box-shadow: var(--shadow-2); }
+.rpg-chat-img:active { transform: scale(.99); }
+.rpg-chat-img img { display: block; width: 100%; height: auto; }
+/* 单图：自然比例，限高限宽 */
+.rpg-chat-img--single { max-width: min(460px, 100%); }
+.rpg-chat-img--single img { max-height: 60vh; object-fit: contain; }
+/* 多图：方形拼贴 */
+.rpg-chat-img--multi { width: calc(50% - 4px); max-width: 220px; }
+.rpg-chat-img--multi img { aspect-ratio: 1; object-fit: cover; }
+@media (max-width: 640px) {
+  .rpg-chat-img--single { max-width: 100%; }
+  .rpg-chat-img--multi { width: calc(50% - 4px); max-width: none; }
+}
+
+/* ── markdown 正文内联图片（![](url)）──────────────────────── */
+.rpg-md__img {
+  display: block; max-width: min(460px, 100%); height: auto; max-height: 60vh;
+  border-radius: var(--r-3, 8px); margin: 10px 0; cursor: zoom-in;
+  box-shadow: var(--shadow-1); background: var(--panel-2);
 }

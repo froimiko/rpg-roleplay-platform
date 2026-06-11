@@ -657,7 +657,7 @@ function stripStateOpsForDisplay(text) {
 
 // 酒馆模式复用:speakerName/speakerAvatar/tag 可选覆盖默认的 GM/主代理 标签。
 // 不传时与 Game Console 行为完全一致(默认 tag="GM", subtitle="主代理")。
-function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, thinking, speakerName, speakerAvatar, tag, hideMeta, meta }) {
+function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, thinking, speakerName, speakerAvatar, tag, hideMeta, meta, images }) {
   const displayText = stripStateOpsForDisplay(text);
   // task 90: 用 RpgMarkdown.Block 渲染 markdown (** / # / list / code / link...)
   // window.RpgMarkdown 由 markdown-render.jsx 提供,加载顺序在 game-app.jsx 之前。
@@ -707,6 +707,7 @@ function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, think
               <p key={i}>{p}{streaming && i === (displayText || "").split(/\n\n+/).length - 1 && <span className="gc-cursor" />}</p>
             )
         }
+        <ChatImageGroup images={images} />
       </div>
       {!streaming && <MsgActions text={displayText} ts={ts || "—"} msgIndex={msgIndex} saveId={saveId} commitId={commitId} role="assistant" meta={meta} />}
     </div>);
@@ -741,7 +742,98 @@ function PlayerBlock({ text, ts, attachments, msgIndex, saveId, commitId, speake
 
 }
 
-// ── Phase 3: 会话生成图片区 ───────────────────────────────────────────────
+// ── 聊天内嵌图片(GPT 风:图片是回复的一部分,渲在助手消息气泡内)─────────────
+// 关联策略:实时到达 → 归到当前最后一条助手消息(lastKeyRef);并把 {imageId: msgKey}
+// 持久化到 localStorage(按 saveId),刷新后位置仍在。未映射的旧图回退到最后助手消息。
+// msgKey = 助手消息的绝对索引字符串(append-only history 跨刷新稳定)。
+function _imgMapKey(saveId) { return `rpg.imgmsg.${saveId}`; }
+function _loadImgMap(saveId) {
+  try { return JSON.parse(localStorage.getItem(_imgMapKey(saveId)) || '{}') || {}; } catch (_) { return {}; }
+}
+function _saveImgMap(saveId, map) {
+  try { localStorage.setItem(_imgMapKey(saveId), JSON.stringify(map)); } catch (_) {}
+}
+
+// 返回 { msgKey: images[] };未映射的归入 '__last' 桶(由调用方挂到最后助手消息)。
+export function useSaveImages(saveId, lastKeyRef) {
+  const [images, setImages] = useStateA([]);   // [{id,url,kind,key}]
+  const mapRef = useRefA({});
+
+  // 拉历史图片 + 应用持久化映射
+  useEffectA(() => {
+    if (saveId == null) { setImages([]); mapRef.current = {}; return; }
+    let cancelled = false;
+    mapRef.current = _loadImgMap(saveId);
+    (async () => {
+      try {
+        const list = await window.api.images.list(saveId);
+        if (cancelled) return;
+        const done = Array.isArray(list) ? list.filter((im) => im.status === 'done' && im.url) : [];
+        const map = mapRef.current;
+        setImages(done.map((im) => ({ id: im.id, url: im.url, kind: im.kind || 'game', key: (map[im.id] != null ? String(map[im.id]) : null) })));
+      } catch (_) { /* 后端未实装时静默 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [saveId]);
+
+  // SSE 实时追加,归到当前最后助手消息
+  useEffectA(() => {
+    if (saveId == null) return;
+    const handler = (ev) => {
+      const { op, payload } = (ev && ev.detail) || {};
+      if (op !== 'ready') return;
+      const { image_id, url, kind } = payload || {};
+      if (!image_id || !url) return;
+      const key = (lastKeyRef && lastKeyRef.current != null) ? String(lastKeyRef.current) : null;
+      if (key != null) { mapRef.current[image_id] = key; _saveImgMap(saveId, mapRef.current); }
+      setImages((prev) => prev.some((im) => im.id === image_id) ? prev
+        : [...prev, { id: image_id, url, kind: kind || 'game', key }]);
+    };
+    window.addEventListener('rpg-image-updated', handler);
+    return () => window.removeEventListener('rpg-image-updated', handler);
+  }, [saveId]);
+
+  return useMemoA(() => {
+    const g = {};
+    for (const im of images) {
+      const k = im.key != null ? im.key : '__last';
+      (g[k] = g[k] || []).push(im);
+    }
+    return g;
+  }, [images]);
+}
+
+// 助手消息气泡内的图片组(单图自然比例,多图方形拼贴),点击全屏。
+function ChatImageGroup({ images }) {
+  const [lightbox, setLightbox] = useStateA(null);
+  useEffectA(() => {
+    if (!lightbox) return;
+    const h = (e) => { if (e.key === 'Escape') setLightbox(null); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [lightbox]);
+  if (!images || !images.length) return null;
+  const multi = images.length > 1;
+  return (
+    <div className="rpg-chat-imgs">
+      {images.map((im) => (
+        <button key={im.id} type="button" title={im.kind || '生成图片'}
+          className={`rpg-chat-img ${multi ? 'rpg-chat-img--multi' : 'rpg-chat-img--single'}`}
+          onClick={() => setLightbox(im.url)}>
+          <img src={im.url} alt="" loading="lazy" decoding="async" />
+        </button>
+      ))}
+      {lightbox && (
+        <div className="mlb-backdrop" onClick={() => setLightbox(null)} role="dialog" aria-modal="true">
+          <img src={lightbox} alt="" style={{ maxWidth: '92vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 10, boxShadow: '0 12px 60px rgba(0,0,0,.7)' }} onClick={(e) => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} aria-label="关闭" style={{ position: 'absolute', top: 20, right: 24, width: 38, height: 38, borderRadius: 99, border: 0, background: 'rgba(255,255,255,.14)', color: '#fff', fontSize: 19, cursor: 'pointer' }}>×</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Phase 3: 会话生成图片区(旧:底部独立 strip — 已退役为内嵌,保留定义供兼容)──────
 // 挂载/saveId 变化时拉取已有图片(status==='done' && url),并订阅 SSE image topic 实时追加。
 // 组件卸载时取消订阅,防泄漏。
 function SaveImagesStrip({ saveId }) {
@@ -858,6 +950,13 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
   const hiddenCount = visibleStart;
   const visible = totalLen > 0 ? history.slice(visibleStart) : [];
 
+  // 内嵌聊天图片:最后一条助手消息的绝对索引(实时图归属 + __last 兜底)
+  let lastAsstIdx = -1;
+  for (let _i = totalLen - 1; _i >= 0; _i--) { if (history[_i] && history[_i].role === "assistant") { lastAsstIdx = _i; break; } }
+  const lastKeyRef = useRefA(null);
+  lastKeyRef.current = lastAsstIdx >= 0 ? String(lastAsstIdx) : null;
+  const imagesByKey = useSaveImages(saveId, lastKeyRef);
+
   // task 133: Claude 风格自动滚动 — 用户上滚后停止跟随 + 回到底部按钮
   const isAtBottomRef = useRefA(true);
   const [showJumpBtn, setShowJumpBtn] = useStateA(false);
@@ -919,6 +1018,7 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
           <NarrativeBlock key={`gm-${idx}`} text={m.content} ts={m.ts}
             msgIndex={idx} saveId={saveId} commitId={commitId}
             thinking={m._thinking}
+            images={imagesByKey[String(idx)] || (idx === lastAsstIdx ? imagesByKey['__last'] : undefined)}
             streaming={!m.streaming_done && idx === totalLen - 1 && runState.running} /> :
           <PlayerBlock key={`pl-${idx}`} text={m.content} ts={m.ts} attachments={m.attachments}
             msgIndex={idx} saveId={saveId} commitId={commitId} />;
@@ -967,8 +1067,7 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
             </div>
           </div>
         }
-        {/* Phase 3: 本局生成图片区 — 消息列表末尾追加，不影响现有渲染 */}
-        <SaveImagesStrip saveId={saveId} />
+        {/* 图片已内嵌进对应助手消息气泡(useSaveImages + ChatImageGroup),不再底部独立 strip */}
       </div>
       {/* task 133: Claude 风格"回到底部"浮按钮 — 用户上滚时显示。
           task 46: 位置贴右侧而不是 center,bottom 拉到 90px 避开 composer 输入框,

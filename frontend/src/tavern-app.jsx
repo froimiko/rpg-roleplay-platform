@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom';
 
 import { Icon } from './game-icons.jsx';
 import { useResizable } from './responsive.jsx';
-import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip } from './game-app.jsx';
+import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip, useSaveImages } from './game-app.jsx';
 import { Composer } from './game-composer.jsx';
 import { TavernImportModal, CardSheet, CardEditFields, cardFormInit, cardFormPayload } from './pages/cards.jsx';
 import AvatarImg from './components/AvatarImg.jsx';
@@ -343,10 +343,18 @@ export function TavernThinkingBlock({ text, thinking }) {
   );
 }
 
-export function TavernChatArea({ history, running, saveId, charName, charInitial, personaName, hasError, errorMsg, onRetry, lastMeta, elapsedLabel }) {
+export function TavernChatArea({ history, running, saveId, charName, charInitial, charAvatar, personaName, hasError, errorMsg, onRetry, lastMeta, elapsedLabel }) {
   const ref = useRef(null);
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+
+  // 内嵌聊天图片:最后一条助手消息绝对索引 + 图片按消息分发(复用游戏端 hook)
+  const total0 = Array.isArray(history) ? history.length : 0;
+  let lastAsstIdx = -1;
+  for (let _i = total0 - 1; _i >= 0; _i--) { if (history[_i] && history[_i].role === 'assistant') { lastAsstIdx = _i; break; } }
+  const lastKeyRef = useRef(null);
+  lastKeyRef.current = lastAsstIdx >= 0 ? String(lastAsstIdx) : null;
+  const imagesByKey = useSaveImages(saveId, lastKeyRef);
 
   useEffect(() => {
     const el = ref.current;
@@ -399,7 +407,8 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
                 <NarrativeBlock
                   text={m.content} ts={m.ts}
                   msgIndex={i} saveId={saveId} commitId={commitId}
-                  hideMeta
+                  tag={charName} speakerName="" speakerAvatar={charAvatar || charInitial}
+                  images={imagesByKey[String(i)] || (i === lastAsstIdx ? imagesByKey['__last'] : undefined)}
                   streaming={isStreaming}
                   meta={i === total - 1 ? lastMeta : null}
                 />
@@ -436,8 +445,7 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
             </div>
           </div>
         )}
-        {/* Phase 3: 本对话生成图片区 */}
-        <SaveImagesStrip saveId={saveId} />
+        {/* 图片已内嵌进对应角色消息气泡(useSaveImages + ChatImageGroup),不再底部独立 strip */}
       </div>
       {showJump && (
         <button
@@ -1002,6 +1010,7 @@ export default function TavernApp() {
 
   const charName = (character && character.name) || (activeChat && activeChat.character_name) || '角色';
   const charInitial = charName.trim().slice(0, 1);
+  const charAvatar = (character && character.avatar_path) || (activeChat && activeChat.avatar_path) || null;
   const personaName = (persona && persona.name) || '你';
   const exportUrl = activeId != null ? window.api.tavern.exportJsonl(activeId) : null;
 
@@ -1056,7 +1065,7 @@ export default function TavernApp() {
           <TavernChatArea
             history={history} running={running}
             saveId={activeId}
-            charName={charName} charInitial={charInitial} personaName={personaName}
+            charName={charName} charInitial={charInitial} charAvatar={charAvatar} personaName={personaName}
             hasError={hasError} onRetry={onRetry}
           />
         )}
