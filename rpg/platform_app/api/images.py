@@ -164,14 +164,16 @@ def list_user_images(
 # ══════════════════════════════════════════════════════════════════════
 
 @router.get("/api/images/file/{filename}")
-async def api_image_file(filename: str) -> FileResponse:
+async def api_image_file(filename: str, request: Request) -> FileResponse:
     """服务 platform_data/ai_images/ 下的图片文件（旧 URL 保留兼容）。
 
+    鉴权链接:必须登录(cookie)才能取图,未登录 → 401(同 /api/storage)。
     安全防护：
       1. 路径穿越：文件名不得含 / \\ .. 或以 . 开头。
       2. 扩展名白名单：只允许 png / jpg / jpeg / webp。
       3. 实际路径由 storage.resolve_path 做根限定（防穿越/symlink 逃逸）。
     """
+    require_user(request)
     from platform_app import storage  # lazy import
 
     # 1. 路径穿越检查（直接拒绝任何非纯文件名字符）
