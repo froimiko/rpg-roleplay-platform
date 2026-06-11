@@ -10,6 +10,7 @@ import { Icon } from '../game-icons.jsx';
 import { fmtBytes, ResizableSplit } from '../platform-app.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import AvatarImg from '../components/AvatarImg.jsx';
+import CharacterCardHero from '../components/CharacterCardHero.jsx';
 import GenerateImageModal from '../components/GenerateImageModal.jsx';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSHeader from '@cloudscape-design/components/header';
@@ -1028,9 +1029,6 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
       <CSHeader variant="h2"
         actions={
           <CSSpaceBetween direction="horizontal" size="xs">
-            <CSButton iconName="gen-ai" onClick={() => setGenAvatarOpen(true)}>AI 生成头像</CSButton>
-            <CSButton iconName="upload" loading={uploadAvatarBusy} disabled={uploadAvatarBusy}
-              onClick={() => avatarInputRef.current && avatarInputRef.current.click()}>上传图片</CSButton>
             {isPersonaOrPc && (
               <CSButton iconName="gen-ai" loading={genPersonaBusy} onClick={doGenPersonaImage}>生成人设图</CSButton>
             )}
@@ -1042,16 +1040,14 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
         }
       >{card.name}{fullName && <CSBox display="inline" color="text-status-inactive" fontSize="body-s" padding={{ left: 's' }}>{fullName}</CSBox>}</CSHeader>
     }>
-      {/* 当前头像展示 — avatarUrl state 由生图/设为当前等操作实时更新 */}
-      {avatarUrl && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 0 12px' }}>
-          <AvatarImg src={avatarUrl} name={raw.name || '?'} size={96} shape="rounded" zoomable />
-          <div style={{ fontSize: 12.5, color: 'var(--text-quiet, #9a948c)', lineHeight: 1.6 }}>
-            <div style={{ fontWeight: 600, color: 'var(--text, #ebe7df)', fontSize: 14 }}>{raw.name || t('cards.detail.unnamed')}</div>
-            {raw.identity && <div>{_oneLine(raw.identity, 60)}</div>}
-          </div>
-        </div>
-      )}
+      {/* 图片优先的角色海报 — 生成/上传/图库/预览一站式，空态优雅引导 */}
+      <div style={{ maxWidth: 480, margin: '2px auto 16px' }}>
+        <CharacterCardHero
+          card={{ id: raw.id, name: raw.name, identity: raw.identity || raw.role, appearance: raw.appearance, avatar_path: avatarUrl }}
+          editable
+          onChanged={(u) => setAvatarUrl(u)}
+        />
+      </div>
       <CSTabs activeTabId={tab} onChange={({ detail }) => setTab(detail.activeTabId)} tabs={[
         { id: 'info', label: t('cards.detail.tab_info'), content: (
           <CSKeyValuePairs columns={4} items={[

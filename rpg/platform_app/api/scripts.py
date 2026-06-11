@@ -718,6 +718,38 @@ async def api_script_unsubscribe(script_id: int, user=Depends(require_user)):
     return json_response({"ok": True, "unsubscribed": True, "script_id": script_id})
 
 
+@router.post("/api/scripts/{script_id}/cover-url")
+async def api_set_script_cover_url(request: Request, script_id: int, user=Depends(require_user)):
+    """从图库 URL 设置剧本封面（不重新上传，URL 已是合法资产）。
+
+    鉴权：scripts WHERE id=script_id AND owner_id=user[id]（仅 owner）。
+    URL 前缀白名单：复用 _safe_avatar_path；非法 URL → 400。
+    """
+    from platform_app.user_cards import _safe_avatar_path
+
+    user_id = int(user["id"])
+    body = await request.json()
+    raw_url = str(body.get("url") or "").strip()
+    safe_url = _safe_avatar_path(raw_url)
+    if not safe_url:
+        return json_response({"ok": False, "error": "不合法的图片 URL（仅允许站内资产路径）"}, status_code=400)
+
+    with connect() as db:
+        owned = db.execute(
+            "select 1 from scripts where id = %s and owner_id = %s",
+            (script_id, user_id),
+        ).fetchone()
+    if not owned:
+        return json_response({"ok": False, "error": "无权操作该剧本"}, status_code=403)
+
+    with connect() as db:
+        db.execute(
+            "update scripts set cover_image_url = %s where id = %s and owner_id = %s",
+            (safe_url, script_id, user_id),
+        )
+    return json_response({"ok": True, "url": safe_url})
+
+
 @router.post("/api/scripts/{script_id}/cover")
 async def api_upload_script_cover(script_id: int, file: UploadFile = File(...), user=Depends(require_user)):
     """手动上传剧本封面图（替换 cover_image_url）。

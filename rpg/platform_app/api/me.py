@@ -772,6 +772,83 @@ async def api_set_current_persona_image(card_id: int, image_id: int, user=Depend
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
+@router.post("/api/me/character-cards/{card_id}/avatar-url")
+async def api_set_card_avatar_url(request: Request, card_id: int, user=Depends(require_user)):
+    """从图库 URL 设置角色卡头像（不重新上传，URL 已是合法资产）。
+
+    鉴权：character_cards WHERE id=card_id AND user_id=user[id]。
+    URL 前缀白名单：复用 _safe_avatar_path；非法 URL → 400。
+    """
+    from ..user_cards import _safe_avatar_path
+
+    user_id = int(user["id"])
+    body = await request.json()
+    raw_url = str(body.get("url") or "").strip()
+    safe_url = _safe_avatar_path(raw_url)
+    if not safe_url:
+        return json_response({"ok": False, "error": "不合法的图片 URL（仅允许站内资产路径）"}, status_code=400)
+
+    with connect() as db:
+        owned = db.execute(
+            "select 1 from character_cards where id = %s and user_id = %s",
+            (card_id, user_id),
+        ).fetchone()
+    if not owned:
+        return json_response({"ok": False, "error": "角色卡不存在或无权访问"}, status_code=403)
+
+    with connect() as db:
+        db.execute(
+            "update character_cards set avatar_path = %s where id = %s and user_id = %s",
+            (safe_url, card_id, user_id),
+        )
+    return json_response({"ok": True, "url": safe_url})
+
+
+@router.post("/api/me/character-cards/{card_id}/persona-images/url")
+async def api_set_persona_image_url(request: Request, card_id: int, user=Depends(require_user)):
+    """从图库 URL 设置人设图并设为当前图（不重新上传，URL 已是合法资产）。
+
+    鉴权：character_cards WHERE id=card_id AND user_id=user[id]。
+    URL 前缀白名单：复用 _safe_avatar_path；非法 URL → 400。
+    同时更新 character_cards.avatar_path。
+    """
+    from ..user_cards import _safe_avatar_path
+
+    user_id = int(user["id"])
+    body = await request.json()
+    raw_url = str(body.get("url") or "").strip()
+    safe_url = _safe_avatar_path(raw_url)
+    if not safe_url:
+        return json_response({"ok": False, "error": "不合法的图片 URL（仅允许站内资产路径）"}, status_code=400)
+
+    with connect() as db:
+        owned = db.execute(
+            "select 1 from character_cards where id = %s and user_id = %s",
+            (card_id, user_id),
+        ).fetchone()
+    if not owned:
+        return json_response({"ok": False, "error": "角色卡不存在或无权访问"}, status_code=403)
+
+    with connect() as db:
+        db.execute(
+            "update card_persona_images set is_current = false where card_id = %s",
+            (card_id,),
+        )
+        db.execute(
+            """
+            insert into card_persona_images
+                (card_id, image_url, source, status, is_current)
+            values (%s, %s, 'manual', 'done', true)
+            """,
+            (card_id, safe_url),
+        )
+        db.execute(
+            "update character_cards set avatar_path = %s where id = %s and user_id = %s",
+            (safe_url, card_id, user_id),
+        )
+    return json_response({"ok": True, "url": safe_url})
+
+
 @router.post("/api/me/character-cards/{card_id}/avatar")
 async def api_upload_card_avatar(card_id: int, file: UploadFile = File(...), user=Depends(require_user)):
     """手动上传角色卡头像（替换 avatar_path）。

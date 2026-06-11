@@ -40,6 +40,7 @@ import { plPathToPage, plNavigate, plPageToPath } from '../router.js';
 
 // 移动端专用外壳(路线 A)— <600px 且开启 m2 标志时替代 Cloudscape 外壳。
 import '../mobile.css';
+import '../media.css';
 import { MobileRoot } from '../mobile/MobileRoot.jsx';
 import { useBreakpoint } from '../responsive.jsx';
 

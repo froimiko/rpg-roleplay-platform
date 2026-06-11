@@ -17,6 +17,7 @@ import '../i18n/index.js';
 // 反馈抽屉 / 复用的 CardSheet / CardEditFields 都用 Cloudscape 组件,
 // 这里加载同一套暖色暗主题(与 game-console 完全一致)。
 import '@cloudscape-design/global-styles/index.css';
+import '../media.css';
 import { installWarmTheme } from '../cloudscape-theme.js';
 installWarmTheme();
 

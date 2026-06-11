@@ -26,6 +26,7 @@ installWarmTheme();
 import { useResizable, useBreakpoint } from '../responsive.jsx';
 // 移动原生游戏台(P2)— <600px 且开启 m2 标志时替代电脑端 gc-shell。
 import '../mobile.css';
+import '../media.css';
 import { MobileGame } from '../mobile/game/MobileGame.jsx';
 import { safeUUID } from '../lib/crypto-safe.js';
 import { LeftRail, TopBar, ChatArea, HistoryDrawer, SearchDrawer, GameToastStack, RunSteps, GameSettingsModal } from '../game-app.jsx';

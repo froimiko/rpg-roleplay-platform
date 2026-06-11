@@ -19,6 +19,7 @@ import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import GmStyleEditor from '../components/GmStyleEditor.jsx';
 import AvatarImg from '../components/AvatarImg.jsx';
 import GenerateImageModal from '../components/GenerateImageModal.jsx';
+import MediaStudio from '../components/MediaStudio.jsx';
 import { ModuleStatusCard } from '../components/ModuleStatusCard.jsx';
 import { ModuleMatrixOverview } from '../components/ModuleMatrixOverview.jsx';
 import { RebuildJobBanner } from '../components/RebuildJobBanner.jsx';
@@ -521,12 +522,9 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
   // Fork inline confirmation state
   const [forkBusy, setForkBusy] = useStatePL(false);
   const [forkConfirm, setForkConfirm] = useStatePL(false);
-  // 生成封面
-  const [genCoverOpen, setGenCoverOpen] = useStatePL(false);
+  // 封面:统一 MediaStudio
+  const [coverStudioOpen, setCoverStudioOpen] = useStatePL(false);
   const [coverUrl, setCoverUrl] = useStatePL(s.cover_image_url || null);
-  // W3-C1: 手动上传封面
-  const [uploadCoverBusy, setUploadCoverBusy] = useStatePL(false);
-  const coverInputRef = React.useRef(null);
 
   useEffectPL(() => {
     setWb(null); setNpc(null); setTl(null); setOv(null);
@@ -536,21 +534,6 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
 
   const isOwner = currentUserId && s.owner_id === currentUserId;
 
-  // W3-C1: 上传封面(仅 owner)
-  const doUploadCover = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    e.target.value = '';
-    setUploadCoverBusy(true);
-    window.__apiToast?.('正在上传封面…', { kind: 'info', duration: 2000 });
-    try {
-      const res = await window.api.scripts.uploadCover(s.id, file);
-      if (res && res.url) setCoverUrl(res.url);
-      window.__apiToast?.('封面已更新', { kind: 'ok', duration: 2000 });
-    } catch (e2) {
-      window.__apiToast?.('上传失败', { kind: 'danger', detail: e2?.message });
-    } finally { setUploadCoverBusy(false); }
-  };
 
   // 手动把某 NPC 卡设为主角(AI canon importance 误判时纠正)。设完重拉列表刷新「主角」徽标。
   const [protagBusy, setProtagBusy] = useStatePL(null); // 正在设置的 card id
@@ -674,17 +657,16 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
 
   return (
     <>
-    {genCoverOpen && (
-      <GenerateImageModal
-        open={genCoverOpen}
-        onClose={() => setGenCoverOpen(false)}
-        kind="cover"
-        attach={{ type: 'script_cover', id: s.id }}
+    {coverStudioOpen && (
+      <MediaStudio
+        open={coverStudioOpen}
+        onClose={() => setCoverStudioOpen(false)}
+        target={{ type: 'script_cover', id: s.id }}
+        name={s.title}
         defaultPrompt={genCoverDefaultPrompt}
-        onDone={(url) => {
+        onApplied={(url) => {
           setCoverUrl(url);
-          setGenCoverOpen(false);
-          window.__apiToast?.('封面已生成', { kind: 'ok' });
+          setCoverStudioOpen(false);
         }}
       />
     )}
@@ -695,24 +677,12 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
         onClose={() => setHistoryOpen(false)}
       />
     )}
-    {/* W3-C1: 隐藏 file input — 封面上传(仅 owner 渲染) */}
-    {isOwner && (
-      <input
-        ref={coverInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        style={{ display: 'none' }}
-        onChange={doUploadCover}
-      />
-    )}
     <CSContainer header={
       <CSHeader variant="h2"
         actions={
           <CSSpaceBetween direction="horizontal" size="xs">
-            <CSButton iconName="gen-ai" onClick={() => setGenCoverOpen(true)}>生成封面</CSButton>
             {isOwner && (
-              <CSButton iconName="upload" loading={uploadCoverBusy} disabled={uploadCoverBusy}
-                onClick={() => coverInputRef.current && coverInputRef.current.click()}>上传封面</CSButton>
+              <CSButton iconName="gen-ai" onClick={() => setCoverStudioOpen(true)}>✦ 更换封面</CSButton>
             )}
             {/* 反馈#3:开始游戏改下拉——可选继续某个存档 / 开新游戏,不再有存档就直接进后台 */}
             <CSButtonDropdown variant="primary" expandToViewport disabled={!!playBlock}
@@ -811,19 +781,42 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
       <CSTabs activeTabId={tab} onChange={({ detail }) => setTab(detail.activeTabId)} tabs={[
         { id: 'overview', label: t('scripts.editor.tab_overview'), content: (
           <CSSpaceBetween size="l">
-            {/* 剧本封面 */}
-            {coverUrl && (
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <AvatarImg
-                  src={coverUrl}
-                  name={s.title}
-                  size={280}
-                  shape="rounded"
-                  zoomable
-                  aspectRatio="16/9"
-                />
-              </div>
-            )}
+            {/* 剧本封面:图片优先 */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              {coverUrl ? (
+                <div className="mh-hero" style={{ width: '100%', maxWidth: 320, borderRadius: 8, overflow: 'hidden', aspectRatio: '16/9', background: 'var(--color-background-container-content, #1e1c1b)' }}>
+                  <AvatarImg
+                    src={coverUrl}
+                    name={s.title}
+                    size={null}
+                    shape="rounded"
+                    zoomable
+                    aspectRatio="16/9"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                </div>
+              ) : (
+                <div style={{
+                  width: '100%', maxWidth: 320, aspectRatio: '16/9',
+                  borderRadius: 8, border: '1px dashed var(--color-border-divider-default, #444)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, color: 'var(--color-text-body-secondary, #888)',
+                  background: 'var(--color-background-container-content, #1e1c1b)',
+                }}>
+                  <Icon name="image" size={28} />
+                  <span style={{ fontSize: 13 }}>暂无封面</span>
+                  {isOwner && (
+                    <button
+                      onClick={() => setCoverStudioOpen(true)}
+                      className="mh-chip"
+                      style={{ marginTop: 4, cursor: 'pointer', fontSize: 12, padding: '3px 10px',
+                        background: 'transparent', border: '1px solid var(--color-border-divider-default, #555)',
+                        borderRadius: 4, color: 'var(--color-text-interactive-default, #e8c97a)' }}
+                    >✦ 添加封面</button>
+                  )}
+                </div>
+              )}
+            </div>
             <CSKeyValuePairs columns={4} items={[
               { label: t('scripts.my.chapters'), value: (s.chapter_count || 0).toLocaleString() },
               { label: t('scripts.my.words'), value: `${((s.word_count || 0) / 10000).toFixed(1)} ${t('scripts.my.wan')}` },

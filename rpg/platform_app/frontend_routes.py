@@ -271,6 +271,30 @@ async def api_upload_avatar(request: Request):
     return json_response({"ok": True, "avatar_url": avatar_url})
 
 
+@router.post("/api/profile/avatar-url")
+async def api_set_avatar_url(request: Request):
+    """从图库 URL 设置个人头像（不重新上传，URL 已是合法资产）。
+
+    URL 前缀白名单：复用 _safe_avatar_path；非法 URL → 400。
+    """
+    from platform_app.user_cards import _safe_avatar_path
+
+    user = require_user(request)
+    body = await request.json()
+    raw_url = str(body.get("url") or "").strip()
+    safe_url = _safe_avatar_path(raw_url)
+    if not safe_url:
+        return json_response({"ok": False, "error": "不合法的图片 URL（仅允许站内资产路径）"}, status_code=400)
+
+    init_db()
+    with connect() as db:
+        db.execute(
+            "update users set avatar_url = %s, updated_at = now() where id = %s",
+            (safe_url, user["id"]),
+        )
+    return json_response({"ok": True, "url": safe_url})
+
+
 @router.post("/api/profile/avatar/reset")
 async def api_reset_avatar(request: Request):
     user = require_user(request)

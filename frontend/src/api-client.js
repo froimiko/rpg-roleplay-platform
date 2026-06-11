@@ -296,6 +296,8 @@
       },
       // task 50：BE 有 avatar reset 但 FE 没 wrapper（直接 raw POST 也行，加 wrapper 更清晰）
       avatarReset: () => POST(`${API_PREFIX}/profile/avatar/reset`, {}),
+      // MediaStudio 图库：从已有资产 URL 设个人头像（不重新上传）
+      setAvatarUrl: (url) => POST(`/api/profile/avatar-url`, { url }),
       visibility: (body) => POST(`${API_PREFIX}/profile/visibility`, body),
       exportData: (body) => POST(`${API_PREFIX}/account/export`, body || {}),
       // 账号数据迁移(免部署 → 本地):聚合剧本/存档/角色卡/偏好为单个 zip
@@ -521,6 +523,8 @@
         const fd = new FormData(); fd.append("file", file);
         return _send(`/api/scripts/` + id + "/cover", { method: "POST", body: fd });
       },
+      // MediaStudio 图库：从已有资产 URL 设封面（不重新上传）
+      setCoverUrl: (id, url) => POST(`/api/scripts/` + id + "/cover-url", { url }),
       // v44: Git 模式版本控制 / fork / 共享剧本同步
       fork: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + "/fork", body || {}),
       commits: (sid, q) => GET(`${API_PREFIX}/scripts/` + sid + "/commits", q),
@@ -650,6 +654,10 @@
         const fd = new FormData(); fd.append("file", file);
         return _send(`${API_PREFIX}/me/character-cards/` + id + "/persona-images/upload", { method: "POST", body: fd });
       },
+      // MediaStudio 图库：从已有资产 URL 设头像（不重新上传）
+      setAvatarUrl: (id, url) => POST(`${API_PREFIX}/me/character-cards/` + id + "/avatar-url", { url }),
+      // MediaStudio 图库：从已有资产 URL 设人设图（插 card_persona_images + 设为 current）
+      setPersonaImageUrl: (id, url) => POST(`${API_PREFIX}/me/character-cards/` + id + "/persona-images/url", { url }),
     },
 
     // ---------- Chat history (SillyTavern JSONL import) ----------

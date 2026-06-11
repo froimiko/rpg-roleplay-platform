@@ -33,6 +33,7 @@ import { FeedbackQuickModal } from './components/FeedbackQuickModal.jsx';
 import HelpDrawerRoot from './components/HelpDrawer.jsx';
 import AvatarImg from './components/AvatarImg.jsx';
 import GenerateImageModal from './components/GenerateImageModal.jsx';
+import MediaStudio from './components/MediaStudio.jsx';
 import FileLibrary from './components/FileLibrary.jsx';
 // Cloudscape shell(AWS 控制台架构 + 暖色主题)
 import CSTopNavigation from '@cloudscape-design/components/top-navigation';
@@ -1203,6 +1204,10 @@ function MeOverview() {
   }, [IS_ANON, saves.length]);
   const ACHIEVEMENTS = achv || [];
   const unlockedCount = ACHIEVEMENTS.filter(a => a.unlocked).length;
+  const [overviewAvatarStudioOpen, setOverviewAvatarStudioOpen] = useStatePL(false);
+  const [overviewAvatarUrl, setOverviewAvatarUrl] = useStatePL(null);
+  // 实际展示 URL:MediaStudio 更新后用 overviewAvatarUrl,否则回落 user._raw?.avatar_url
+  const displayAvatarUrl = overviewAvatarUrl || user._raw?.avatar_url || null;
 
   return (
     <CSSpaceBetween size="l">
@@ -1210,7 +1215,37 @@ function MeOverview() {
       <CSContainer>
         <CSSpaceBetween size="m">
           <CSSpaceBetween direction="horizontal" size="m">
-            <AvatarImg src={user._raw?.avatar_url || null} name={user.display_name || '?'} size={88} shape="circle" className="pl-me-avatar" zoomable />
+            {overviewAvatarStudioOpen && (
+              <MediaStudio
+                open={overviewAvatarStudioOpen}
+                onClose={() => setOverviewAvatarStudioOpen(false)}
+                target={{ type: 'user_avatar' }}
+                name={user.display_name || '用户'}
+                defaultPrompt={user.display_name ? `${user.display_name} 的用户头像` : '用户头像'}
+                onApplied={(url) => {
+                  setOverviewAvatarUrl(url + '?t=' + Date.now());
+                  setOverviewAvatarStudioOpen(false);
+                }}
+              />
+            )}
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <AvatarImg src={displayAvatarUrl} name={user.display_name || '?'} size={88} shape="circle" className="pl-me-avatar" zoomable />
+              {!IS_ANON && (
+                <button
+                  onClick={() => setOverviewAvatarStudioOpen(true)}
+                  title="更换头像"
+                  style={{
+                    position: 'absolute', bottom: 0, right: 0,
+                    background: 'var(--color-background-dropdown-item-default, #2a2927)',
+                    border: '1px solid var(--color-border-divider-default, #444)',
+                    borderRadius: '50%', width: 26, height: 26,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, color: 'var(--color-text-interactive-default, #e8c97a)',
+                    padding: 0,
+                  }}
+                >✦</button>
+              )}
+            </div>
             <div style={{flex: 1}}>
               <CSSpaceBetween size="xs">
                 <CSBox variant="h2">
@@ -1359,7 +1394,7 @@ function MeEditProfile() {
   const [resetAvatarOpen, setResetAvatarOpen] = useStatePL(false);
   const [saving, setSaving] = useStatePL(false);
   const avatarInputRef = React.useRef(null);
-  const [genAvatarOpen, setGenAvatarOpen] = useStatePL(false);
+  const [mediaStudioOpen, setMediaStudioOpen] = useStatePL(false);
   const [avatarUrl, setAvatarUrl] = useStatePL(user._raw?.avatar_url || null);
 
   // 从 /api/me/profile 拉真实资料(后端合并了 profile_extras:邮箱/手机/真名/性别/
@@ -1451,17 +1486,16 @@ function MeEditProfile() {
       {/* 头像 */}
       <CSContainer header={<CSHeader variant="h2">头像</CSHeader>}>
         <CSSpaceBetween size="m">
-          {genAvatarOpen && (
-            <GenerateImageModal
-              open={genAvatarOpen}
-              onClose={() => setGenAvatarOpen(false)}
-              kind="avatar"
-              attach={{ type: 'user_avatar' }}
+          {mediaStudioOpen && (
+            <MediaStudio
+              open={mediaStudioOpen}
+              onClose={() => setMediaStudioOpen(false)}
+              target={{ type: 'user_avatar' }}
+              name={form.display_name || user.display_name || '用户'}
               defaultPrompt={form.display_name ? `${form.display_name} 的用户头像` : '用户头像'}
-              onDone={(url) => {
+              onApplied={(url) => {
                 setAvatarUrl(url + '?t=' + Date.now());
-                setGenAvatarOpen(false);
-                window.__apiToast?.('AI 头像已生成', { kind: 'ok' });
+                setMediaStudioOpen(false);
               }}
             />
           )}
@@ -1476,9 +1510,8 @@ function MeEditProfile() {
             <div className="pl-me-avatar-actions">
               <CSBox color="text-body-secondary" fontSize="body-s">支持 PNG / JPG / WEBP，建议 512×512。最大 2 MB。</CSBox>
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton iconName="upload" onClick={() => setUploadOpen(true)}>上传新头像</CSButton>
+                <CSButton iconName="gen-ai" onClick={() => setMediaStudioOpen(true)}>✦ 更换头像</CSButton>
                 <CSButton iconName="remove" onClick={() => setResetAvatarOpen(true)}>使用默认</CSButton>
-                <CSButton iconName="gen-ai" onClick={() => setGenAvatarOpen(true)}>AI 生成头像</CSButton>
               </CSSpaceBetween>
             </div>
           </div>

@@ -1,0 +1,187 @@
+/* media.css — 统一图片体验视觉语言（角色档案 / 电影海报方向）
+   对标多媒体社交平台：图片优先、拖拽/粘贴上传、悬停更换、平滑 lightbox、可视画廊。
+   全部复用 tokens.css 变量，与暖暗色 + 衬线 + 赭橙 accent 一致。 */
+
+/* ── 角色海报 Hero（卡详情头图）────────────────────────────── */
+.mh-hero {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--r-3, 8px);
+  overflow: hidden;
+  background: var(--panel-2);
+  box-shadow: var(--shadow-2);
+  isolation: isolate;
+}
+.mh-hero__img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover; display: block;
+  transition: transform .6s cubic-bezier(.2,.7,.2,1), filter .3s;
+}
+.mh-hero:hover .mh-hero__img { transform: scale(1.035); }
+/* 底部压暗渐变 + 顶部轻压，给文字/操作留可读性 */
+.mh-hero__scrim {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    linear-gradient(to top, rgba(15,13,12,.82) 0%, rgba(15,13,12,.30) 32%, rgba(15,13,12,0) 56%),
+    linear-gradient(to bottom, rgba(15,13,12,.34) 0%, rgba(15,13,12,0) 22%);
+}
+.mh-hero__meta {
+  position: absolute; left: 18px; right: 18px; bottom: 14px; z-index: 2;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mh-hero__name {
+  font-family: var(--font-serif);
+  font-size: 26px; font-weight: 700; line-height: 1.15;
+  color: #fff; letter-spacing: .01em;
+  text-shadow: 0 2px 14px rgba(0,0,0,.6);
+}
+.mh-hero__sub {
+  font-size: 12.5px; color: rgba(235,231,223,.82);
+  text-shadow: 0 1px 8px rgba(0,0,0,.6);
+}
+/* hover 才浮现的操作角标 */
+.mh-hero__actions {
+  position: absolute; top: 12px; right: 12px; z-index: 3;
+  display: flex; gap: 8px;
+  opacity: 0; transform: translateY(-4px);
+  transition: opacity .22s, transform .22s;
+}
+.mh-hero:hover .mh-hero__actions,
+.mh-hero:focus-within .mh-hero__actions { opacity: 1; transform: none; }
+.mh-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 12px;
+  background: rgba(20,18,16,.62); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.14);
+  color: #f3efe8; border-radius: 99px;
+  font-size: 12.5px; font-weight: 500; cursor: pointer;
+  transition: background .18s, border-color .18s, transform .1s;
+}
+.mh-chip:hover { background: rgba(201,100,66,.92); border-color: transparent; }
+.mh-chip:active { transform: scale(.96); }
+.mh-chip--ghost:hover { background: rgba(40,36,32,.92); }
+
+/* 拖拽进入时的高亮覆盖 */
+.mh-hero.is-drag::after,
+.mh-drop.is-drag::after {
+  content: "拖到这里上传";
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600; color: var(--accent);
+  background: rgba(201,100,66,.12);
+  border: 2px dashed var(--accent-edge);
+  border-radius: inherit;
+  backdrop-filter: blur(2px);
+}
+
+/* 空态（无图）：优雅引导而非灰块 */
+.mh-hero--empty {
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(201,100,66,.10), transparent 60%),
+    repeating-linear-gradient(45deg, var(--panel-2) 0 14px, var(--panel) 14px 28px);
+  border: 1px solid var(--line-soft);
+}
+.mh-hero--empty:hover { border-color: var(--accent-edge); }
+.mh-empty__inner { text-align: center; color: var(--muted); padding: 16px; pointer-events: none; }
+.mh-empty__icon { font-size: 30px; opacity: .7; margin-bottom: 8px; }
+.mh-empty__title { font-family: var(--font-serif); font-size: 15px; color: var(--text-quiet); }
+.mh-empty__hint { font-size: 12px; color: var(--muted-2); margin-top: 4px; }
+
+/* ── 可编辑头像（悬停更换）────────────────────────────────── */
+.mav-edit { position: relative; display: inline-block; line-height: 0; flex-shrink: 0; }
+.mav-edit__overlay {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  gap: 4px; border-radius: inherit;
+  background: rgba(15,13,12,.55); backdrop-filter: blur(1px);
+  color: #fff; font-size: 11.5px; font-weight: 600;
+  opacity: 0; cursor: pointer; transition: opacity .18s;
+}
+.mav-edit:hover .mav-edit__overlay,
+.mav-edit.is-drag .mav-edit__overlay { opacity: 1; }
+.mav-edit.is-drag .mav-edit__overlay { background: rgba(201,100,66,.55); }
+.mav-edit > img, .mav-edit > div { border-radius: inherit; }
+
+/* ── MediaStudio 弹窗（生成 / 上传 / 图库 三源合一）──────────── */
+.ms-tabs { display: flex; gap: 4px; padding: 4px; background: var(--panel); border-radius: var(--r-2); margin-bottom: 14px; }
+.ms-tab {
+  flex: 1; height: 34px; border: 0; background: transparent; cursor: pointer;
+  color: var(--muted); font-size: 13px; font-weight: 600; border-radius: var(--r-1);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background .15s, color .15s;
+}
+.ms-tab:hover { color: var(--text-quiet); }
+.ms-tab.is-active { background: var(--panel-3); color: var(--text); box-shadow: var(--shadow-1); }
+.ms-body { min-height: 220px; }
+
+/* 上传拖放区 */
+.mh-drop {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; min-height: 220px; padding: 24px;
+  border: 1.5px dashed var(--line-strong); border-radius: var(--r-3);
+  background: var(--panel-2); cursor: pointer; text-align: center;
+  transition: border-color .18s, background .18s;
+}
+.mh-drop:hover { border-color: var(--accent-edge); background: var(--panel-3); }
+.mh-drop__icon { font-size: 34px; opacity: .65; }
+.mh-drop__title { font-size: 14px; color: var(--text-quiet); font-weight: 600; }
+.mh-drop__hint { font-size: 12px; color: var(--muted-2); }
+.mh-drop__preview { max-width: 100%; max-height: 200px; border-radius: var(--r-2); object-fit: contain; }
+
+/* 图库选择网格 */
+.ms-lib { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; max-height: 320px; overflow: auto; padding: 2px; }
+.ms-lib__cell {
+  position: relative; aspect-ratio: 1; border-radius: var(--r-2); overflow: hidden;
+  cursor: pointer; border: 2px solid transparent; background: var(--panel-2);
+  transition: border-color .15s, transform .1s;
+}
+.ms-lib__cell:hover { border-color: var(--accent-edge); }
+.ms-lib__cell.is-sel { border-color: var(--accent); }
+.ms-lib__cell:active { transform: scale(.97); }
+.ms-lib__cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ms-lib__empty { grid-column: 1/-1; text-align: center; color: var(--muted-2); font-size: 12.5px; padding: 30px 0; }
+
+/* 生成中 / 状态条 */
+.ms-status { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+.ms-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: ms-spin .7s linear infinite; }
+@keyframes ms-spin { to { transform: rotate(360deg); } }
+
+/* ── 可视卡片网格的封面缩略 ──────────────────────────────── */
+.mcard-thumb {
+  width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block;
+  border-radius: var(--r-2); background: var(--panel-2);
+}
+
+/* 精致 lightbox（覆盖 AvatarImg 内置的，可全局用）*/
+.mlb-backdrop { position: fixed; inset: 0; z-index: 9000; background: rgba(10,9,8,.9); display: flex; align-items: center; justify-content: center; animation: mlb-fade .2s ease; }
+@keyframes mlb-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── 触屏：无 hover，悬停才浮现的控件改为常驻可见 ────────────── */
+@media (hover: none) {
+  .mh-hero__actions { opacity: 1; transform: none; }
+  .mav-edit__overlay {
+    opacity: 1;
+    /* 触屏上常驻但更克制：只在底部一条压暗 + 文案，不整体盖住头像 */
+    background: linear-gradient(to top, rgba(15,13,12,.62) 0%, rgba(15,13,12,0) 46%);
+    align-items: flex-end; padding-bottom: 5px;
+  }
+}
+
+/* ── 窄屏（移动端）：缩放海报标题、收紧间距、放大触控目标 ──────── */
+@media (max-width: 640px) {
+  .mh-hero__name { font-size: 21px; }
+  .mh-hero__sub { font-size: 11.5px; }
+  .mh-hero__meta { left: 14px; right: 14px; bottom: 11px; }
+  .mh-hero__actions { top: 10px; right: 10px; }
+  .mh-chip { height: 34px; padding: 0 14px; font-size: 13px; }   /* ≥34px 触控目标 */
+  .ms-tab { height: 38px; font-size: 12.5px; gap: 4px; }
+  .ms-lib { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; max-height: 46vh; }
+  .mh-drop { min-height: 180px; padding: 18px; }
+  .mh-empty__icon { font-size: 26px; }
+  .mh-empty__title { font-size: 14px; }
+}
