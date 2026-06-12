@@ -55,7 +55,15 @@ export default function MediaStudio({ open, onClose, target, name, defaultPrompt
   }, [open, tab, libItems]);
 
   const done = useCallback((url) => { setBusy(''); onApplied && onApplied(url); onClose && onClose(); }, [onApplied, onClose]);
-  const fail = useCallback((m) => { setBusy(''); if (/credential|key/i.test(m || '')) setCredsMissing(true); else setErr(m || '操作失败'); }, []);
+  const fail = useCallback((m) => {
+    setBusy('');
+    const msg = m || '';
+    // 仅「确实没配 key」(credentials_required/needs_credentials)才提示「尚未配置」。
+    // 鉴权失败(已配但 key 无效/401,文案里含「API Key」)等一律显示原文 —— 否则会把
+    // 「key 无效」误导成「尚未配置」,让明明配过 key 的用户反复去配(群反馈双星龙闪)。
+    if (/credentials_required|needs_credentials/i.test(msg)) { setCredsMissing(true); setErr(''); }
+    else { setCredsMissing(false); setErr(msg || '操作失败'); }
+  }, []);
 
   // ── 生成 ──
   const pollImage = useCallback((id) => {
