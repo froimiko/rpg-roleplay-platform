@@ -30,6 +30,19 @@ def _is_retryable_openai(exc: Exception) -> bool:
     return False
 
 
+def _is_temperature_rejected(exc: Exception) -> bool:
+    """provider 拒绝自定义 temperature(如 moonshot kimi 部分模型「only 1 is allowed for
+    this model」、openai o-series/gpt-5 reasoning 只接受 temperature=1)。这类是 400
+    BadRequest 且报错文本点名 temperature —— 据此自愈:去掉 temperature 用模型默认重试。"""
+    try:
+        from openai import BadRequestError
+        if not isinstance(exc, BadRequestError):
+            return False
+    except ImportError:
+        return False
+    return "temperature" in str(exc).lower()
+
+
 class _OpenAICompatBackend:
     """适配所有 OpenAI 兼容的 provider，只需要 base_url + env_key + model 名。"""
 
@@ -42,6 +55,31 @@ class _OpenAICompatBackend:
     # 类级状态：记录已经验证过不支持 native tools 的 (api_id, model) 组合，
     # 同一进程内之后直接走 text marker 不再重试
     _unsupported_combos: set[tuple[str, str]] = set()
+
+    # 类级状态：记录拒绝自定义 temperature(只接受默认/=1)的 (api_id, model) 组合，
+    # 同一进程内之后直接不发 temperature。见 _create / _is_temperature_rejected。
+    _fixed_temp_combos: set[tuple[str, str]] = set()
+
+    def _create(self, **kwargs):
+        """self.client.chat.completions.create 的包装,带 temperature 自愈。
+
+        moonshot kimi 部分模型 / openai o-series 等「只允许 temperature=1」,平台默认发
+        0.9/0.1 会被 400 拒(原表现:整轮失败,用户只见随机错误码)。这里首次被拒后去掉
+        temperature 用模型默认重试**并记忆**,本进程同 (api_id, model) 后续直接不发 →
+        当轮即成功,不再失败。stream=True 时请求在 create() 即发出,400 也在此抛,可拦。
+        """
+        combo = (self.api_id, self.model_name)
+        if combo in self._fixed_temp_combos:
+            kwargs.pop("temperature", None)
+        try:
+            return self.client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            if "temperature" in kwargs and _is_temperature_rejected(exc):
+                self._fixed_temp_combos.add(combo)
+                kwargs.pop("temperature", None)
+                log.info(f"[GM] {self.api_id}/{self.model_name} 拒绝自定义 temperature → 用模型默认重试")
+                return self.client.chat.completions.create(**kwargs)
+            raise
 
     def __init__(self, model: str, base_url: str, env_key: str, display_kind: str = "openai_compat",
                  user_id: int | None = None, api_id: str | None = None):
@@ -133,7 +171,7 @@ class _OpenAICompatBackend:
         _reasoning = self._reasoning_param()  # task 141
         for attempt in range(_MAX_RETRIES + 1):
             try:
-                resp = self.client.chat.completions.create(
+                resp = self._create(
                     model=self.model_name,
                     messages=self._to_messages(system, messages),
                     max_tokens=max_tokens,
@@ -208,7 +246,7 @@ class _OpenAICompatBackend:
 
     def call_structured(self, system: str, messages: list[dict], max_tokens: int) -> str:
         sys_text = (system or "") + "\n\n你必须只返回合法 JSON，不能包含 Markdown 代码围栏或解释文字。"
-        resp = self.client.chat.completions.create(
+        resp = self._create(
             model=self.model_name,
             messages=self._to_messages(sys_text, messages),
             max_tokens=max_tokens,
@@ -226,7 +264,7 @@ class _OpenAICompatBackend:
     def stream(self, system: str, messages: list[dict], max_tokens: int) -> Iterator[str]:
         _reasoning = self._reasoning_param()  # task 141
         finish_reason: str | None = None
-        stream = self.client.chat.completions.create(
+        stream = self._create(
             model=self.model_name,
             messages=self._to_messages(system, messages),
             max_tokens=max_tokens,
@@ -369,7 +407,7 @@ class _OpenAICompatBackend:
             finish_reason: str | None = None
             try:
                 _reasoning = self._reasoning_param()  # task 141
-                stream = self.client.chat.completions.create(
+                stream = self._create(
                     model=self.model_name,
                     messages=oai_messages,
                     max_tokens=max_tokens,
