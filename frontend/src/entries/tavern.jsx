@@ -23,6 +23,7 @@ installWarmTheme();
 
 import { ErrorBoundary } from '../components/ErrorBoundary.jsx';
 import { FeedbackDrawerRoot } from '../components/FeedbackDrawer.jsx';
+import GlobalTaskFloater from '../components/GlobalTaskFloater.jsx';
 import TavernApp from '../tavern-app.jsx';
 
 // density preset + narrative font init(等价 game-console 入口里的非 babel inline script)
@@ -53,6 +54,8 @@ const __mount = () => {
       <TavernApp />
       {/* 反馈抽屉根节点 — 监听 window.__openFeedback 全局事件 */}
       <FeedbackDrawerRoot />
+      {/* 全局后台任务浮窗(导入 / 重建 / 生图,有活跃任务才显示) */}
+      <GlobalTaskFloater />
     </ErrorBoundary>
   );
   // 通知 HTML splash 淡出 + 移除节点

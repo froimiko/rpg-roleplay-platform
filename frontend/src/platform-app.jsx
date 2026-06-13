@@ -34,6 +34,7 @@ import { FeedbackQuickModal } from './components/FeedbackQuickModal.jsx';
 import HelpDrawerRoot from './components/HelpDrawer.jsx';
 import AvatarImg from './components/AvatarImg.jsx';
 import GenerateImageModal from './components/GenerateImageModal.jsx';
+import GlobalTaskFloater from './components/GlobalTaskFloater.jsx';
 import MediaStudio from './components/MediaStudio.jsx';
 import FileLibrary from './components/FileLibrary.jsx';
 // Cloudscape shell(AWS 控制台架构 + 暖色主题)
@@ -4567,6 +4568,8 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
       <ContinuePicker open={continueState.open} save={continueState.save} focusedNodeId={continueState.nodeId}
         onClose={() => setContinueState({ open: false, save: null, nodeId: null })} />
       <UnifiedSearch open={searchOpen} onClose={() => setSearchOpen(false)} setPage={setPage} />
+      {/* 全局后台任务浮窗(导入 / 重建 / 生图,有活跃任务才显示) */}
+      <GlobalTaskFloater />
     </>
   );
 }

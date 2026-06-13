@@ -813,6 +813,10 @@
       file: (name) => BASE + `/api/images/file/` + encodeURIComponent(name),
       list: (saveId) => GET(`/api/images/list?save_id=` + encodeURIComponent(saveId)),
     },
+    tasks: {
+      // 全局后台任务浮窗数据源:本人进行中 + 最近刚结束的后台任务(导入/各模块重建/生图)
+      active: () => GET(`/api/me/tasks/active`),
+    },
 
     // ---------- Tools / MCP / Skills ----------
     tools: {

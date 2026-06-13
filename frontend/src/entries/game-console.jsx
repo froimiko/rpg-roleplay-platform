@@ -37,6 +37,7 @@ import ModelPicker from '../components/ModelPicker.jsx';
 import AdultSplash from '../components/AdultSplash.jsx';
 import { ErrorBoundary } from '../components/ErrorBoundary.jsx';
 import { FeedbackDrawerRoot } from '../components/FeedbackDrawer.jsx';
+import GlobalTaskFloater from '../components/GlobalTaskFloater.jsx';
 const SPLASH_VERSION = 'v1.0-2026-05-31';
 
 // density preset + narrative font init（等价原 HTML 非 babel inline script）
@@ -1677,6 +1678,8 @@ const __mount = () => {
       {/* 反馈抽屉根节点 — 监听 window.__openFeedback 全局事件,
           游戏控制台的顶栏按钮 + Game console-assistant-navigation 都能触发 */}
       <FeedbackDrawerRoot />
+      {/* 全局后台任务浮窗(导入 / 重建 / 生图,有活跃任务才显示) */}
+      <GlobalTaskFloater />
     </ErrorBoundary>
   );
   // 通知 HTML splash 淡出 + 移除节点(交给 CSS transition + setTimeout)
