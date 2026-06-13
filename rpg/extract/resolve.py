@@ -10,12 +10,34 @@ discover-then-link 的 link 收尾:
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass, field
 
 from psycopg.types.json import Jsonb
 
 from kb import canon_repo
+
+# 简繁/全角归一:LLM 对简体原文偶尔吐繁体(用户反馈#60:卡是繁体、同一人简繁两张)。
+# zhconv 纯 Python,缺失时静默退化(不归一也不崩)。所有名字/别名都过这条 →
+# 简繁同一人能合并 + 显示统一简体;NFKC 顺手归一全角/半角变体。
+try:
+    import zhconv as _zhconv
+except Exception:  # pragma: no cover - 依赖缺失降级
+    _zhconv = None
+
+
+def _to_simplified(s: str) -> str:
+    s = (s or "")
+    if not s:
+        return s
+    s = unicodedata.normalize("NFKC", s)
+    if _zhconv is not None:
+        try:
+            s = _zhconv.convert(s, "zh-hans")
+        except Exception:
+            pass
+    return s
 
 
 @dataclass
@@ -40,7 +62,7 @@ class CanonEntity:
 
 
 def _slug(name: str) -> str:
-    s = re.sub(r"\s+", "_", name.strip())
+    s = re.sub(r"\s+", "_", _to_simplified(name).strip())
     return re.sub(r"[^\w一-鿿·.-]", "", s)[:80] or "entity"
 
 
@@ -72,13 +94,14 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
     acc: dict[tuple[str, str], dict] = {}
     for ex in chapter_extracts:
         for e in getattr(ex, "entities", []):
-            full = _clean_name(e.get("full_name"))
-            cg = _clean_name(e.get("canonical_guess"))
-            sfc = _clean_name(e.get("surface"))
+            full = _clean_name(_to_simplified(e.get("full_name")))
+            cg = _clean_name(_to_simplified(e.get("canonical_guess")))
+            sfc = _clean_name(_to_simplified(e.get("surface")))
             # 选 name 优先级:full_name > canonical_guess > surface,且取最长(欧美名 "Mulelia Zazbarum" 胜 "Mulelia")
             name = max([n for n in (full, cg, sfc) if n], key=len, default="")
             typ = (e.get("type") or "character").strip()
-            if not name:
+            # 主名是通用指代(那人/姐姐/老头…)→ 不是真实体,直接跳过(否则建卡 + 成别名磁铁)
+            if not name or _is_generic_referent(name):
                 continue
             key = (name, typ)
             rec = acc.setdefault(key, {"name": name, "type": typ, "count": 0,
@@ -103,29 +126,56 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
                     rec["surfaces"].add(s)
             for a in (e.get("aliases_in_chapter") or []):
                 if isinstance(a, str):
-                    ca = _clean_name(a)
-                    if ca:
+                    ca = _clean_name(_to_simplified(a))
+                    # 通用指代不入 surfaces:否则「那人/姐姐/小屁孩」被 surface 相交把不同角色错并、污染别名
+                    if ca and not _is_generic_referent(ca):
                         rec["surfaces"].add(ca)
             # RC2: 把所有 surface 的中文敬称基名(≥2字)也塞进 surfaces,让『苏玖姑娘』与
             # 独立的『苏玖』经既有 surface 相交合并(单字基名如『红姑』→『红』不归一)。
             for s in list(rec["surfaces"]) + [name]:
                 hb = _honorific_base(s)
-                if hb:
+                if hb and not _is_generic_referent(hb):
                     rec["surfaces"].add(hb)
             # v28: full_name / identity / background 取最长(信息量更大的胜出)
             if full and len(full) > len(rec["full_name"]):
                 rec["full_name"] = full
-            ident = (e.get("identity") or "").strip()
+            ident = _to_simplified(e.get("identity") or "").strip()
             if ident and len(ident) > len(rec["identity"]):
                 rec["identity"] = ident
-            bg = (e.get("background") or "").strip()
+            bg = _to_simplified(e.get("background") or "").strip()
             if bg and len(bg) > len(rec["background"]):
                 rec["background"] = bg
     return acc
 
 
 def _norm_name(s: str) -> str:
-    return re.sub(r"[\s·_、.\-]", "", (s or "").strip())
+    return re.sub(r"[\s·_、.\-]", "", _to_simplified(s).strip())
+
+
+# 通用指代/关系泛称黑名单:这些不是专有姓名,是上下文指代。被便宜 LLM 误塞进 aliases_in_chapter 后,
+# 经 surface 相交把不同角色错并、或污染卡别名(用户反馈:小屁孩×4 / 那人×4 / 姐姐×4 / 女朋友×3)。
+# 统一在 surfaces 入口、honorific 基名、aliases 出口三处拦截。
+_GENERIC_REFERENT_BLACKLIST = frozenset({
+    # 第三人称泛指
+    "那人", "这人", "此人", "那位", "这位", "某人", "有人", "旁人", "来人", "对方",
+    "那家伙", "这家伙", "家伙", "路人", "陌生人", "某", "他", "她", "它", "他们", "她们", "它们", "大家",
+    # 年龄/性别泛称
+    "老头", "老者", "老人", "老太", "老太太", "老太婆", "老家伙", "老婆子", "小孩", "孩子", "小家伙",
+    "小鬼", "小屁孩", "小姑娘", "小伙子", "小子", "少年", "少女", "女孩", "男孩", "女人", "男人",
+    "女子", "男子", "姑娘", "公子", "少爷", "小姐", "女士", "先生", "大叔", "大婶", "大爷", "大妈",
+    "阿姨", "叔叔", "婶婶", "孩子他爹", "那女孩", "那男孩", "那女人", "那男人", "那小子",
+    # 关系泛称
+    "姐姐", "哥哥", "弟弟", "妹妹", "姐", "哥", "弟", "妹", "爸爸", "妈妈", "父亲", "母亲", "爹", "娘",
+    "爷爷", "奶奶", "外公", "外婆", "公公", "婆婆", "岳父", "岳母", "女朋友", "男朋友", "朋友", "闺蜜",
+    "老公", "老婆", "丈夫", "妻子", "夫君", "相公", "媳妇", "媳妇儿", "儿子", "女儿",
+})
+# 归一形式(供 _norm_name 后比对;成员本身已是简体)
+_GENERIC_REFERENT_NORMS = frozenset(re.sub(r"[\s·_、.\-]", "", w) for w in _GENERIC_REFERENT_BLACKLIST)
+
+
+def _is_generic_referent(s: str) -> bool:
+    """归一后整词命中通用指代黑名单 → True(不是专有姓名,不应作实体名/别名/合并桥)。"""
+    return _norm_name(s) in _GENERIC_REFERENT_NORMS
 
 
 # RC2: 中文敬称/称谓前后缀。剥离后产出"基名"作【额外别名信号】喂回 surfaces,
@@ -151,6 +201,10 @@ def _honorific_base(name: str) -> str:
     return ""
 
 
+# 「强独立实体」阈值:出现 ≥ 此章数即视为真实角色,不可被别名信号吸进别的卡(防主角磁铁)。
+_STRONG_MIN = 3
+
+
 def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.95) -> list[CanonEntity]:
     """同 type 内**保守**聚簇。LLM 的 canonical_guess 已做实体归一,这里只合并近重串:
     归一名相等 / 互为子串(如 薇欧拉 ⊂ 薇欧拉小姐);嵌入仅作高阈值(默认 0.95)次级信号
@@ -165,6 +219,9 @@ def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.
     fallback_reason = ""
     for typ, recs in by_type.items():
         recs.sort(key=lambda r: -r["count"])
+        # 本 type 内「强独立实体」归一名集合:别名信号合并时,桥接词不得是第三方强实体的真名,
+        # 且强实体本身不被别名信号并入(防张冠李戴 / 主角别名磁铁)。
+        strong_norms = {_norm_name(r["name"]) for r in recs if r.get("count", 0) >= _STRONG_MIN}
         vecs = None
         if embedder is not None:
             try:
@@ -187,17 +244,29 @@ def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.
         for i, rec in enumerate(recs):
             ni = _norm_name(rec["name"])
             ni_surfaces = {_norm_name(s) for s in (rec.get("surfaces") or set()) if s}
+            ni_is_strong = rec.get("count", 0) >= _STRONG_MIN
             placed = False
             for cl in clusters:
                 rep_rec = recs[cl["rep_idx"]]
                 nr = _norm_name(rep_rec["name"])
                 nr_surfaces = {_norm_name(s) for s in (rep_rec.get("surfaces") or set()) if s}
-                # 主信号:归一相等 / 互为子串(长度≥2 防单字误并)
+                # 主信号:归一相等 / 互为子串(长度≥2 防单字误并)。简繁/全角已在 _norm_name 归一。
                 same = ni == nr or (len(ni) >= 2 and len(nr) >= 2 and (ni in nr or nr in ni))
-                # 别名信号:本实体的某 surface 与对端 name/surfaces 相交(欧美全名↔昵称 + 跨语言别名靠这条)
-                if not same and ni_surfaces and (nr in ni_surfaces or ni in nr_surfaces
-                                                  or (ni_surfaces & nr_surfaces)):
-                    same = True
+                # 别名信号(加闸防张冠李戴):跨语言别名/全名↔昵称靠这条,但拦三类污染——
+                #   ① 桥接词须像人名(≥2 字、非通用指代)
+                #   ② 共享桥接词不得是"第三方强实体的真名"(别人的名字当合并桥 = 串卡)
+                #   ③ 被并入方(ni)若本身是强独立实体,不靠别名信号并入(防主角别名磁铁吸走真角色)
+                # 强独立实体(ni_is_strong)只认主信号(名字相等/子串),绝不靠别名信号被并入
+                # ——否则别人的真名出现在它 surfaces 里就能把它吸走(主角别名磁铁 / 张冠李戴)。
+                if not same and ni_surfaces and not ni_is_strong:
+                    if any(len(b) >= 2 and b not in _GENERIC_REFERENT_NORMS
+                           and b not in (strong_norms - {ni, nr})
+                           for b in (ni_surfaces & nr_surfaces)):
+                        same = True            # 共享第三别名(如跨语言 Mulelia↔小蕾)
+                    elif nr in ni_surfaces and len(nr) >= 2 and nr not in _GENERIC_REFERENT_NORMS:
+                        same = True            # rep 名是 ni 的子形(ni 含 rep,如 薇欧拉小姐⊃薇欧拉)
+                    elif ni in nr_surfaces and len(ni) >= 2 and ni not in _GENERIC_REFERENT_NORMS:
+                        same = True            # ni 是 rep 的别名(ni 弱形,如 Mulelia→小蕾)
                 # 次信号:嵌入高相似 且 首字相同(同语言变体如"薇欧拉/薇瑟拉")
                 if not same and vecs is not None and ni and nr and ni[0] == nr[0]:
                     same = _cosine(vecs[i], vecs[cl["rep_idx"]]) >= sim_threshold
@@ -212,8 +281,10 @@ def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.
             rep = max(members, key=lambda r: r["count"])
             # RC9 修运算符优先级:| 比 - 松,原式 = surfaces | (names - rep) → rep 名仍从
             # surfaces 漏进 aliases(规范名自指)。加括号让 rep 名从【并集整体】里去掉。
-            aliases = sorted(({s for m in members for s in m["surfaces"]} |
-                              {m["name"] for m in members}) - {rep["name"]})
+            # 通用指代(那人/姐姐/小屁孩…)不进 aliases;他人真名的剔除在 resolve_and_write 的 anti-bleed 做
+            aliases = sorted(a for a in (({s for m in members for s in m["surfaces"]} |
+                                          {m["name"] for m in members}) - {rep["name"]})
+                             if not _is_generic_referent(a))
             # v28: full_name / identity / background 跨成员取最长非空(信息量最大的胜出)
             full_name = max((m.get("full_name", "") for m in members), key=len, default="")
             identity = max((m.get("identity", "") for m in members), key=len, default="")
@@ -395,6 +466,13 @@ def resolve_and_write(db, script_id: int, chapter_extracts: list, *, embedder=No
         import logging as _lg
         _lg.getLogger(__name__).info("[resolve] RC4 剔除误标 character 的非人名: %s", _dropped[:20])
     canon = _kept
+
+    # anti-bleed:把"其他卡的主名"从每张卡的 aliases 剔除(治别名串卡 / 主角别名磁铁残留——
+    # 例:妮娅.aliases 误含 茜茜/伊瑟拉/艾森豪威尔 等本属其他角色的真名)。纯 Python,零 LLM。
+    _primary_norm_to_lk = {_norm_name(c.name): c.logical_key for c in canon}
+    for c in canon:
+        c.aliases = [a for a in (c.aliases or [])
+                     if _primary_norm_to_lk.get(_norm_name(a), c.logical_key) == c.logical_key]
 
     # RC1: character importance 改叙事中心度融合分(span+关系/事件中心度+频次+书名),治主角误判。
     try:
