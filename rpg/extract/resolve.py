@@ -607,18 +607,46 @@ def _count_by_type(canon: list[CanonEntity]) -> dict:
 
 
 # ── 时间线增量聚合(不全局排序) ─────────────────────────────────────────────
+import re as _re_tl
+
+# 可证明"不是故事时间"的占位 label:零LLM 兜底『ch{N} 节点』、纯章号『第N章/回/话』『chapter N』。
+# 保守:只剔这些,不动『三年后』『深冬』『深渊之战』等(宁可留,也别误杀合法时间/阶段短语)。
+_TL_PLACEHOLDER_RE = _re_tl.compile(
+    r'^\s*(?:ch\s*\d+\s*节点'
+    r'|第\s*[零一二三四五六七八九十百千两\d]+\s*[章回话](?:\s*节点)?'
+    r'|chapter\s*\d+)\s*$',
+    _re_tl.IGNORECASE,
+)
+
+
+def _clean_timeline_label(label: str) -> str:
+    """把"不是故事时间"的占位 label 归一成空串(确定性),让上层走承接/序章兜底。"""
+    s = (label or "").strip()
+    if not s or len(s) > 40:
+        return ""
+    if _TL_PLACEHOLDER_RE.match(s):
+        return ""
+    return s
+
+
 def build_timeline(db, script_id: int, chapter_extracts: list) -> int:
     """事件按章节顺序增量,产出 script_timeline_anchors(值来自 story_time 而非标题)。
 
     每段收集成员章节的 chapter_summary 拼接成 sample_summary(分段),让 GM 拉时间线
     得到结构化摘要而不是 raw event 碎片。
     """
-    # 按 story_time.label 聚合连续章节段
+    # 按 story_time.label 聚合连续章节段。
+    # 关键(治"时间线第一个时间点在几十章"):无明确故事时间的章/弧不再被丢弃——
+    #   · 开篇(还没出现过任何时间)→ 归「序章」锚点,保证时间线从第 1 章起就有内容;
+    #   · 其后(已有时间)→ 承接上一段时间(时间在推进,不另起空锚),消除中段空洞。
+    # 全确定性,不依赖 LLM 是否给出 label。
     segments: list[dict] = []
+    last_label = ""
     for ex in sorted(chapter_extracts, key=lambda e: e.chapter):
-        label = (ex.story_time or {}).get("label", "").strip()
+        label = _clean_timeline_label((ex.story_time or {}).get("label", ""))
         if not label:
-            continue
+            label = last_label or "序章"
+        last_label = label
         summary = (getattr(ex, "chapter_summary", "") or "").strip()
         if segments and segments[-1]["label"] == label:
             segments[-1]["chapter_max"] = ex.chapter
@@ -650,6 +678,9 @@ def build_timeline(db, script_id: int, chapter_extracts: list) -> int:
             on conflict(script_id, story_phase, story_time_label) do update set
               chapter_min=least(script_timeline_anchors.chapter_min, excluded.chapter_min),
               chapter_max=greatest(script_timeline_anchors.chapter_max, excluded.chapter_max),
+              -- 同 label 非连续段合并:chapter_count 重算成合并后跨度,避免与 min/max 不一致
+              chapter_count=greatest(script_timeline_anchors.chapter_max, excluded.chapter_max)
+                - least(script_timeline_anchors.chapter_min, excluded.chapter_min) + 1,
               sample_summary=case when length(excluded.sample_summary) > 0
                 then excluded.sample_summary else script_timeline_anchors.sample_summary end,
               updated_at=now()

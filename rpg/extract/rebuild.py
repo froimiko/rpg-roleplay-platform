@@ -260,10 +260,10 @@ def rebuild_timeline_from_db(db, script_id: int) -> dict:
         (script_id,),
     ).fetchone()
     before_count = int(before_row["c"]) if before_row else 0
+    # 读全部章节(不再只取非空 label)—— 让承接/序章兜底能补满开篇与中段空洞。
     rows = db.execute(
         "select chapter, summary, story_time_label, story_phase "
         "from chapter_facts where script_id=%s "
-        "and coalesce(story_time_label, '') <> '' "
         "order by chapter asc",
         (script_id,),
     ).fetchall()
@@ -271,19 +271,25 @@ def rebuild_timeline_from_db(db, script_id: int) -> dict:
         return {
             "ok": False, "source": "chapter_facts",
             "before_count": before_count, "after_count": before_count,
-            "error": "chapter_facts 没有 story_time_label,无法重建时间线",
+            "error": "chapter_facts 没有章节数据,无法重建时间线",
             "partial_failures": partial_failures,
         }
 
-    # 跟 resolve.build_timeline 同样的聚合 — 但读 chapter_facts 而非 chapter_extracts
+    # 跟 resolve.build_timeline 同样的聚合(同一份确定性规则):剔占位 label、开篇归「序章」、
+    # 无明确时间承接上一段 —— 但读 chapter_facts 而非 chapter_extracts。
+    from extract.resolve import _clean_timeline_label
     segments: list[dict] = []
+    last_label = ""
+    last_phase = ""
     for r in rows:
-        label = (r.get("story_time_label") or "").strip()
-        if not label:
-            continue
         ch = int(r["chapter"])
-        summary = (r.get("summary") or "").strip()
+        label = _clean_timeline_label(r.get("story_time_label") or "")
         phase = (r.get("story_phase") or "").strip()
+        if not label:
+            label = last_label or "序章"
+            phase = phase or last_phase
+        last_label, last_phase = label, phase
+        summary = (r.get("summary") or "").strip()
         if segments and segments[-1]["label"] == label:
             segments[-1]["chapter_max"] = ch
             if summary:
@@ -318,6 +324,14 @@ def rebuild_timeline_from_db(db, script_id: int) -> dict:
                     insert into script_timeline_anchors(script_id, story_phase, story_time_label,
                       chapter_min, chapter_max, chapter_count, sample_summary, confidence)
                     values (%s, %s, %s, %s, %s, %s, %s, %s)
+                    on conflict(script_id, story_phase, story_time_label) do update set
+                      chapter_min=least(script_timeline_anchors.chapter_min, excluded.chapter_min),
+                      chapter_max=greatest(script_timeline_anchors.chapter_max, excluded.chapter_max),
+                      chapter_count=greatest(script_timeline_anchors.chapter_max, excluded.chapter_max)
+                        - least(script_timeline_anchors.chapter_min, excluded.chapter_min) + 1,
+                      sample_summary=case when length(excluded.sample_summary) > 0
+                        then excluded.sample_summary else script_timeline_anchors.sample_summary end,
+                      updated_at=now()
                     """,
                     (script_id, seg["phase"], seg["label"], seg["chapter_min"], seg["chapter_max"],
                      seg["chapter_max"] - seg["chapter_min"] + 1, sample_summary, 0.7),
