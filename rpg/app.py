@@ -1185,7 +1185,7 @@ def _redact_catalog(catalog: dict[str, Any], is_admin: bool, user_id: int | None
     return result
 
 
-_MCP_SECRET_FIELDS = ("command", "args", "env", "credential", "secret", "token")
+_MCP_SECRET_FIELDS = ("command", "args", "env", "url", "headers", "credential", "secret", "token")
 
 
 def _redact_tools(tools: dict[str, Any], is_admin: bool) -> dict[str, Any]:

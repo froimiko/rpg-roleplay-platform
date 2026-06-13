@@ -221,7 +221,7 @@ def platform_for(user: dict | None) -> dict:
     return payload
 
 
-_MCP_SECRET_FIELDS = ("command", "args", "env", "credential", "secret", "token")
+_MCP_SECRET_FIELDS = ("command", "args", "env", "url", "headers", "credential", "secret", "token")
 
 
 def _redact_mcp_in_tools(tools: dict, is_admin: bool) -> dict:
