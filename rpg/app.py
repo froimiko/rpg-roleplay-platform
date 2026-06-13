@@ -497,14 +497,30 @@ class _SPAStaticFiles(_StaticFiles):
 
     async def get_response(self, path, scope):
         try:
-            return await super().get_response(path, scope)
+            resp = await super().get_response(path, scope)
         except _StarletteHTTPException as exc:
             if exc.status_code == 404:
                 last = path.rsplit("/", 1)[-1]
                 is_root = path in ("", ".", "/")
                 if not path.startswith("api/") and (is_root or "." not in last):
-                    return await super().get_response("Platform.html", scope)
-            raise
+                    resp = await super().get_response("Platform.html", scope)
+                else:
+                    raise
+            else:
+                raise
+        # 缓存策略(根治「部署后看不到更新」):SPA 壳(*.html / history-fallback)必须 no-cache,
+        # 否则浏览器/中间层会一直用旧 HTML → 引用 npm build 已删除的旧 chunk hash → 用户永远停在
+        # 旧版本(本会话多次「看不到更新」的根因)。内容哈希命名的 /assets/* 不可变,可永久缓存。
+        try:
+            ct = str(resp.headers.get("content-type", ""))
+            req_path = str(scope.get("path", ""))
+            if "text/html" in ct:
+                resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+            elif req_path.startswith("/assets/"):
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        except Exception:
+            pass
+        return resp
 
 
 _FRONTEND_ROOT = _Path(__file__).resolve().parent.parent / "frontend"
