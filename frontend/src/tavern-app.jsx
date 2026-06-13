@@ -459,17 +459,20 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
           </div>
         )}
         {/* 图片已内嵌进对应角色消息气泡(useSaveImages + ChatImageGroup),不再底部独立 strip */}
+        {/* 「回到最新」必须 sticky 在滚动容器内(而非 absolute):absolute 在 overflow 滚动容器里
+            会随内容滚走、且因祖先无 position:relative 而锚到页面最右。改 sticky + justify-self:end
+            → 钉在阅读列右下、不随滚动飘走。游戏版同理(game-app.jsx)。 */}
+        {showJump && (
+          <button
+            onClick={() => { if (ref.current) { ref.current.scrollTo({ top: ref.current.scrollHeight, behavior: 'smooth' }); atBottomRef.current = true; setShowJump(false); } }}
+            className="btn"
+            style={{ position: 'sticky', bottom: 16, justifySelf: 'end', marginLeft: 'auto', width: 'fit-content', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 999, padding: '6px 14px', fontSize: 12.5, boxShadow: 'var(--shadow-3, 0 6px 18px -6px rgba(0,0,0,0.5))', zIndex: 5, cursor: 'pointer' }}
+            data-tip="跳到最新"
+          >
+            <Icon name="chevron_down" size={12} /> 回到最新
+          </button>
+        )}
       </div>
-      {showJump && (
-        <button
-          onClick={() => { if (ref.current) { ref.current.scrollTo({ top: ref.current.scrollHeight, behavior: 'smooth' }); atBottomRef.current = true; setShowJump(false); } }}
-          className="btn"
-          style={{ position: 'absolute', right: 20, bottom: 90, background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 999, padding: '6px 14px', fontSize: 12.5, zIndex: 5, cursor: 'pointer' }}
-          data-tip="跳到最新"
-        >
-          <Icon name="chevron_down" size={12} /> 回到最新
-        </button>
-      )}
     </div>
   );
 }

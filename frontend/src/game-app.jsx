@@ -1115,25 +1115,27 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
           </div>
         }
         {/* 图片已内嵌进对应助手消息气泡(useSaveImages + ChatImageGroup),不再底部独立 strip */}
+        {/* task 133: Claude 风格"回到底部"按钮 — 用户上滚时显示。**必须 sticky 在滚动容器内**
+            (而非 absolute):absolute 在 overflow 滚动容器里会随内容滚走、且祖先无 position:relative
+            时锚到页面最右(群反馈酒馆/游戏同症)。sticky + justify-self:end → 钉在阅读列右下、
+            不随滚动飘。bottom:16 贴 composer 上方。 */}
+        {showJumpBtn && (
+          <button
+            onClick={jumpToBottom}
+            className="btn"
+            style={{
+              position: "sticky", bottom: 16, justifySelf: "end",
+              marginLeft: "auto", width: "fit-content",
+              background: "var(--panel)", border: "1px solid var(--line)",
+              borderRadius: 999, padding: "6px 14px", fontSize: 12.5,
+              boxShadow: "var(--shadow-3, 0 6px 18px -6px rgba(0,0,0,0.5))",
+              zIndex: 5, cursor: "pointer",
+            }}
+            data-tip="跳到最新">
+            <Icon name="chevron_down" size={12} /> 回到最新
+          </button>
+        )}
       </div>
-      {/* task 133: Claude 风格"回到底部"浮按钮 — 用户上滚时显示。
-          task 46: 位置贴右侧而不是 center,bottom 拉到 90px 避开 composer 输入框,
-          否则按钮浮在输入区上方挤压用户视觉。 */}
-      {showJumpBtn && (
-        <button
-          onClick={jumpToBottom}
-          className="btn"
-          style={{
-            position: "absolute", right: 20, bottom: 90,
-            background: "var(--panel)", border: "1px solid var(--line)",
-            borderRadius: 999, padding: "6px 14px", fontSize: 12.5,
-            boxShadow: "var(--shadow-3, 0 6px 18px -6px rgba(0,0,0,0.5))",
-            zIndex: 5, cursor: "pointer",
-          }}
-          data-tip="跳到最新">
-          <Icon name="chevron_down" size={12} /> 回到最新
-        </button>
-      )}
     </div>);
 
 }
