@@ -103,6 +103,30 @@ export function useScriptRebuild(scriptId) {
 
   React.useEffect(() => { reload(); }, [reload]);
 
+  // 兜底轮询:RebuildJobBanner 的 SSE 在 on_error 里什么都不做,部署重启 / 网络抖动断流后
+  // 永远收不到 on_done → activeJob 一直卡「运行中」、其他「重做」按钮被禁用
+  // (用户反馈:所有子项重做都用不了)。activeJob 存在时每 5s 直接查该 job 真实状态,
+  // 终态(done/failed/cancelled)或查不到即本地清理 + reload 刷新真实计数。瞬时错误不误清。
+  React.useEffect(() => {
+    const jid = activeJob && (activeJob.job_id || activeJob.id);
+    if (!jid || !scriptId) return undefined;
+    let alive = true;
+    const iv = setInterval(async () => {
+      try {
+        const r = await window.api?.scripts?.jobStatus?.(jid);
+        if (!alive) return;
+        const st = r && (r.status || (r.job && r.job.status));
+        const terminal = st && ['done', 'done_with_errors', 'failed', 'cancelled'].includes(st);
+        if ((r && r.ok === false) || terminal) {
+          setActiveJob(null);
+          reload();
+        }
+      } catch (_) { /* 瞬时错误:保持轮询,不误清「运行中」*/ }
+    }, 5000);
+    return () => { alive = false; clearInterval(iv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJob && (activeJob.job_id || activeJob.id), scriptId, reload]);
+
   const openEstimate = React.useCallback(async ({ module, options }) => {
     if (!module || !scriptId) return;
     setPendingModule(module);
