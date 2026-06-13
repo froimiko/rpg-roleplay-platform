@@ -1729,9 +1729,21 @@ function CardEditModal({ card, isNew, kind, onClose, onSave, targetScriptOptions
   const doSave = async () => {
     if (!nameOk || submitting) return;
     setSubmitting(true);
-    try { await onSave?.(cardFormPayload(form, card)); }
-    catch (_) { /* 父级 onSaveCard 已 toast */ }
-    finally { setSubmitting(false); }
+    try {
+      // payload 构造放进 try:个别卡字段类型异常时(理论上不应发生)别让整段静默吞掉。
+      const payload = cardFormPayload(form, card);
+      await onSave?.(payload);
+    } catch (e) {
+      // 关键:原来这里 catch(_){} 把**任何**错误(payload 构造抛错 / onSave 同步抛错)
+      // 静默吞掉,用户表现为「保存按钮点了没反应」(群反馈)。改为显式 toast,暴露真因。
+      // 父级 onSave 自己已 toast 的网络错走它那条;这里兜的是 payload/同步异常。
+      try {
+        window.__apiToast?.(t('cards.editor.save_fail', { defaultValue: '保存失败' }),
+          { kind: 'danger', detail: (e && e.message) || String(e) });
+      } catch (_) { /* toast 不可用也不该再抛 */ }
+      // eslint-disable-next-line no-console
+      console.error('[CardEditModal] save failed:', e);
+    } finally { setSubmitting(false); }
   };
 
   const node = (
