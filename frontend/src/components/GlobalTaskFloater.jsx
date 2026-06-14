@@ -1,14 +1,13 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import CSFlashbar from '@cloudscape-design/components/flashbar';
-import CSProgressBar from '@cloudscape-design/components/progress-bar';
-import CSButton from '@cloudscape-design/components/button';
 
-/* GlobalTaskFloater — 右下角全局「后台任务」浮窗。
+/* GlobalTaskFloater — 右下角全局「后台任务」浮窗(完全自定义,无 Cloudscape 汇总条)。
    数据源:GET /api/me/tasks/active(导入 / 各模块重建 / 生图 统一聚合)。
-   交互(按用户要求):用 Cloudscape Flashbar stackItems 的「堆叠卡片」动画;默认收起成
-   堆叠(顶卡 + 后面卡片露边);鼠标经过浮窗 → 展开成完整列表(悬停展开,移开收回);
-   通知条改成暖色(不要默认那块蓝色面板)。
+   三态(按用户要求):
+     · dot      —— 默认:一个小「⋯」圆点;
+     · stack    —— 鼠标经过 → 卡片堆叠,默认只显示标题;鼠标移到某张卡 → 该卡放大显示
+                   详情(类似 macOS Dock 放大);
+     · expanded —— 点按激活 → 全部卡片展开详情;点浮窗外 → 收回成圆点。
    如实状态:import 类有真实 overall_progress 进度条;生图只给 spinner + 已用时间。
    每任务带「取消」按钮——取消只能显式触发,关闭弹窗/页面绝不取消队列。
 */
@@ -17,23 +16,43 @@ const POLL_ACTIVE_MS = 3000;
 const POLL_IDLE_MS = 7000;
 const POLL_BACKOFF_MS = 60000;
 
-// 暖色板。loading=true 的项渲染成 info 态,故覆盖 info 颜色;notificationBar 改暖色(去蓝)。
-const FLASHBAR_STYLE = {
-  item: { root: {
-    background: { info: '#2a2620' },
-    color: { info: '#ebe7df' },
-    borderColor: { info: '#46413a' },
-  } },
-  notificationBar: { root: {
-    background: { default: '#2a2620', hover: '#352f27', active: '#352f27' },
-    color: { default: '#ebe7df', hover: '#ffffff', active: '#ffffff' },
-    borderColor: { default: '#46413a', hover: '#5a5249', active: '#5a5249' },
-  } },
-};
-const PROGRESS_STYLE = {
-  progressValue: { backgroundColor: '#c96442' },
-  progressBar: { backgroundColor: 'rgba(201,100,66,0.18)' },
-};
+const ACTIVE_ST = { queued: 1, running: 1 };
+
+const CSS = `
+.rpg-tf{position:fixed;right:16px;bottom:16px;z-index:1500;display:flex;flex-direction:column;align-items:flex-end;}
+.rpg-tf-dot{width:46px;height:46px;border-radius:50%;background:#2a2620;color:#ebe7df;
+  border:1px solid rgba(201,100,66,.55);box-shadow:0 4px 16px rgba(0,0,0,.45);
+  font-size:22px;line-height:1;letter-spacing:1px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:transform .12s ease,box-shadow .12s ease;}
+.rpg-tf-dot:hover{transform:scale(1.06);box-shadow:0 6px 20px rgba(0,0,0,.55);}
+.rpg-tf-card{width:330px;max-width:calc(100vw - 32px);box-sizing:border-box;background:#2a2620;color:#ebe7df;
+  border:1px solid #46413a;border-radius:10px;box-shadow:0 5px 16px rgba(0,0,0,.4);padding:9px 12px;
+  cursor:pointer;transform-origin:right bottom;
+  transition:transform .15s ease,box-shadow .15s ease;animation:rpg-tf-in .18s ease;}
+.rpg-tf-card + .rpg-tf-card{margin-top:-3px;}
+.rpg-tf-card.is-mag{transform:scale(1.035);box-shadow:0 12px 30px rgba(0,0,0,.6);position:relative;z-index:4;}
+.rpg-tf-card.is-open{position:relative;z-index:3;}
+@keyframes rpg-tf-in{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.rpg-tf-row{display:flex;align-items:center;gap:8px;}
+.rpg-tf-spin{width:13px;height:13px;border:2px solid rgba(201,100,66,.3);border-top-color:#c96442;
+  border-radius:50%;animation:rpg-tf-rot .8s linear infinite;flex:none;}
+@keyframes rpg-tf-rot{to{transform:rotate(360deg);}}
+.rpg-tf-name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
+.rpg-tf-cancel{flex:none;background:none;border:none;color:#d98a6e;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:4px;}
+.rpg-tf-cancel:hover{color:#e8a98f;background:rgba(201,100,66,.12);}
+.rpg-tf-detail{overflow:hidden;max-height:0;opacity:0;transition:max-height .2s ease,opacity .18s ease,margin-top .2s ease;}
+.rpg-tf-card.is-open .rpg-tf-detail{max-height:90px;opacity:1;margin-top:7px;}
+.rpg-tf-status{font-size:12px;opacity:.82;line-height:1.45;}
+.rpg-tf-pbar{margin-top:6px;height:5px;border-radius:3px;background:rgba(201,100,66,.18);overflow:hidden;}
+.rpg-tf-pfill{height:100%;background:#c96442;border-radius:3px;transition:width .3s ease;}
+.rpg-tf-pct{font-size:11px;opacity:.8;margin-top:3px;text-align:right;}
+`;
+if (typeof document !== 'undefined' && !document.getElementById('rpg-tf-style')) {
+  const st = document.createElement('style');
+  st.id = 'rpg-tf-style';
+  st.textContent = CSS;
+  document.head.appendChild(st);
+}
 
 function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -44,42 +63,17 @@ function fmtElapsed(sec) {
   return h + 'h ' + (m % 60) + 'm';
 }
 
-const ACTIVE_ST = { queued: 1, running: 1 };
-
-// 隐藏 stackItems 通知条里那串按类型计数(0 0 0 0 3)——累赘,留下「N 个后台任务」+ 展开钮即可。
-if (typeof document !== 'undefined' && !document.getElementById('rpg-task-dock-style')) {
-  const st = document.createElement('style');
-  st.id = 'rpg-task-dock-style';
-  st.textContent = '.rpg-task-dock [class*="item-count"]{display:none !important;}';
-  document.head.appendChild(st);
-}
-
-// 找 Flashbar stackItems 的折叠/展开开关按钮(通知条上的那个 toggle)
-function findStackToggle(root) {
-  if (!root) return null;
-  const sel = [
-    '[class*="notification-bar"] button',
-    '[class*="notificationBar"] button',
-    'button[class*="toggle"]',
-  ];
-  for (const s of sel) {
-    const el = root.querySelector(s);
-    if (el) return el;
-  }
-  // 兜底:通知条容器本身可点
-  return root.querySelector('[class*="notification-bar"], [class*="notificationBar"]');
-}
-
 export default function GlobalTaskFloater() {
   const { useState, useEffect, useRef } = React;
   const [tasks, setTasks] = useState([]);
   const [fetchedAt, setFetchedAt] = useState(0);
+  const [mode, setMode] = useState('dot');     // 'dot' | 'stack' | 'expanded'
+  const [hoveredId, setHoveredId] = useState(null);
   const [, tick] = useState(0);
   const mounted = useRef(true);
   const prevActive = useRef(new Set());
   const toasted = useRef(new Set());
-  const dockRef = useRef(null);
-  const expandedRef = useRef(false);   // 跟踪 stackItems 当前是否已展开(避免重复 toggle)
+  const rootRef = useRef(null);
 
   // ── 轮询 ──
   useEffect(() => {
@@ -143,6 +137,21 @@ export default function GlobalTaskFloater() {
     return () => clearInterval(id);
   }, [active.length]);
 
+  // 无活跃任务 → 复位成圆点
+  useEffect(() => {
+    if (active.length === 0) { setMode('dot'); setHoveredId(null); }
+  }, [active.length]);
+
+  // 展开态(已激活):点浮窗外 → 收回圆点
+  useEffect(() => {
+    if (mode !== 'expanded') return undefined;
+    const onDown = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) { setMode('dot'); setHoveredId(null); }
+    };
+    document.addEventListener('mousedown', onDown, true);
+    return () => document.removeEventListener('mousedown', onDown, true);
+  }, [mode]);
+
   if (active.length === 0) return null;
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
   if (!portalTarget) return null;
@@ -160,20 +169,10 @@ export default function GlobalTaskFloater() {
     }
   };
 
-  // 悬停 → 展开堆叠;移开 → 收回。靠模拟点击 stackItems 通知条的 toggle(Cloudscape 无受控 API)。
-  const setStackExpanded = (want) => {
-    if (active.length < 2) return;       // 单任务无堆叠,不需要 toggle
-    if (expandedRef.current === want) return;
-    const btn = findStackToggle(dockRef.current);
-    if (!btn) return;
-    btn.click();
-    expandedRef.current = want;
-  };
-  const onEnter = () => setStackExpanded(true);
-  const onLeave = () => setStackExpanded(false);
-
   const nowMs = Date.now();
-  const items = active.map((t) => {
+  const renderCard = (t) => {
+    const open = mode === 'expanded' || (mode === 'stack' && hoveredId === t.id);
+    const mag = mode === 'stack' && hoveredId === t.id;
     const elapsed = fmtElapsed((t.elapsed_sec || 0) + (fetchedAt ? (nowMs - fetchedAt) / 1000 : 0));
     const hasProg = t.progress != null && t.progress_total;
     const pct = hasProg ? Math.max(0, Math.min(100, Math.round((t.progress / t.progress_total) * 100))) : 0;
@@ -181,47 +180,52 @@ export default function GlobalTaskFloater() {
     const statusText = (canceling ? '取消中…' : (t.status === 'queued' ? '排队中' : '进行中'))
       + (t.phase ? ' · ' + t.phase : '')
       + ' · 已用 ' + elapsed;
-    return {
-      id: t.id,
-      loading: true,
-      dismissible: false,
-      header: t.title,
-      action: (t.cancelable && !canceling)
-        ? <CSButton variant="inline-link" onClick={() => cancelTask(t)}>取消</CSButton>
-        : undefined,
-      content: (
-        <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-          <div style={{ opacity: 0.85 }}>{statusText}</div>
-          {hasProg && (
-            <div style={{ marginTop: 5 }}>
-              <CSProgressBar variant="flash" status="in-progress" value={pct} style={PROGRESS_STYLE} />
-            </div>
+    return (
+      <div
+        key={t.id}
+        className={`rpg-tf-card${open ? ' is-open' : ''}${mag ? ' is-mag' : ''}`}
+        onMouseEnter={() => { if (mode === 'stack') setHoveredId(t.id); }}
+        onClick={(e) => { e.stopPropagation(); setMode('expanded'); }}
+      >
+        <div className="rpg-tf-row">
+          <span className="rpg-tf-spin" aria-hidden="true" />
+          <span className="rpg-tf-name" title={t.title}>{t.title}</span>
+          {open && t.cancelable && !canceling && (
+            <button className="rpg-tf-cancel" onClick={(e) => { e.stopPropagation(); cancelTask(t); }}>取消</button>
           )}
         </div>
-      ),
-    };
-  });
+        <div className="rpg-tf-detail">
+          <div className="rpg-tf-status">{statusText}</div>
+          {hasProg && (
+            <>
+              <div className="rpg-tf-pbar"><div className="rpg-tf-pfill" style={{ width: pct + '%' }} /></div>
+              <div className="rpg-tf-pct">{pct}%</div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
 
-  const dock = (
-    <div ref={dockRef} className="rpg-task-dock"
-      style={{ position: 'fixed', right: 16, bottom: 16, width: 380, maxWidth: 'calc(100vw - 32px)', zIndex: 1500 }}
-      onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      <CSFlashbar
-        items={items}
-        stackItems
-        style={FLASHBAR_STYLE}
-        i18nStrings={{
-          ariaLabel: '后台任务',
-          notificationBarText: active.length + ' 个后台任务',
-          notificationBarAriaLabel: '展开 / 收起后台任务',
-          infoIconAriaLabel: '进行中',
-          inProgressIconAriaLabel: '进行中',
-          errorIconAriaLabel: '错误',
-          successIconAriaLabel: '完成',
-          warningIconAriaLabel: '警告',
-        }}
-      />
+  const node = (
+    <div
+      className="rpg-tf"
+      ref={rootRef}
+      onMouseEnter={() => setMode((m) => (m === 'dot' ? 'stack' : m))}
+      onMouseLeave={() => { setHoveredId(null); setMode((m) => (m === 'expanded' ? m : 'dot')); }}
+    >
+      {mode === 'dot' ? (
+        <button
+          type="button"
+          className="rpg-tf-dot"
+          aria-label={active.length + ' 个后台任务'}
+          title={active.length + ' 个后台任务进行中'}
+          onClick={() => setMode('expanded')}
+        >⋯</button>
+      ) : (
+        active.map(renderCard)
+      )}
     </div>
   );
-  return createPortal(dock, portalTarget);
+  return createPortal(node, portalTarget);
 }
