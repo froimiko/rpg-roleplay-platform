@@ -40,7 +40,6 @@ const CSS = `
   border-radius:50%;animation:rpg-tf-rot .8s linear infinite;flex:none;}
 @keyframes rpg-tf-rot{to{transform:rotate(360deg);}}
 .rpg-tf-name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
-.rpg-tf-pin{flex:none;font-size:11px;opacity:.55;}
 .rpg-tf-cancel{flex:none;background:none;border:none;color:#d98a6e;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:4px;}
 .rpg-tf-cancel:hover{color:#e8a98f;background:rgba(201,100,66,.12);}
 .rpg-tf-detail{overflow:hidden;max-height:0;opacity:0;transition:max-height .2s ease,opacity .18s ease,margin-top .2s ease;}
@@ -205,7 +204,6 @@ export default function GlobalTaskFloater() {
         <div className="rpg-tf-row">
           <span className="rpg-tf-spin" aria-hidden="true" />
           <span className="rpg-tf-name" title={t.title}>{t.title}</span>
-          {pinned && <span className="rpg-tf-pin" aria-hidden="true">📌</span>}
           {open && t.cancelable && !canceling && (
             <button className="rpg-tf-cancel" onClick={(e) => { e.stopPropagation(); cancelTask(t); }}>取消</button>
           )}
