@@ -262,6 +262,7 @@ def _call_openai_compat_tools(
     if not base_url:
         raise RuntimeError(f"未知 base_url for {api_id}")
     import urllib.request
+    from core.outbound import safe_urlopen  # SSRF: 不跟随重定向 + use-time 重解析 pin IP
     system_prompt = (
         _SYSTEM_PROMPT
         + "\n\n## 可用工具表\n"
@@ -283,7 +284,7 @@ def _call_openai_compat_tools(
         data=body,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+    with safe_urlopen(req, timeout=timeout_sec) as resp:
         raw = resp.read().decode("utf-8")
     parsed = json.loads(raw)
     content = parsed["choices"][0]["message"]["content"]

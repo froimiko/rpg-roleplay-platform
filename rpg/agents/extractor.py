@@ -337,6 +337,7 @@ def _call_openai_compat_json_mode(
     if not cred.get("key"):
         raise RuntimeError(f"无 {api_id} 凭证可用于 extractor")
     import urllib.request
+    from core.outbound import safe_urlopen  # SSRF: 不跟随重定向 + use-time 重解析 pin IP
     base_url = cred.get("base_url_override") or _api_base_url(api_id)
     if not base_url:
         raise RuntimeError(f"未知 base_url for {api_id}")
@@ -361,7 +362,7 @@ def _call_openai_compat_json_mode(
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with safe_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         text = payload["choices"][0]["message"]["content"]
         # 响应是 {"ops": [...]} 格式 → 提取 ops 数组
@@ -381,7 +382,7 @@ def _call_openai_compat_json_mode(
             data=body, method="POST",
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {cred['key']}"},
         )
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with safe_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         return payload["choices"][0]["message"]["content"]
 

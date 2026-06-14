@@ -226,6 +226,7 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
     import urllib.error
     import json as _json
     from core.outbound_ua import outbound_user_agent
+    from core.outbound import safe_urlopen  # SSRF: 不跟随重定向 + use-time 重解析 pin IP
     global _last_openai_embed_error
     effective_url = (base_url.rstrip("/") if base_url else "https://api.openai.com/v1") + "/embeddings"
 
@@ -243,13 +244,9 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
             out.extend(sub)
         return out
 
-    # SEC(H-4): 默认 opener 跟随 ≤10 次重定向 → 即便 base_url 存入时过了 _validate_base_url,
-    # 攻击者端点也能 301 跳到 169.254.169.254 / 内网,且携 Authorization。禁止跟随重定向。
-    class _NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *a, **k):
-            return None
-    _opener = urllib.request.build_opener(_NoRedirect())
-
+    # SEC(H-4): base_url 攻击者端点可用 301 把携 Authorization 的请求跳到 169.254.169.254 / 内网,
+    # 且 DNS rebinding 可绕过写时 _validate_base_url。统一走 core.outbound.safe_urlopen
+    # (不跟随重定向 + use-time 重解析并 pin 到已校验 IP)。
     def _post(with_dim: bool) -> list[list[float]]:
         body = {"model": model, "input": texts, "encoding_format": "float"}
         if with_dim and EMBED_DIM:
@@ -265,7 +262,7 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
             },
             method="POST",
         )
-        with _opener.open(req, timeout=60) as resp:
+        with safe_urlopen(req, timeout=60) as resp:
             data = _json.loads(resp.read())
         items = sorted(data["data"], key=lambda x: x["index"])
         return [item["embedding"] for item in items]
@@ -325,6 +322,7 @@ def _embed_via_gemini(model: str, api_key: str, texts: list[str], task_type: str
     import urllib.error
     import json as _json
     from core.outbound_ua import outbound_user_agent
+    from core.outbound import safe_urlopen  # SSRF: 不跟随重定向 + use-time 重解析 pin IP
 
     if not api_key:
         log.warning("[embedding] gemini api_id but no api_key")
@@ -346,7 +344,7 @@ def _embed_via_gemini(model: str, api_key: str, texts: list[str], task_type: str
                 headers={"Content-Type": "application/json", "User-Agent": outbound_user_agent()},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with safe_urlopen(req, timeout=60) as resp:
                 data = _json.loads(resp.read())
             values = data.get("embedding", {}).get("values") or []
             if len(values) != EMBED_DIM:

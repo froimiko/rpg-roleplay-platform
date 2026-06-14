@@ -126,8 +126,31 @@ def set_credential(user_id: int, api_id: str, plaintext_key: str, base_url_overr
     elif base_url_override:
         _validate_base_url(base_url_override)
     proxy = (proxy or "").strip()
-    if proxy and not re.match(r"^(https?|socks5h?)://[^\s/]+", proxy, re.IGNORECASE):
-        raise ValueError("代理地址格式不对 · 形如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080")
+    if proxy:
+        if not re.match(r"^(https?|socks5h?)://[^\s/]+", proxy, re.IGNORECASE):
+            raise ValueError("代理地址格式不对 · 形如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080")
+        # SEC: 托管多用户模式下,proxy 指向内网/本机 = SSRF 隐患(代理合法地可填 127.0.0.1,无法
+        # 靠 _validate_base_url 拦)。这里在**写时**就拒掉内网代理,与消费侧 byok_only 守卫
+        # (openai_compat.py:仅 require_auth=False 才用 proxy)构成双闸,杜绝「存量内网 proxy 随
+        # 某次重构变实弹」。本地单用户模式(require_auth=False)才允许 127.0.0.1 这类本地梯子。
+        try:
+            from core.config import require_auth as _require_auth
+            _hosted = bool(_require_auth())
+        except Exception:
+            _hosted = True
+        if _hosted:
+            import socket as _socket
+            from urllib.parse import urlparse as _urlparse
+            _phost = (_urlparse(proxy).hostname or "").lower()
+            if (not _phost or _phost in {"localhost", "ip6-localhost", "ip6-loopback"}
+                    or _phost.endswith(".localhost")):
+                raise ValueError("服务器模式下代理不允许指向本地地址")
+            try:
+                _infos = _socket.getaddrinfo(_phost, None, proto=_socket.IPPROTO_TCP)
+            except OSError as _exc:
+                raise ValueError(f"代理主机无法解析:{_phost}") from _exc
+            if any(_ip_is_internal(_i[4][0]) for _i in _infos):
+                raise ValueError(f"服务器模式下代理不允许指向私有/本地/保留地址:{_phost}")
     meta = {"proxy": proxy} if proxy else {}
     encrypted = encrypt_api_key(plaintext_key, user_id, api_id)
     with connect() as db:

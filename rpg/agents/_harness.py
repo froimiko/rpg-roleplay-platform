@@ -33,16 +33,12 @@ log = get_logger(__name__)
 
 
 def _no_redirect_urlopen(req, *, timeout):
-    """SEC(H-4): 默认 opener 跟随重定向 → base_url 存入时校验过也能被 301 跳到内网/元数据,
-    且携 Authorization。统一用不跟随重定向的 opener 发请求。"""
-    import urllib.request
+    """SEC(H-4): 已并入 `core.outbound.safe_urlopen` —— 不跟随重定向 + use-time 重解析并把
+    socket pin 到已校验 IP(抗 DNS rebinding)。保留此薄包装仅为兼容既有调用点;新代码
+    直接用 `core.outbound.safe_urlopen`。"""
+    from core.outbound import safe_urlopen
 
-    class _NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *a, **k):
-            return None
-
-    opener = urllib.request.build_opener(_NoRedirect())
-    return opener.open(req, timeout=timeout)
+    return safe_urlopen(req, timeout=timeout)
 
 
 def call_agent_json(

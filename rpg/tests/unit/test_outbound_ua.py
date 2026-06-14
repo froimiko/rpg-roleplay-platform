@@ -73,9 +73,11 @@ class BothSdkSitesOverrideUa(unittest.TestCase):
 
     def test_model_listing_passes_default_headers(self):
         self.assertIn("from core.outbound_ua import openai_default_headers", MODEL_PROBE_PY)
+        # kwargs 字典现为多行(并入了 http_client=safe_httpx_client(...) 的 SSRF 加固)→ 用
+        # [\s\S]*? 跨行匹配,仍锁死「default_headers 走 openai_default_headers()」这一不变量。
         self.assertRegex(
             MODEL_PROBE_PY,
-            r'kwargs[^\n]*=\s*\{[^\n]*"default_headers":\s*openai_default_headers\(\)',
+            r'kwargs[\s\S]*?=\s*\{[\s\S]*?"default_headers":\s*openai_default_headers\(\)',
         )
 
 

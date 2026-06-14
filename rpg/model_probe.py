@@ -339,7 +339,15 @@ def _list_openai_compat_models(api: dict[str, Any], user_id: int | None = None) 
     # 覆盖 openai SDK 默认 UA → 浏览器 UA,否则 Cloudflare 后的中转站会按 UA 拦掉(WAF 当 AI 爬虫),
     # 表现为「拉取模型/校验连接不可访问」。详见 core.outbound_ua。
     from core.outbound_ua import openai_default_headers
-    kwargs: dict[str, Any] = {"api_key": key, "default_headers": openai_default_headers()}
+    # SEC(H-5): base_url 用户/admin 可控(中转站)。OpenAI SDK 默认 follow_redirects=True →
+    # 攻击者端点能用 301/302 把携 Authorization 的 /v1/models 请求跳到 169.254.169.254 / 内网。
+    # 用 core.outbound.safe_httpx_client(不跟随重定向 + 传输层私网校验),与 GM 后端一致。
+    from core.outbound import safe_httpx_client
+    kwargs: dict[str, Any] = {
+        "api_key": key,
+        "default_headers": openai_default_headers(),
+        "http_client": safe_httpx_client(timeout=30.0),
+    }
     if base_url:
         kwargs["base_url"] = base_url
     client = OpenAI(**kwargs)
