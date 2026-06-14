@@ -58,9 +58,23 @@ def append_config_card(
       turn = state.data.get("turn", 0)
       写入 state.data["permissions"]["pending_questions"]。
     """
-    cid = f"cfg_{secrets.token_urlsafe(8)}"
     permissions: dict[str, Any] = state.data.setdefault("permissions", {})
     pending: list = permissions.setdefault("pending_questions", [])
+    # 去重:同 capability 已有未应答的 config_card → 跳过,不堆叠/不重弹。
+    for _q in pending:
+        if (
+            isinstance(_q, dict)
+            and _q.get("kind") == "config_card"
+            and _q.get("capability") == capability
+            and not _q.get("answered")
+        ):
+            existing_id = str(_q.get("id") or "")
+            log.info(
+                "[config_card] dedup skip capability=%s mode=%s (existing cid=%s)",
+                capability, mode, existing_id,
+            )
+            return existing_id
+    cid = f"cfg_{secrets.token_urlsafe(8)}"
     card: dict[str, Any] = {
         "id": cid,
         "kind": "config_card",

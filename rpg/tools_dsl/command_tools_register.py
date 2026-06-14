@@ -365,12 +365,6 @@ def ensure_registered() -> None:
         register_image_tools()
     except Exception as exc:
         log.warning(f"[command_tools_register] image 工具注册失败: {exc}")
-    # 对话内模型/Key 配置引导: request_user_config（save 级，弹 config_card）
-    try:
-        from tools_dsl.command_tools_config import register_config_tools
-        register_config_tools()
-    except Exception as exc:
-        log.warning(f"[command_tools_register] config 工具注册失败: {exc}")
     # task 68/72 — 给已注册工具打 intent_keywords + side_effect_topics 标签,
     # 供 ui_describe 模糊匹配 + dispatcher 状态变更广播。
     try:

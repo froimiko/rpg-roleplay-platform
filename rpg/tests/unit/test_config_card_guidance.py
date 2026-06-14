@@ -1,17 +1,19 @@
 """test_config_card_guidance — 对话内「模型/Key 配置引导」后端单测。
 
 覆盖:
-  1. request_user_config 工具注册(scope=save, origins={llm_chat}, 非破坏)
-  2. config_card pending_question 形状(契约,前端据此渲染)
-  3. request_user_config 三态:已配置→不写卡 / 有凭证未设默认→ask_default / 无凭证→missing_key
-  4. generate_image 入队前配置门控:
+  1. config_card pending_question 形状(契约,前端据此渲染)+ 同 capability 去重
+  2. generate_image 入队前配置门控:
        (a) 指定模型不在 catalog → model_not_configured(hard)+不入队
        (b) 未指定模型+无默认+有凭证 → ask_default+不入队
        (c) 未指定模型+无默认+无凭证 → missing_key+不入队
        (d) 已配置(有默认)→ 正常入队(原行为不破坏)
        (e) ui_button origin → 不弹卡,直接走原逻辑(即使无默认)
 
-全程不打真 DB:patch _resolve_user_id / llm_backend 解析函数 / enqueue。
+全程不打真 DB:patch llm_backend 解析函数 / enqueue。
+
+注:旧 request_user_config(origin llm_chat,GM 投机性调用)已删除 —— 它依赖
+LLM 自觉判断(确定性违规),每开新对话就给无生图模型的新用户弹卡。确定性的
+generate_image 门控(仅在真要生图时触发)保留并为唯一配置引导入口。
 """
 from __future__ import annotations
 
@@ -40,31 +42,7 @@ def _pending_cards(state) -> list:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 1. 工具注册
-# ══════════════════════════════════════════════════════════════════════
-
-class TestToolRegistered(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        from tools_dsl.command_tools_register import force_reset_for_tests
-        force_reset_for_tests()
-
-    def test_request_user_config_registered(self):
-        from tools_dsl.command_dispatcher import get_registry
-        reg = get_registry()
-        self.assertTrue(reg.has("request_user_config"))
-        spec = reg.get("request_user_config")
-        self.assertEqual(spec.scope, "save")
-        self.assertEqual(set(spec.origins), {"llm_chat"})
-        self.assertFalse(spec.destructive)
-        # schema: capability enum + required
-        props = spec.input_schema["properties"]
-        self.assertEqual(set(props["capability"]["enum"]), {"image", "embedding", "llm"})
-        self.assertEqual(spec.input_schema["required"], ["capability"])
-
-
-# ══════════════════════════════════════════════════════════════════════
-# 2. config_card 形状契约
+# 1. config_card 形状契约
 # ══════════════════════════════════════════════════════════════════════
 
 class TestConfigCardShape(unittest.TestCase):
@@ -116,57 +94,42 @@ class TestConfigCardShape(unittest.TestCase):
         self.assertEqual(card["options"], [])
         self.assertEqual(card["turn"], 0)
 
-
-# ══════════════════════════════════════════════════════════════════════
-# 3. request_user_config 三态
-# ══════════════════════════════════════════════════════════════════════
-
-class TestRequestUserConfig(unittest.TestCase):
-    def _run(self, capability, *, pref_model, first_model):
-        from tools_dsl.command_tools_config import _execute_request_user_config
-        state = _MinimalState({"turn": 2, "permissions": {}})
-        args = {"capability": capability, "save_id": 100}
-        with patch("tools_dsl.command_tools_tavern._resolve_user_id", return_value=42), \
-             patch("core.llm_backend.resolve_preferred_model", return_value=pref_model), \
-             patch("core.llm_backend.first_user_model", return_value=first_model):
-            result = _execute_request_user_config(state, args)
-        return result, _pending_cards(state)
-
-    def test_already_configured_no_card(self):
-        result, cards = self._run(
-            "image", pref_model="doubao-seedream-4-x", first_model=("doubao", "x"))
-        self.assertIn("已配置", result)
-        self.assertEqual(cards, [])
-
-    def test_has_credential_ask_default(self):
-        result, cards = self._run(
-            "image", pref_model=None, first_model=("doubao", "doubao-seedream-4-x"))
-        self.assertEqual(len(cards), 1)
-        self.assertEqual(cards[0]["mode"], "ask_default")
-        self.assertEqual(cards[0]["model"], "doubao-seedream-4-x")
-        self.assertEqual(cards[0]["api_id"], "doubao")
-        self.assertEqual(cards[0]["capability"], "image")
-        self.assertIs(cards[0]["hard"], False)
-
-    def test_no_credential_missing_key(self):
-        result, cards = self._run("embedding", pref_model=None, first_model=None)
-        self.assertEqual(len(cards), 1)
-        self.assertEqual(cards[0]["mode"], "missing_key")
-        self.assertEqual(cards[0]["capability"], "embedding")
-        self.assertEqual(cards[0]["model"], "")
-        self.assertIs(cards[0]["hard"], False)
-
-    def test_bad_capability(self):
-        from tools_dsl.command_tools_config import _execute_request_user_config
+    def test_dedup_same_capability_skips(self):
+        """同 capability 已有未应答 config_card → 第二次不堆叠,复用同一张。"""
+        from tools_dsl.command_tools_image import append_config_card
         state = _MinimalState({"permissions": {}})
-        with patch("tools_dsl.command_tools_tavern._resolve_user_id", return_value=42):
-            result = _execute_request_user_config(state, {"capability": "video", "save_id": 1})
-        self.assertTrue(result.startswith("失败"))
-        self.assertEqual(_pending_cards(state), [])
+        cid1 = append_config_card(
+            state, capability="image", mode="missing_key", hard=False,
+            question="缺 key",
+        )
+        cid2 = append_config_card(
+            state, capability="image", mode="ask_default", hard=False,
+            question="换一张",
+        )
+        cards = _pending_cards(state)
+        self.assertEqual(len(cards), 1)  # 没堆叠
+        self.assertEqual(cid1, cid2)  # 复用既有 id
+        self.assertEqual(cards[0]["mode"], "missing_key")  # 不被覆盖
+
+    def test_dedup_different_capability_appends(self):
+        """不同 capability 互不去重,各自一张。"""
+        from tools_dsl.command_tools_image import append_config_card
+        state = _MinimalState({"permissions": {}})
+        append_config_card(
+            state, capability="image", mode="missing_key", hard=False,
+            question="缺生图 key",
+        )
+        append_config_card(
+            state, capability="embedding", mode="missing_key", hard=False,
+            question="缺 embedding key",
+        )
+        cards = _pending_cards(state)
+        self.assertEqual(len(cards), 2)
+        self.assertEqual({c["capability"] for c in cards}, {"image", "embedding"})
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 4. generate_image 入队前配置门控
+# 2. generate_image 入队前配置门控
 # ══════════════════════════════════════════════════════════════════════
 
 class TestGenerateImageConfigGate(unittest.TestCase):
