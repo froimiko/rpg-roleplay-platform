@@ -362,6 +362,22 @@ async def api_script_birthpoints(script_id: int, user=Depends(require_user)):
         if not owned:
             return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
 
+        # 全部锚点(按章序)。真实锚点是唯一可靠数据源 —— phase_digests 的 chapter_min/max
+        # 在历史迁移后常与锚点的章号不在同一标尺(实测多剧本:phase 范围覆盖全书但锚点只落早章,
+        # 或 phase 用阶段序号当章号),strict containment 会让整段出生点空掉(用户「显示不出来」)。
+        all_anchors = db.execute(
+            """
+            select id, story_time_label, chapter_min, chapter_max, chapter_count, sample_summary
+            from script_timeline_anchors
+            where script_id = %s
+            order by chapter_min asc, id asc
+            """,
+            (script_id,),
+        ).fetchall()
+        if not all_anchors:
+            # 无锚点 → 前端走空态(从头开始),不渲染空的 phase 手风琴。
+            return json_response({"ok": True, "phases": []})
+
         phase_rows = db.execute(
             """
             select phase_label, chapter_min, chapter_max, chapter_count, summary
@@ -372,81 +388,77 @@ async def api_script_birthpoints(script_id: int, user=Depends(require_user)):
             (script_id,),
         ).fetchall()
 
-        # phase_digests 空时 fallback:把 script_timeline_anchors 按章节分 5 段
-        # (开端/发展前期/发展中期/发展后期/结局),每段渲染成一个 phase。
-        # 否则 wizard 出生点选择面板永远显示"暂无出生点锚点"。
-        if not phase_rows:
-            anchor_chapter_min_max = db.execute(
-                """
-                select coalesce(min(chapter_min), 1) as chmin,
-                       coalesce(max(chapter_max), 1) as chmax,
-                       count(*) as n
-                from script_timeline_anchors where script_id = %s
-                """,
-                (script_id,),
-            ).fetchone()
-            n = int((anchor_chapter_min_max or {}).get("n") or 0)
-            if n > 0:
-                chmin = int(anchor_chapter_min_max["chmin"])
-                chmax = int(anchor_chapter_min_max["chmax"])
-                span = max(1, chmax - chmin + 1)
-                seg = max(1, span // 5)
-                phase_labels = ["开端", "发展前期", "发展中期", "发展后期", "结局"]
-                phase_rows = []
-                for i, label in enumerate(phase_labels):
-                    lo = chmin + i * seg
-                    hi = chmin + (i + 1) * seg - 1 if i < 4 else chmax
-                    phase_rows.append({
-                        "phase_label": label,
-                        "chapter_min": lo,
-                        "chapter_max": hi,
-                        "chapter_count": hi - lo + 1,
-                        "summary": "",
-                    })
-
-        phases = []
-        for pr in phase_rows:
-            anchor_rows = db.execute(
-                """
-                select id, story_time_label, chapter_min, chapter_max, chapter_count, sample_summary
-                from script_timeline_anchors
-                where script_id = %s
-                  and chapter_min >= %s
-                  and chapter_max <= %s
-                order by chapter_min asc
-                """,
-                (script_id, int(pr["chapter_min"]), int(pr["chapter_max"])),
-            ).fetchall()
-
-            # 均匀采样：≤15 全取，否则步长 round(N/12)
-            n = len(anchor_rows)
+        def _sample(rows):
+            # ≤15 全取，否则步长 round(N/12) 均匀采样 + 末尾兜底
+            n = len(rows)
             if n <= 15:
-                sampled = anchor_rows
-            else:
-                step = max(1, round(n / 12))
-                sampled = anchor_rows[::step]
-                # 确保末尾 anchor 也包含（代表 phase 尾部）
-                if anchor_rows[-1] not in sampled:
-                    sampled = list(sampled) + [anchor_rows[-1]]
+                return list(rows)
+            step = max(1, round(n / 12))
+            s = list(rows[::step])
+            if rows[-1] not in s:
+                s.append(rows[-1])
+            return s
 
-            phases.append({
-                "phase_label": pr["phase_label"],
-                "chapter_min": int(pr["chapter_min"]),
-                "chapter_max": int(pr["chapter_max"]),
-                "chapter_count": int(pr["chapter_count"]),
-                "summary": pr["summary"] or "",
-                "anchors": [
+        def _dto(ar):
+            return {
+                "anchor_id": int(ar["id"]),
+                "story_time_label": ar["story_time_label"],
+                "chapter_min": int(ar["chapter_min"]),
+                "chapter_max": int(ar["chapter_max"]),
+                "chapter_count": int(ar["chapter_count"]),
+                "sample_summary": ar["sample_summary"] or "",
+            }
+
+        # 优先:phase_digests 与锚点「完全对齐」(所有锚点都按重叠落进某段 + 每段非空)
+        # 才用富 phase 信息(真实 arc 标签/章号/摘要)。
+        phases = None
+        if phase_rows:
+            buckets = [[] for _ in phase_rows]
+            unassigned = 0
+            for a in all_anchors:
+                amin, amax = int(a["chapter_min"]), int(a["chapter_max"])
+                hit = next(
+                    (i for i, pr in enumerate(phase_rows)
+                     if amin <= int(pr["chapter_max"]) and amax >= int(pr["chapter_min"])),
+                    None,
+                )
+                if hit is None:
+                    unassigned += 1
+                else:
+                    buckets[hit].append(a)
+            if unassigned == 0 and all(buckets):
+                phases = [
                     {
-                        "anchor_id": int(ar["id"]),
-                        "story_time_label": ar["story_time_label"],
-                        "chapter_min": int(ar["chapter_min"]),
-                        "chapter_max": int(ar["chapter_max"]),
-                        "chapter_count": int(ar["chapter_count"]),
-                        "sample_summary": ar["sample_summary"] or "",
+                        "phase_label": pr["phase_label"],
+                        "chapter_min": int(pr["chapter_min"]),
+                        "chapter_max": int(pr["chapter_max"]),
+                        "chapter_count": int(pr["chapter_count"]),
+                        "summary": pr["summary"] or "",
+                        "anchors": [_dto(ar) for ar in _sample(buckets[i])],
                     }
-                    for ar in sampled
-                ],
-            })
+                    for i, pr in enumerate(phase_rows)
+                ]
+
+        # 否则(phase_digests 缺失 / 与锚点章号错位)→ 直接把真实锚点按序均分成 N 段,
+        # 沿用 arc 标签命名,每段章号取该段锚点的真实首尾 —— 保证每段都有真实锚点、绝不空。
+        if phases is None:
+            labels = [pr["phase_label"] for pr in phase_rows] if phase_rows else \
+                ["开端", "发展前期", "发展中期", "发展后期", "结局"]
+            n_seg = max(1, len(labels))
+            total = len(all_anchors)
+            phases = []
+            for i in range(n_seg):
+                seg = all_anchors[(total * i) // n_seg:(total * (i + 1)) // n_seg]
+                if not seg:
+                    continue
+                phases.append({
+                    "phase_label": labels[i] if i < len(labels) else f"阶段 {i + 1}",
+                    "chapter_min": int(seg[0]["chapter_min"]),
+                    "chapter_max": int(seg[-1]["chapter_max"]),
+                    "chapter_count": int(seg[-1]["chapter_max"]) - int(seg[0]["chapter_min"]) + 1,
+                    "summary": "",
+                    "anchors": [_dto(ar) for ar in _sample(seg)],
+                })
 
     return json_response({"ok": True, "phases": phases})
 
