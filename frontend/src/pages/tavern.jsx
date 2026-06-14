@@ -25,6 +25,8 @@ import { GameToastStack } from '../game-app.jsx';
 import { Composer, ConfirmStrip } from '../game-composer.jsx';
 import { TavernImportModal, UserCardsView } from './cards.jsx';
 import { ModelParamsSection } from './settings.jsx';
+import AgentModelPicker from '../components/AgentModelPicker.jsx';
+import ModelConfigInterceptModal, { capConfig } from '../components/ModelConfigInterceptModal.jsx';
 import {
   TavernChatItem, TavernChatArea, TwoCardDrawer, ConfirmModal, RenameModal,
 } from '../tavern-app.jsx';
@@ -102,6 +104,11 @@ export default function TavernPage() {
   const [running, setRunning] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [lastPlayerText, setLastPlayerText] = useState('');
+  // Item 3:发消息时后端报「缺 LLM key」(credentials_required / needs_credentials)→ 在 Composer 上方
+  // 内联一张引导卡片,让用户就地加 key,然后重试上一条输入(复用 onRetry → lastPlayerText)。
+  const [needsCreds, setNeedsCreds] = useState(false);
+  // config_card hard 拦截弹窗(mode model_not_configured)
+  const [hardConfigItem, setHardConfigItem] = useState(null);
 
   // F2:本轮实时秒表(running 时 200ms tick)+ 复用 context 圆环用量
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -366,6 +373,7 @@ export default function TavernPage() {
     const ts = new Date().toLocaleTimeString().slice(0, 5);
     setHistory((h) => [...h, { role: 'user', content: playerText, ts, attachments: sentAttachments.length ? sentAttachments : undefined }]);
     setLastPlayerText(playerText);
+    setNeedsCreds(false);   // 新一轮开始,撤掉「缺 key」引导卡片
     setText('');
     setHasError(false);
     setRunning(true);
@@ -552,8 +560,16 @@ export default function TavernPage() {
           if (rc.inactivityTimer) { clearTimeout(rc.inactivityTimer); rc.inactivityTimer = null; }
           stopTicker();
           const realMsg = (data && (data.message || data.detail || data.error)) || '';
-          setRunning(false); setHasError(realMsg || true);
-          window.__apiToast?.('生成失败', { kind: 'danger', detail: realMsg || '请重试' });
+          setRunning(false);
+          // Item 3:「发消息时没 key」→ 内联引导卡片(非普通报错红条),让用户就地配 LLM key 再重试。
+          if (/credentials_required|needs_credentials/i.test(String(realMsg))) {
+            setNeedsCreds(true);
+            setHasError(false);
+            window.__apiToast?.('需要配置模型 Key', { kind: 'warn', detail: '请先添加一把对话模型的 API Key,再重试。', duration: 4500 });
+          } else {
+            setHasError(realMsg || true);
+            window.__apiToast?.('生成失败', { kind: 'danger', detail: realMsg || '请重试' });
+          }
           restoreFailedDraft();
         },
         onClose: () => {
@@ -632,6 +648,54 @@ export default function TavernPage() {
     _dropPending(id, index);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── config_card(agent:config_card)处理 —— 与 game-console 行为对齐,复用 _dropPending + startRun ──
+  const _clearConfig = useCallback(async (handleId) => {
+    const id = handleId && handleId.id; const index = handleId && handleId.index;
+    try { await window.api.game.clearQuestions({ id, index, choice: null }); } catch (_) {}
+    _dropPending(id, index);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // mode "ask_default":持久化能力偏好 → 清卡片 → startRun("用 X 生成")
+  const onConfigDefault = useCallback(async (handleId, item, model) => {
+    const cap = capConfig(item.capability);
+    const aid = item.api_id || '';
+    if (aid && model) {
+      try {
+        await window.api.account.preferences({
+          [`${cap.prefPrefix}.api_id`]: aid,
+          [`${cap.prefPrefix}.model_real_name`]: model,
+        });
+      } catch (e) { window.__apiToast?.('保存偏好失败', { kind: 'danger', detail: e?.message }); }
+    }
+    await _clearConfig(handleId);
+    if (!running) startRun(`用 ${model || cap.label} 生成`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, startRun]);
+  // mode "missing_key":配好后「继续」
+  const onConfigContinue = useCallback(async (handleId, item, label) => {
+    await _clearConfig(handleId);
+    if (!running) startRun(label || '继续');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, startRun]);
+  const onConfigSettings = useCallback(() => { try { window.location.hash = 'settings-models'; } catch (_) {} }, []);
+  // mode "model_not_configured"(hard):开阻塞弹窗
+  const onHardConfig = useCallback((item) => setHardConfigItem(item), []);
+  const onHardResolve = useCallback(async (chosenModel) => {
+    const item = hardConfigItem; if (!item) return;
+    setHardConfigItem(null);
+    await _clearConfig({ id: item.id != null ? item.id : null, index: null });
+    if (!running) startRun(`用 ${chosenModel || item.model || ''} 生成`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hardConfigItem, running, startRun]);
+  const onHardCancel = useCallback(async () => {
+    const item = hardConfigItem; if (!item) { setHardConfigItem(null); return; }
+    setHardConfigItem(null);
+    await _clearConfig({ id: item.id != null ? item.id : null, index: null });
+    window.__apiToast?.('已取消生成', { kind: 'info', duration: 2000 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hardConfigItem]);
+
   // 输入框「完全复用」游戏页 Composer：斜杠 / 附件 / 清命令 等回调(与 game-console 一致)
   const onSlashPick = (cmd) => {
     if (cmd && typeof cmd.trigger === 'string' && cmd.trigger.endsWith(' ')) {
@@ -966,7 +1030,40 @@ export default function TavernPage() {
                   pendingQuestions={pendingQuestions}
                   onAnswer={onChoiceAnswer}
                   onDismiss={onChoiceDismiss}
+                  onConfigDefault={onConfigDefault}
+                  onConfigContinue={onConfigContinue}
+                  onHardConfig={onHardConfig}
+                  onConfigSettings={onConfigSettings}
                 />
+              )}
+              {/* Item 3:发消息时缺 LLM key → Composer 上方内联引导卡片(复用 AgentModelPicker bare,LLM 不过滤),
+                  配好后「重试」复用 onRetry 重跑上一条输入。 */}
+              {needsCreds && (
+                <div className="gc-confirm gc-confirm-config tvp-creds-card">
+                  <div className="gc-confirm-marker"><Icon name="warn" size={12} /></div>
+                  <div className="gc-confirm-body">
+                    <div className="gc-confirm-row1">
+                      <span className="gc-confirm-tag">需要 KEY</span>
+                      <span className="gc-confirm-text serif">还没有可用的对话模型 Key。添加一把后即可继续对话。</span>
+                    </div>
+                    <div className="gc-config-inline">
+                      <AgentModelPicker
+                        prefPrefix="gm"
+                        variant="bare"
+                        configHash="settings-models"
+                      />
+                      <div className="gc-confirm-actions">
+                        <button className="gc-chip-btn gc-chip-primary" onClick={() => { setNeedsCreds(false); onRetry(); }}>
+                          重试
+                        </button>
+                        <button className="gc-chip-btn" onClick={() => { try { window.location.hash = 'settings-models'; } catch (_) {} }}>
+                          <Icon name="settings" size={11} /> 去设置
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <button className="iconbtn" onClick={() => setNeedsCreds(false)} title="忽略"><Icon name="close" size={11} /></button>
+                </div>
               )}
               {/* 完全复用游戏页 Composer:同一组件、同一组控件(+ / 继续 / 完全访问 / 模型 / context 圆环),
                   靠 gameState 显示真实模型名 + context 圆环 + @mention。不再 hide 任何控件。 */}
@@ -994,6 +1091,8 @@ export default function TavernPage() {
       {/* F#1:真实文件上传隐藏输入(onAttachPick 触发)。 */}
       <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={onFilePicked} />
       <TavernImportModal open={importOpen} onClose={() => setImportOpen(false)} onConfirm={onImportConfirm} />
+      {/* config_card hard 拦截弹窗(mode model_not_configured) */}
+      <ModelConfigInterceptModal open={!!hardConfigItem} item={hardConfigItem} onResolve={onHardResolve} onCancel={onHardCancel} />
 
       <TwoCardDrawer
         inline

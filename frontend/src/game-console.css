@@ -1078,6 +1078,11 @@
 }
 .gc-confirm-q { border-color: rgba(122, 166, 194, 0.32); background: rgba(122, 166, 194, 0.05); }
 .gc-confirm-w { border-color: rgba(212, 179, 102, 0.28); background: rgba(212, 179, 102, 0.04); }
+/* config_card 内联配置卡片(mode ask_default / missing_key):用 accent 暖色与问句/写入区分。 */
+.gc-confirm-config { border-color: rgba(201, 100, 66, 0.40); background: rgba(201, 100, 66, 0.05); }
+.gc-confirm-config .gc-confirm-marker { color: var(--accent); }
+.gc-confirm-config .gc-confirm-tag { color: var(--accent); }
+.gc-config-inline { display: grid; gap: 8px; padding-top: 4px; }
 .gc-confirm-risk-high { border-color: rgba(200, 103, 93, 0.42); background: rgba(200, 103, 93, 0.05); }
 .gc-confirm-risk-low { border-color: var(--line); background: var(--panel); }
 .gc-confirm-marker {

@@ -38,6 +38,7 @@ import AdultSplash from '../components/AdultSplash.jsx';
 import { ErrorBoundary } from '../components/ErrorBoundary.jsx';
 import { FeedbackDrawerRoot } from '../components/FeedbackDrawer.jsx';
 import GlobalTaskFloater from '../components/GlobalTaskFloater.jsx';
+import ModelConfigInterceptModal, { capConfig } from '../components/ModelConfigInterceptModal.jsx';
 const SPLASH_VERSION = 'v1.0-2026-05-31';
 
 // density preset + narrative font init（等价原 HTML 非 babel inline script）
@@ -1373,6 +1374,51 @@ function App() {
     setPendingQuestions((arr) => arr.filter(_matchPending(target)));
   };
 
+  // ── config_card(agent:config_card)处理 ──────────────────────────
+  // 共用一个清除助手:乐观移除 + 后端 clearQuestions(choice=null) + 刷新 pending。
+  const _clearConfigQuestion = async (target) => {
+    setPendingQuestions((arr) => arr.filter(_matchPending(target)));
+    try { await window.api.game.clearQuestions({ id: target.id, index: target.index, choice: null }); } catch (_) {}
+    try { const d = await window.api.game.state(); if (d && d.permissions) { setPendingWrites(d.permissions.pending_writes || []); setPendingQuestions(d.permissions.pending_questions || []); } } catch (_) {}
+  };
+  // mode "ask_default":持久化该能力偏好 → 清掉卡片 → startRun("用 X 生成") 让 LLM 带着偏好重调工具。
+  const onConfigDefault = async (handleId, item, model) => {
+    const cap = capConfig(item.capability);
+    const aid = item.api_id || '';
+    if (aid && model) {
+      try {
+        await window.api.account.preferences({
+          [`${cap.prefPrefix}.api_id`]: aid,
+          [`${cap.prefPrefix}.model_real_name`]: model,
+        });
+      } catch (e) { window.__apiToast?.('保存偏好失败', { kind: 'danger', detail: e?.message }); }
+    }
+    await _clearConfigQuestion(handleId);
+    startRun(`用 ${model || cap.label} 生成`);
+  };
+  // mode "missing_key":用户在卡片里配好后点「继续」→ 清掉卡片 → startRun("继续") 重试。
+  const onConfigContinue = async (handleId, item, label) => {
+    await _clearConfigQuestion(handleId);
+    startRun(label || '继续');
+  };
+  const onConfigSettings = () => { try { window.location.hash = 'settings-models'; } catch (_) {} };
+  // mode "model_not_configured"(hard):打开阻塞弹窗。
+  const [hardConfigItem, setHardConfigItem] = useState(null);
+  const onHardConfig = (item) => setHardConfigItem(item);
+  const _hardHandleId = (item) => ({ id: (item && item.id != null) ? item.id : null, index: null });
+  const onHardResolve = async (chosenModel) => {
+    const item = hardConfigItem; if (!item) return;
+    setHardConfigItem(null);
+    await _clearConfigQuestion(_hardHandleId(item));
+    startRun(`用 ${chosenModel || item.model || ''} 生成`);
+  };
+  const onHardCancel = async () => {
+    const item = hardConfigItem; if (!item) { setHardConfigItem(null); return; }
+    setHardConfigItem(null);
+    await _clearConfigQuestion(_hardHandleId(item));
+    window.__apiToast?.('已取消生成', { kind: 'info', duration: 2000 });
+  };
+
   useEffect(() => {
     if (!window.api) return;
     window.api.game.permissions({ mode: permission }).catch(() => {});
@@ -1529,6 +1575,8 @@ function App() {
           <HistoryDrawer open={showHistoryDrawer} history={history} onClose={() => setShowHistoryDrawer(false)} />
           <SearchDrawer open={showSearchDrawer} history={history} state={game} onClose={() => setShowSearchDrawer(false)} />
         </>}
+        {/* config_card hard 拦截弹窗(mode model_not_configured):ConfirmStrip onHardConfig 触发 */}
+        <ModelConfigInterceptModal open={!!hardConfigItem} item={hardConfigItem} onResolve={onHardResolve} onCancel={onHardCancel} />
         {/* Wave 11-D: GM 模型选择 — 改回 Composer 内置 ModelPopover (下拉) 用法,
             外层这个 ModelPicker 全屏 modal 禁用 (showModel={false} 已让 Composer 里
             的 popover 失效,这块也 dead code)。task 141 修: showModel pass through,
@@ -1605,7 +1653,8 @@ function App() {
           <ConfirmStrip pendingWrites={pendingWrites} pendingQuestions={pendingQuestions} onApprove={onApprove} onReject={onReject} onAnswer={onAnswerQuestion} onDismiss={onDismissConfirm}
             clicheNotice={clicheNotice}
             onRetryCliche={() => { setClicheNotice(null); onRetry(); }}
-            onDismissCliche={() => setClicheNotice(null)} />
+            onDismissCliche={() => setClicheNotice(null)}
+            onConfigDefault={onConfigDefault} onConfigContinue={onConfigContinue} onHardConfig={onHardConfig} onConfigSettings={onConfigSettings} />
           <Composer
             text={text} setText={setText} onSend={onSend} onStop={onStop} running={runState.running}
             onSendRaw={onSendRaw} permission={permission} setPermission={setPermission}

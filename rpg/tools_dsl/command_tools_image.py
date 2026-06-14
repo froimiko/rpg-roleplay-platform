@@ -33,6 +33,56 @@ _AUTONOMOUS_ORIGINS: frozenset[str] = frozenset({"llm_chat", "autonomous_agent"}
 _UNRESTRICTED_ORIGINS: frozenset[str] = frozenset({"ui_button", "api_direct"})
 
 
+# ── config_card pending_question 写入器 ─────────────────────────────────────
+# 前端 ConfirmStrip / 阻塞弹窗据 kind=="config_card" 渲染「模型/Key 配置引导卡」。
+# 写入路径与 ask_player_choice 完全一致(state.data["permissions"]["pending_questions"]),
+# 故无需任何额外的前端传输改动 —— 同一份 permissions 随回合 done/status state 下发。
+
+def append_config_card(
+    state: Any,
+    *,
+    capability: str,
+    mode: str,
+    model: str = "",
+    api_id: str = "",
+    hard: bool = False,
+    question: str,
+    options: list[str] | None = None,
+) -> str:
+    """向玩家弹一张「配置引导卡」(config_card pending_question)。
+
+    返回写入的卡 id(cfg_<token>)。调用方据自身语义返回面向用户的文案。
+
+    复用 ask_player_choice 的 id/turn/state 习惯:
+      id   = "cfg_" + token_urlsafe(8)
+      turn = state.data.get("turn", 0)
+      写入 state.data["permissions"]["pending_questions"]。
+    """
+    cid = f"cfg_{secrets.token_urlsafe(8)}"
+    permissions: dict[str, Any] = state.data.setdefault("permissions", {})
+    pending: list = permissions.setdefault("pending_questions", [])
+    card: dict[str, Any] = {
+        "id": cid,
+        "kind": "config_card",
+        "capability": capability,
+        "mode": mode,
+        "model": model or "",
+        "api_id": api_id or "",
+        "hard": bool(hard),
+        "question": question,
+        "options": [str(o) for o in (options or [])],
+        "source": "agent:config_card",
+        "turn": state.data.get("turn", 0),
+    }
+    pending.append(card)
+    permissions["pending_questions"] = pending[-32:]  # 上限防膨胀(与 pending_writes 一致)
+    log.info(
+        "[config_card] appended cid=%s capability=%s mode=%s hard=%s model=%s api_id=%s",
+        cid, capability, mode, hard, model, api_id,
+    )
+    return cid
+
+
 # ── executor ──────────────────────────────────────────────────────────────
 
 def _execute_generate_image(state: Any, args: dict[str, Any]) -> str | dict[str, Any]:
@@ -81,6 +131,59 @@ def _execute_generate_image(state: Any, args: dict[str, Any]) -> str | dict[str,
     ref: str | None = args.get("ref") or None
     if ref:
         extra["ref"] = ref
+
+    # ── 入队前·生图模型配置门控(确定性,先于一切门控/入队)────────────────────
+    # 只对自主 origin(llm_chat / autonomous_agent)做引导:用户主动触发(ui_button /
+    # api_direct)视为已知自己在干什么,不弹卡、直接走原逻辑。
+    if origin in _AUTONOMOUS_ORIGINS:
+        from core.llm_backend import (
+            _model_in_catalog,
+            first_user_model,
+            resolve_preferred_model,
+        )
+        # (a) LLM 显式指定了模型,但该模型不在用户 catalog → 阻塞式配置卡,不入队。
+        if model and not _model_in_catalog(user_id, model):
+            append_config_card(
+                state,
+                capability="image",
+                mode="model_not_configured",
+                model=model,
+                api_id=api_id or "",
+                hard=True,
+                question=(
+                    f"你想用的生图模型「{model}」还没在你的账户配置,"
+                    f"选一个已有模型或为它添加 API Key。"
+                ),
+            )
+            return f"【生图已暂停】模型「{model}」未配置,已弹出模型配置。"
+        # (b) 未指定模型,且用户从未设默认生图模型 → 询问 / 缺 Key 引导,不入队。
+        if not model and resolve_preferred_model(user_id, "image_gen.model_real_name") is None:
+            default = first_user_model(user_id)
+            if default:
+                _api, _model = default
+                append_config_card(
+                    state,
+                    capability="image",
+                    mode="ask_default",
+                    model=_model,
+                    api_id=_api,
+                    hard=False,
+                    question=f"你还没设默认生图模型,用识别到的「{_model}」生成吗?",
+                    options=[f"用 {_model} 生成", "去模型设置"],
+                )
+                return (
+                    f"【生图待确认】尚未设默认生图模型,"
+                    f"已询问是否用识别到的「{_model}」。"
+                )
+            # 完全没有可用凭证 → 缺 Key 引导卡(非阻塞),不入队。
+            append_config_card(
+                state,
+                capability="image",
+                mode="missing_key",
+                hard=False,
+                question="你还没配置生图模型的 API Key,去配置一下就能生图了。",
+            )
+            return "【生图未配置】你还没配置生图模型的 API Key,已弹出配置引导,配置后即可生图。"
 
     # ── 确定性门控 ─────────────────────────────────────────────────────────
     if origin in _AUTONOMOUS_ORIGINS:
