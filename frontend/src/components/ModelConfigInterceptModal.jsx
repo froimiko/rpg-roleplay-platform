@@ -9,17 +9,22 @@ import CSSelect from '@cloudscape-design/components/select';
 import CSSegmentedControl from '@cloudscape-design/components/segmented-control';
 import AgentModelPicker from './AgentModelPicker.jsx';
 import { EditApiModal, ProviderCard, PROVIDERS_CONFIG, normalizeApiId } from '../pages/settings.jsx';
+import { moduleByPrefix } from '../agent-modules.js';
 
 /* config_card 能力 → 前端配置映射(后端契约里的 capability 字段)。
    一处定义,ConfirmStrip 的内联卡片与本拦截弹窗共用,避免两份各写一套。
+   prefPrefix / capabilityFilter 从单一来源 agent-modules.js 派生(语义统一 #19),
+   避免与「模块模型」清单的落库 key / 能力过滤漂移;label / defaultProvider 为本弹窗专属。
      prefPrefix       : user_preferences 命名空间(后端各 agent resolve 读同名 key)
      capabilityFilter : AgentModelPicker 只展示含此 capability 的模型(null=不过滤,LLM)
      label            : 给用户看的能力名(中文)
      defaultProvider  : 该能力下「补 Key」时默认选中的 provider(用户可改) */
+// 子集投影:image→image_gen 模块 · embedding→embed 模块 · llm→gm 模块。
+const _capModule = (prefix) => moduleByPrefix[prefix] || {};
 export const CAP_CONFIG = {
-  image:     { prefPrefix: 'image_gen', capabilityFilter: 'image_gen', label: '生图',     defaultProvider: 'dashscope' },
-  embedding: { prefPrefix: 'embed',     capabilityFilter: 'embedding', label: '向量检索', defaultProvider: 'openai' },
-  llm:       { prefPrefix: 'gm',        capabilityFilter: null,        label: '对话',     defaultProvider: 'deepseek' },
+  image:     { prefPrefix: 'image_gen', capabilityFilter: _capModule('image_gen').capabilityFilter || null, label: '生图',     defaultProvider: 'dashscope' },
+  embedding: { prefPrefix: 'embed',     capabilityFilter: _capModule('embed').capabilityFilter || null,     label: '向量检索', defaultProvider: 'openai' },
+  llm:       { prefPrefix: 'gm',        capabilityFilter: _capModule('gm').capabilityFilter || null,         label: '对话',     defaultProvider: 'deepseek' },
 };
 
 export function capConfig(capability) {

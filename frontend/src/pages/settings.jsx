@@ -9,7 +9,9 @@ import { Icon } from '../game-icons.jsx';
 import { ConfirmModal, SettingsToggle, useAutoSave, usePlatformData, useReactiveUser, publishUser, fmtN, ResizableSplit } from '../platform-app.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import GmStyleEditor from '../components/GmStyleEditor.jsx';
-import { getCaps as _getCapsImported } from '../components/catalog-helpers.js';
+import { getCaps as _getCapsImported, normalizeProviderId, credentialToCatalogId, catalogToCredentialId } from '../components/catalog-helpers.js';
+import { MODULES as AGENT_MODULES } from '../agent-modules.js';
+import { readScopedPref, readNumberPref } from '../lib/prefs.js';
 import { plNavigate } from '../router.js';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSContainer from '@cloudscape-design/components/container';
@@ -31,39 +33,14 @@ import CSExpandableSection from '@cloudscape-design/components/expandable-sectio
 import CSModal from '@cloudscape-design/components/modal';
 import CSKeyValuePairs from '@cloudscape-design/components/key-value-pairs';
 
-const API_ID_ALIASES = {
-  OpenAI: "openai",
-  OpenRouter: "openrouter",
-  DeepSeek: "deepseek",
-  Anthropic: "anthropic",
-  AlibabaQwen: "dashscope",
-  DashScope: "dashscope",
-  TencentHunyuan: "hunyuan",
-  Hunyuan: "hunyuan",
-  XiaomiMimo: "xiaomi_mimo",
-  MiMo: "xiaomi_mimo",
-  SiliconFlow: "siliconflow",
-  MiniMax: "minimax",
-  Doubao: "doubao",
-  AgentPlatform: "AgentPlatform",
-  agent_platform: "AgentPlatform",
-  vertex: "AgentPlatform",
-  vertex_ai: "AgentPlatform",
-};
-
-function normalizeApiId(id) {
-  const value = String(id || "").trim();
-  return API_ID_ALIASES[value] || API_ID_ALIASES[value.toLowerCase()] || value;
-}
-
-function credentialApiIdForCatalog(apiId) {
-  return apiId === "vertex_ai" ? "AgentPlatform" : normalizeApiId(apiId);
-}
-
-function catalogApiIdForCredential(apiId) {
-  const normalized = normalizeApiId(apiId);
-  return normalized === "AgentPlatform" ? "vertex_ai" : normalized;
-}
+// Provider 别名表 + 归一化/方向转换全部上提到 components/catalog-helpers.js(语义统一 #16)。
+// 本文件保留原名薄别名,内部调用点与 ESM export(ModelConfigInterceptModal 依赖 normalizeApiId)零变化:
+//   normalizeApiId            = normalizeProviderId   (走全别名表)
+//   credentialApiIdForCatalog = catalogToCredentialId (catalog→credential:vertex_ai→AgentPlatform)
+//   catalogApiIdForCredential = credentialToCatalogId (credential→catalog:AgentPlatform→vertex_ai)
+const normalizeApiId = normalizeProviderId;
+const credentialApiIdForCatalog = catalogToCredentialId;
+const catalogApiIdForCredential = credentialToCatalogId;
 
 /* ── 设置页 Cloudscape 统一 primitives(取代 pl-set-group / pl-set-row) ──
    SetGroup = Container + Header(h2)  ·  SetRow = FormField(label 上 / 控件下)。
@@ -1725,7 +1702,9 @@ function sourceLabel(source) {
 }
 
 /** @param {number|null|undefined} n context_window 格式化 */
+// K/M 缩写统一到 window.__fmt.compact(data-loader.js;语义统一 #30),保留本地别名免改调用点。
 function fmtCtx(n) {
+  if (window.__fmt && window.__fmt.compact) return window.__fmt.compact(n);
   if (!n) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
@@ -2193,17 +2172,7 @@ const MODEL_PARAM_PRESET_VALUES = {
   deterministic: { temperature: 0.1, top_p: 0.5, repetition_penalty: 1.0, frequency_penalty: 0.0, presence_penalty: 0.0 },
 };
 
-function readScopedPref(prefs, key, fallback) {
-  if (prefs && Object.prototype.hasOwnProperty.call(prefs, `settings.${key}`)) return prefs[`settings.${key}`];
-  if (prefs && Object.prototype.hasOwnProperty.call(prefs, key)) return prefs[key];
-  return fallback;
-}
-
-function readNumberPref(prefs, key, fallback) {
-  const raw = readScopedPref(prefs, key, fallback);
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : fallback;
-}
+// readScopedPref / readNumberPref 上提到 lib/prefs.js(语义统一 #24);见顶部 import。
 
 function ModelParamsSection() {
   const { t } = useTranslation();
@@ -2481,22 +2450,33 @@ function ParamSlider({ label, desc, value, min, max, step, unit, onChange }) {
    embedder 还传 platformVertexAllowed(admin/vip 才显示平台 vertex embedding 兜底)。 */
 function ModuleModelsSection() {
   const { t } = useTranslation();
-  const MODULES = [
-    { id: "gm",            label: "主 GM 默认模型",          prefPrefix: "gm",                       tip: "玩家对话默认使用的主模型。这里选择后会写入个人默认模型,新开局和未单独切模型的存档会优先使用它。" },
-    { id: "sub_agent",     label: "上下文子代理",           persistShape: "dict", dictKey: "sub_agent_model_override", inherit: true, tip: "整理玩家意图 + 检索计划的子代理;跟随主 GM = 跟主 GM 共享实例。" },
-    { id: "set_parser",    label: "指令解析代理",           prefPrefix: "set_parser",               inherit: true, tip: "/set 命令自然语言解析子代理。" },
-    { id: "console",       label: "控制台助手",             persistShape: "dict", dictKey: "console_assistant_model_override", inherit: true, tip: "侧栏控制台助手专用模型;跟随主 GM。" },
-    { id: "extractor",     label: "叙事提取器",             prefPrefix: "extractor",                inherit: true, tip: "GM 叙事二次解析抽 ops (两步式 GM 第二步)。" },
-    { id: "card_gen",      label: "角色卡生成器",           prefPrefix: "character_card_generator", inherit: true, tip: "侧栏创意工具:生成 / 微调角色卡。" },
-    { id: "card_import",   label: "AI 整理卡字段",          prefPrefix: "card_import",              inherit: true, tip: "导入酒馆卡时,用 LLM 把一整段自由文本档案整理成结构化字段(身份/背景/外貌/性格等)。仅在导入勾选「用 AI 整理字段」时调用;跟随主 GM。" },
-    { id: "critic",        label: "一致性评分",             prefPrefix: "critic",                   inherit: true, tip: "角色卡生成的一致性评分子代理 (0-1 阈值 0.6)。" },
-    { id: "verifier",      label: "接受条件验证",           prefPrefix: "acceptance_verifier",      inherit: true, tip: "GM 输出是否满足 curator 设置的 acceptance 条件。" },
-    { id: "phase_digest",  label: "阶段浓缩 (compact)",     prefPrefix: "phase_digest",             inherit: true, tip: "长局历史按阶段浓缩成摘要(compact),供 GM 记忆远期剧情;跟随主 GM = 系统默认。" },
-    { id: "black_swan",    label: "黑天鹅事件代理",         prefPrefix: "black_swan_agent",         inherit: true, tip: "主动触发世界突发事件的子代理;跟随主 GM = 系统默认。" },
-    { id: "agent",         label: "通用子代理兜底",         prefPrefix: "agent",                    inherit: true, tip: "未单独配置模型的其它子代理统一兜底用它;跟随主 GM / 系统默认。" },
-    { id: "embedder",      label: "向量嵌入 (RAG)",         prefPrefix: "embed",  capabilityFilter: "embedding", inherit: false, defaultModel: "text-embedding-004", preferProvider: "vertex_ai", tip: "向量嵌入模型，用于 RAG 召回 + 拆书后的语义检索。系统默认 Vertex text-embedding-004，需要在「API 密钥」配 Vertex SA JSON 才能用。可改成其他 embedding 模型。" },
-    { id: "image_gen",     label: "图像生成模型",           prefPrefix: "image_gen", capabilityFilter: "image_gen", inherit: false, fallbackPrefix: "gm", tip: "生图功能(聊天内 AI 生图 / 角色卡头像 / 剧本封面 / 人设图)默认使用的 provider 和模型;聊天里 GM 自主调用生图工具也走它。需在「API 密钥」配置对应 BYOK key 才能生成(未配会提示去配)。与生图弹窗里的模型选择同步。" },
-  ];
+  // 结构字段(prefPrefix / persistShape / dictKey / capabilityFilter / inherit / …)走单一来源
+  // agent-modules.js(语义统一 #19);label / tip 文案为桌面端专属(比移动端详尽,且后续 i18n),
+  // 故保留在本地按 id 取 → 显示零变化。
+  const LABELS = {
+    gm: "主 GM 默认模型", sub_agent: "上下文子代理", set_parser: "指令解析代理",
+    console: "控制台助手", extractor: "叙事提取器", card_gen: "角色卡生成器",
+    card_import: "AI 整理卡字段", critic: "一致性评分", verifier: "接受条件验证",
+    phase_digest: "阶段浓缩 (compact)", black_swan: "黑天鹅事件代理", agent: "通用子代理兜底",
+    embedder: "向量嵌入 (RAG)", image_gen: "图像生成模型",
+  };
+  const TIPS = {
+    gm: "玩家对话默认使用的主模型。这里选择后会写入个人默认模型,新开局和未单独切模型的存档会优先使用它。",
+    sub_agent: "整理玩家意图 + 检索计划的子代理;跟随主 GM = 跟主 GM 共享实例。",
+    set_parser: "/set 命令自然语言解析子代理。",
+    console: "侧栏控制台助手专用模型;跟随主 GM。",
+    extractor: "GM 叙事二次解析抽 ops (两步式 GM 第二步)。",
+    card_gen: "侧栏创意工具:生成 / 微调角色卡。",
+    card_import: "导入酒馆卡时,用 LLM 把一整段自由文本档案整理成结构化字段(身份/背景/外貌/性格等)。仅在导入勾选「用 AI 整理字段」时调用;跟随主 GM。",
+    critic: "角色卡生成的一致性评分子代理 (0-1 阈值 0.6)。",
+    verifier: "GM 输出是否满足 curator 设置的 acceptance 条件。",
+    phase_digest: "长局历史按阶段浓缩成摘要(compact),供 GM 记忆远期剧情;跟随主 GM = 系统默认。",
+    black_swan: "主动触发世界突发事件的子代理;跟随主 GM = 系统默认。",
+    agent: "未单独配置模型的其它子代理统一兜底用它;跟随主 GM / 系统默认。",
+    embedder: "向量嵌入模型，用于 RAG 召回 + 拆书后的语义检索。系统默认 Vertex text-embedding-004，需要在「API 密钥」配 Vertex SA JSON 才能用。可改成其他 embedding 模型。",
+    image_gen: "生图功能(聊天内 AI 生图 / 角色卡头像 / 剧本封面 / 人设图)默认使用的 provider 和模型;聊天里 GM 自主调用生图工具也走它。需在「API 密钥」配置对应 BYOK key 才能生成(未配会提示去配)。与生图弹窗里的模型选择同步。",
+  };
+  const MODULES = AGENT_MODULES.map((m) => ({ ...m, label: LABELS[m.id], tip: TIPS[m.id] }));
 
   // task: embedder 兜底状态 — RAG 模型 section banner 文案 + 是否给 admin/vip 平台 vertex 兜底
   const [embedderStatus, setEmbedderStatus] = useStatePL(null);

@@ -71,26 +71,63 @@ export function getCaps(m) {
   return capFlags(c);
 }
 
+/* Provider id 别名全表(语义统一 #16:原 settings.jsx / MobileSettings.jsx 各抄一份)。
+   把后端各处写法(显示名 / 老 id / 大小写差异)归一到 canonical credential api_id。
+   注意 AgentPlatform 是 Vertex 的 SA 凭据 id;catalog 侧用 canonical "vertex_ai"。 */
+export const API_ID_ALIASES = {
+  OpenAI: "openai",
+  OpenRouter: "openrouter",
+  DeepSeek: "deepseek",
+  Anthropic: "anthropic",
+  AlibabaQwen: "dashscope",
+  DashScope: "dashscope",
+  TencentHunyuan: "hunyuan",
+  Hunyuan: "hunyuan",
+  XiaomiMimo: "xiaomi_mimo",
+  MiMo: "xiaomi_mimo",
+  SiliconFlow: "siliconflow",
+  MiniMax: "minimax",
+  Doubao: "doubao",
+  AgentPlatform: "AgentPlatform",
+  agent_platform: "AgentPlatform",
+  vertex: "AgentPlatform",
+  vertex_ai: "AgentPlatform",
+};
+
 /**
- * Provider id 归一化:把老的 "vertex" / "vertex_ai" 映射到新的 "AgentPlatform"。
- * 其它值原样返回。前端在 filter / 分组 / 比较 provider 时统一调用此函数。
+ * Provider id 归一化:走全别名表(显示名 / 老 id / 大小写),命中则归一,否则原样。
+ * 兼顾旧语义("vertex" / "vertex_ai" → "AgentPlatform" 仍由别名表覆盖)。
+ * 前端在 filter / 分组 / 比较 provider、读凭据 api_id 时统一调用。
  * @param {string | null | undefined} p
  * @returns {string}
  */
 export function normalizeProviderId(p) {
-  if (!p) return "";
-  if (p === "vertex" || p === "vertex_ai") return "AgentPlatform";
-  return p;
+  const value = String(p || "").trim();
+  if (!value) return "";
+  return API_ID_ALIASES[value] || API_ID_ALIASES[value.toLowerCase()] || value;
 }
 
 /**
- * 凭据 api_id → catalog api_id 归一化(与 normalizeProviderId 方向相反)。
- * AgentPlatform 是 Vertex 的 SA 凭据,catalog 里用 canonical "vertex_ai"。
+ * 凭据 api_id → catalog api_id(credential→catalog 方向)。
+ * 先走全别名表归一,再把 AgentPlatform 还原成 catalog canonical "vertex_ai"。
+ * (= 旧 settings.jsx catalogApiIdForCredential)
  * @param {string | null | undefined} aid
  * @returns {string}
  */
 export function credentialToCatalogId(aid) {
-  return aid === "AgentPlatform" ? "vertex_ai" : aid;
+  const normalized = normalizeProviderId(aid);
+  return normalized === "AgentPlatform" ? "vertex_ai" : normalized;
+}
+
+/**
+ * catalog api_id → 凭据 api_id(catalog→credential 方向,与上者相反)。
+ * catalog 的 "vertex_ai" 在凭据侧是 SA 凭据 "AgentPlatform";其余走别名表归一。
+ * (= 旧 settings.jsx credentialApiIdForCatalog)
+ * @param {string | null | undefined} aid
+ * @returns {string}
+ */
+export function catalogToCredentialId(aid) {
+  return aid === "vertex_ai" ? "AgentPlatform" : normalizeProviderId(aid);
 }
 
 /**
@@ -120,5 +157,7 @@ if (typeof window !== "undefined") {
   window.getCaps = getCaps;
   window.normalizeProviderId = normalizeProviderId;
   window.credentialToCatalogId = credentialToCatalogId;
+  window.catalogToCredentialId = catalogToCredentialId;
+  window.API_ID_ALIASES = API_ID_ALIASES;
   window.credApiIdSet = credApiIdSet;
 }

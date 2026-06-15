@@ -9,15 +9,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Icon } from '../icons.jsx';
 import AvatarImg from '../../components/AvatarImg.jsx';
+// 卡表单读/写 helper 与桌面端字段集逐字一致 → 复用单一规范实现,避免 shape 漂移。
+import { cardFormInit, cardFormPayload } from '../../pages/cards.jsx';
 
 /* ── helpers ─────────────────────────────────────────────────────── */
-const _asCsv = (v) => Array.isArray(v) ? v.join(', ') : (v || '');
-const _asLines = (v) => Array.isArray(v)
-  ? v.map((x) => (typeof x === 'string' ? x : (x?.content || x?.text || ''))).filter(Boolean).join('\n')
-  : (v || '');
 const clamp2 = { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', wordBreak: 'break-word' };
 const clamp3 = { ...clamp2, WebkitLineClamp: 3 };
 
+// 语义统一 #40(needs-care,保留):falsy → '0 B'(非 window.__fmt.bytes 的 '—'),且无 GB 档,
+// 改用统一版会改显示(空值文案 + ≥1GB 档),刻意不动。
 function fmtBytes(n) {
   if (!n) return '0 B';
   if (n < 1024) return n + ' B';
@@ -25,55 +25,7 @@ function fmtBytes(n) {
   return (n / 1048576).toFixed(1) + ' MB';
 }
 
-/* ── card form helpers (mirrors desktop cardFormInit / cardFormPayload) ── */
-function cardFormInit(card) {
-  const c = card || {};
-  return {
-    name: c.name || '',
-    full_name: c.full_name || '',
-    identity: c.identity || c.role || '',
-    aliases: _asCsv(c.aliases),
-    tags: _asCsv(c.tags),
-    background: c.background || '',
-    appearance: c.appearance || '',
-    personality: c.personality || '',
-    speech_style: c.speech_style || '',
-    current_status: c.current_status || '',
-    secrets: c.secrets || '',
-    sample_dialogue: _asLines(c.sample_dialogue),
-    importance: c.importance ?? 100,
-    first_revealed_chapter: c.first_revealed_chapter ?? 1,
-    token_budget: c.token_budget ?? 450,
-    priority: c.priority ?? 100,
-    enabled: c.enabled ?? true,
-    scope: c.scope || 'private',
-  };
-}
-
-function cardFormPayload(form, card) {
-  const trim = (s) => (s || '').trim();
-  return {
-    ...(card?.id ? { id: card.id } : {}),
-    name: trim(form.name),
-    full_name: trim(form.full_name),
-    identity: trim(form.identity),
-    aliases: trim(form.aliases).split(',').map((s) => s.trim()).filter(Boolean),
-    tags: trim(form.tags).split(',').map((s) => s.trim()).filter(Boolean),
-    background: trim(form.background),
-    appearance: trim(form.appearance),
-    personality: trim(form.personality),
-    speech_style: trim(form.speech_style),
-    current_status: trim(form.current_status),
-    secrets: trim(form.secrets),
-    sample_dialogue: trim(form.sample_dialogue).split('\n').map((s) => s.trim()).filter(Boolean),
-    importance: Number(form.importance) || 100,
-    first_revealed_chapter: Number(form.first_revealed_chapter) || 1,
-    token_budget: Number(form.token_budget) || 450,
-    priority: Number(form.priority) || 100,
-    enabled: !!form.enabled,
-    scope: form.scope || 'private',
-  };
-}
+/* cardFormInit / cardFormPayload 复用 pages/cards.jsx 的规范实现(见顶部 import)。 */
 
 /* ── shared sub-components ──────────────────────────────────────── */
 
@@ -93,9 +45,31 @@ function SubHead({ title, sub, onBack, actions }) {
   );
 }
 
-/** 角色 avatar — 有 src 则渲图片(AvatarImg 内部 onError 自动回退)，无 src 则首字母色块 */
-function CardAv({ src, name, enabled, size = 72, radius = 20, colorClass = 'accent', zoomable = false }) {
+/** 角色 avatar — 有 src 则渲图片(AvatarImg 内部 onError 自动回退)，无 src 则首字母色块
+ *  fill 模式:网格卡用全幅 92px banner(mc-card-av-wrap/img/letter CSS 控制尺寸),
+ *  渲与原内联手写 img→onError→首字母完全等价的两元素结构(行为零变化),
+ *  badge(off-dot/pinned/public)由调用方作为兄弟节点叠加。 */
+function CardAv({ src, name, enabled, size = 72, radius = 20, colorClass = 'accent', zoomable = false, fill = false }) {
   const initial = (name || '?').trim().slice(0, 1);
+
+  if (fill) {
+    return (
+      <>
+        {src ? (
+          <img
+            src={src}
+            alt={name}
+            loading="lazy"
+            className="mc-card-av-img"
+            onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling && (e.currentTarget.nextSibling.style.display = 'grid'); }}
+          />
+        ) : null}
+        <div className="mc-card-av-letter" style={{ display: src ? 'none' : 'grid' }}>
+          {(name || '').slice(0, 1)}
+        </div>
+      </>
+    );
+  }
 
   const shapeStyle = { width: size, height: size, borderRadius: radius, flexShrink: 0 };
 
@@ -1011,18 +985,7 @@ function UserView({ nav }) {
             {filtered.map((c) => (
               <button key={c.id} className="pl-charcard" onClick={() => { setSelected(c); setView('detail'); }}>
                 <div className="av accent mc-card-av-wrap" style={{ position: 'relative' }}>
-                  {(c._raw?.avatar_path || c._raw?.avatar_url) ? (
-                    <img
-                      src={c._raw.avatar_path || c._raw.avatar_url}
-                      alt={c.name}
-                      loading="lazy"
-                      className="mc-card-av-img"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling && (e.currentTarget.nextSibling.style.display = 'grid'); }}
-                    />
-                  ) : null}
-                  <div className="mc-card-av-letter" style={{ display: (c._raw?.avatar_path || c._raw?.avatar_url) ? 'none' : 'grid' }}>
-                    {c.name.slice(0, 1)}
-                  </div>
+                  <CardAv fill src={c._raw?.avatar_path || c._raw?.avatar_url} name={c.name} />
                   {c.enabled === false && <span className="off-dot" />}
                   {c.pinned && <span style={{ position: 'absolute', top: 7, left: 7, fontSize: 10, color: 'var(--accent)', background: 'var(--accent-soft)', padding: '2px 5px', borderRadius: 6, zIndex: 1 }}>置顶</span>}
                   {c.is_public && <span style={{ position: 'absolute', bottom: 7, right: 7, fontSize: 9, color: 'var(--ok)', background: 'var(--ok-soft)', padding: '2px 5px', borderRadius: 6, zIndex: 1 }}>公开</span>}
@@ -1275,18 +1238,7 @@ function NpcView({ nav }) {
             {filtered.map((c) => (
               <button key={c.id} className="pl-charcard" onClick={() => { setSelected(c); setView('detail'); }}>
                 <div className="av mc-card-av-wrap" style={{ position: 'relative' }}>
-                  {(c._raw?.avatar_path || c._raw?.avatar_url) ? (
-                    <img
-                      src={c._raw.avatar_path || c._raw.avatar_url}
-                      alt={c.name}
-                      loading="lazy"
-                      className="mc-card-av-img"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling && (e.currentTarget.nextSibling.style.display = 'grid'); }}
-                    />
-                  ) : null}
-                  <div className="mc-card-av-letter" style={{ display: (c._raw?.avatar_path || c._raw?.avatar_url) ? 'none' : 'grid' }}>
-                    {c.name.slice(0, 1)}
-                  </div>
+                  <CardAv fill src={c._raw?.avatar_path || c._raw?.avatar_url} name={c.name} />
                 </div>
                 <div className="cc-body">
                   <div className="cc-name">{c.name}</div>

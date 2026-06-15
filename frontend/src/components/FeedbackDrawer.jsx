@@ -23,21 +23,16 @@ import CSFormField    from '@cloudscape-design/components/form-field';
 import CSContainer    from '@cloudscape-design/components/container';
 import CSHeader       from '@cloudscape-design/components/header';
 import CSExpandableSection from '@cloudscape-design/components/expandable-section';
-import { sha256hex } from '../lib/crypto-safe.js';
+// 法务/渠道常量 + 提交内核上提到 lib/feedback.js(语义统一 #22)。
+// AUP / QQ / MAX_FREE_TEXT 各端逐字一致 → 共享;CONSENT_TEXT 本组件历史用全角标点版,
+// 显示文案与其它端不同,刻意保留(提交时作为 consentText 传入 submitFeedback;
+// 后端只校验 64-hex,不校验等于某文案的 SHA256,故 token 差异无副作用)。
+import { AUP_LINK, MAX_FREE_TEXT, QQ_GROUP_NUMBER, QQ_JOIN_URL, QQ_QR_SRC, submitFeedback, feedbackDecisionLabel } from '../lib/feedback.js';
 
 // ── 常量 ─────────────────────────────────────────────────────────────────────
 
 const CONSENT_TEXT =
   '我已阅读 AUP §2.J，理解不得包含成人主题节选，同意（此操作记录我的同意）';
-
-const AUP_LINK = 'https://play.stellatrix.icu/legal/aup#2J';
-
-const MAX_FREE_TEXT = 10000;
-
-// 玩家交流 QQ 群
-const QQ_GROUP_NUMBER = '584876566';
-const QQ_JOIN_URL     = 'https://qm.qq.com/q/49Dqcr0aw0';
-const QQ_QR_SRC       = '/qq-group.jpg';
 
 // ── SHA256 工具 ───────────────────────────────────────────────────────────────
 // crypto.subtle 仅在安全上下文(HTTPS/localhost)可用;明文 HTTP LAN 访问下为
@@ -166,45 +161,14 @@ export function FeedbackDrawer({ open, onClose }) {
     setBusy(true);
     setError(null);
     try {
-      const token = await sha256hex(CONSENT_TEXT);
+      // 已选对话节选;运行环境快照 + consent_token + POST /api/feedback 走共享内核
+      // submitFeedback(语义统一 #22)。__runtime__ 由内核在 includeRuntime 时追加。
       const excerpts = includeExcerpts
         ? recentTurns
             .filter((t) => selectedExcerpts.includes(t.idx))
             .map(({ session_id, range, plaintext }) => ({ session_id, range, plaintext }))
         : [];
-
-      // 附带运行环境切片(以特殊 entry 形式塞进 excerpts 数组,后端无需 schema 变更
-      // 就能存到 excerpts_jsonb;admin UI 识别 __runtime__ key 单独展示)。
-      // 用户勾"包含运行环境"的同时,也连带带最近 3 轮对话 — 跟 errors/api 同档保守披露
-      if (includeRuntime) {
-        try {
-          // 现拉一次 /api/state,把最新对话喂给运行环境快照(避免 MOCK_STATE 陈旧)
-          let freshHistory = null;
-          try {
-            const st = await window.api?.game?.state?.();
-            if (st && Array.isArray(st.history)) freshHistory = st.history;
-          } catch (_) {}
-          const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot({ includeRecentDialog: true, recentDialog: freshHistory });
-          if (snap && snap.__runtime__) excerpts.push(snap);
-        } catch (_) {}
-      }
-
-      const appVersion = window.__APP_VERSION__ || '';
-      const res = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          free_text: freeText,
-          excerpts,
-          consent_token: token,
-          app_version: appVersion,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.detail || data.error || `HTTP ${res.status}`);
-      }
+      await submitFeedback({ freeText, excerpts, consentText: CONSENT_TEXT, includeRuntime, includeRecentDialog: true });
       setDone(true);
       await loadFeedbackHistory();
     } catch (e) {
@@ -214,13 +178,7 @@ export function FeedbackDrawer({ open, onClose }) {
     }
   }
 
-  function feedbackStatusLabel(decision) {
-    if (!decision) return '待处理';
-    if (decision === 'ok') return '已采纳';
-    if (decision === 'spam') return '未采纳';
-    if (decision === 'nsfw_terminate') return '违规处理';
-    return decision;
-  }
+  const feedbackStatusLabel = feedbackDecisionLabel;  // 语义统一 #26:共享 lib/feedback.js
 
   function feedbackStatusType(decision) {
     if (!decision) return 'info';

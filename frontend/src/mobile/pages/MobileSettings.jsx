@@ -9,24 +9,22 @@ import { usePlatformData, useReactiveUser } from '../../platform-app.jsx';
 // 模型选择器全站唯一规范组件(用户强制指令:不再自造 <select>)。Cloudscape 已在 platform 入口打包,
 // 移动端复用同一实现,保证「已配 key 过滤 / capability 过滤 / 自定义手填 / dict 落库 / 跟随主 GM」完全一致。
 import AgentModelPicker from '../../components/AgentModelPicker.jsx';
+// Provider 别名表 + 归一化/方向转换上提到 components/catalog-helpers.js(语义统一 #16),
+// 本文件保留短名薄别名,调用点零变化:
+//   normId = normalizeProviderId(全别名表) · credId = catalogToCredentialId · catId = credentialToCatalogId
+import { normalizeProviderId, credentialToCatalogId, catalogToCredentialId } from '../../components/catalog-helpers.js';
+// 模块结构数组单一来源(语义统一 #19);移动端 label/tip 文案精简,保留本地按 id 取。
+import { MODULES as AGENT_MODULES } from '../../agent-modules.js';
+import { readScopedPref, readNumberPref } from '../../lib/prefs.js';
 
 /* ── 工具函数 ────────────────────────────────────────────────────── */
-const API_ID_ALIASES = {
-  OpenAI:'openai', OpenRouter:'openrouter', DeepSeek:'deepseek',
-  Anthropic:'anthropic', AlibabaQwen:'dashscope', DashScope:'dashscope',
-  TencentHunyuan:'hunyuan', Hunyuan:'hunyuan', XiaomiMimo:'xiaomi_mimo',
-  MiMo:'xiaomi_mimo', SiliconFlow:'siliconflow', MiniMax:'minimax',
-  Doubao:'doubao', AgentPlatform:'AgentPlatform', agent_platform:'AgentPlatform',
-  vertex:'AgentPlatform', vertex_ai:'AgentPlatform',
-};
-function normId(id) {
-  const v = String(id||'').trim();
-  return API_ID_ALIASES[v] || API_ID_ALIASES[v.toLowerCase()] || v;
-}
-function credId(apiId) { return apiId==='vertex_ai'?'AgentPlatform':normId(apiId); }
-function catId(apiId) { const n=normId(apiId); return n==='AgentPlatform'?'vertex_ai':n; }
+const normId = normalizeProviderId;
+const credId = catalogToCredentialId;
+const catId = credentialToCatalogId;
 
+// K/M 缩写统一到 window.__fmt.compact(data-loader.js;语义统一 #30),保留本地别名免改调用点。
 function fmtCtx(n) {
+  if (window.__fmt && window.__fmt.compact) return window.__fmt.compact(n);
   if (!n) return '—';
   if (n>=1_000_000) return `${(n/1_000_000).toFixed(0)}M`;
   if (n>=1_000) return `${(n/1_000).toFixed(0)}K`;
@@ -385,16 +383,9 @@ const MP_PRESETS = {
   deterministic:{ temperature:0.1, top_p:0.5, repetition_penalty:1.0, frequency_penalty:0.0, presence_penalty:0.0 },
 };
 
-function readPref(prefs, key, fallback) {
-  for (const k of [`settings.${key}`, key]) {
-    if (prefs && Object.prototype.hasOwnProperty.call(prefs, k)) return prefs[k];
-  }
-  return fallback;
-}
-function readNumPref(prefs, key, fallback) {
-  const v = Number(readPref(prefs, key, fallback));
-  return Number.isFinite(v) ? v : fallback;
-}
+// readPref / readNumPref 复用 lib/prefs.js 规范实现(语义统一 #24);保留短名薄别名,调用点零变化。
+const readPref = readScopedPref;
+const readNumPref = readNumberPref;
 
 function ModelParamsSection() {
   const save = usePrefSave('settings');
@@ -588,22 +579,23 @@ function ModelParamsSection() {
 //   flat 模块走 prefPrefix(<prefPrefix>.api_id / .model_real_name);
 //   dict 模块(sub_agent / console)走 persistShape="dict" + dictKey={api_id, model};
 //   embedder / image_gen allowInherit=false(必须自己选);其它可「跟随主 GM」。
-const MODULES = [
-  { id:'gm',           label:'主 GM 默认模型',    prefPrefix:'gm',                       tip:'玩家对话主模型' },
-  { id:'sub_agent',    label:'上下文子代理',       persistShape:'dict', dictKey:'sub_agent_model_override', inherit:true, tip:'整理意图+检索;跟随主 GM' },
-  { id:'set_parser',   label:'指令解析代理',       prefPrefix:'set_parser',               inherit:true, tip:'/set 命令自然语言解析' },
-  { id:'console',      label:'控制台助手',         persistShape:'dict', dictKey:'console_assistant_model_override', inherit:true, tip:'侧栏控制台;跟随主 GM' },
-  { id:'extractor',    label:'叙事提取器',         prefPrefix:'extractor',                inherit:true, tip:'GM 叙事二次解析(两步 GM)' },
-  { id:'card_gen',     label:'角色卡生成器',       prefPrefix:'character_card_generator', inherit:true, tip:'创意工具:生成/微调角色卡' },
-  { id:'card_import',  label:'AI 整理卡字段',      prefPrefix:'card_import',              inherit:true, tip:'导入酒馆卡时 LLM 整理字段;跟随主 GM' },
-  { id:'critic',       label:'一致性评分',         prefPrefix:'critic',                   inherit:true, tip:'角色卡生成的一致性评分子代理' },
-  { id:'verifier',     label:'接受条件验证',       prefPrefix:'acceptance_verifier',      inherit:true, tip:'GM 输出是否满足 acceptance 条件' },
-  { id:'phase_digest', label:'阶段浓缩 (compact)', prefPrefix:'phase_digest',             inherit:true, tip:'长局历史按阶段浓缩成摘要' },
-  { id:'black_swan',   label:'黑天鹅事件代理',     prefPrefix:'black_swan_agent',         inherit:true, tip:'主动触发世界突发事件' },
-  { id:'agent',        label:'通用子代理兜底',     prefPrefix:'agent',                    inherit:true, tip:'未单独配置模型的子代理兜底' },
-  { id:'embedder',     label:'向量嵌入 (RAG)',      prefPrefix:'embed',  capabilityFilter:'embedding', inherit:false, defaultModel:'text-embedding-004', preferProvider:'vertex_ai', tip:'RAG 召回用 embedding 模型' },
-  { id:'image_gen',    label:'图像生成模型',       prefPrefix:'image_gen', capabilityFilter:'image_gen', inherit:false, fallbackPrefix:'gm', tip:'生图功能默认 provider/模型;需配 BYOK key' },
-];
+// 结构字段走单一来源 AGENT_MODULES;移动端 label/tip 文案精简(与桌面端不同),保留本地按 id 取。
+const _MOD_LABELS = {
+  gm:'主 GM 默认模型', sub_agent:'上下文子代理', set_parser:'指令解析代理',
+  console:'控制台助手', extractor:'叙事提取器', card_gen:'角色卡生成器',
+  card_import:'AI 整理卡字段', critic:'一致性评分', verifier:'接受条件验证',
+  phase_digest:'阶段浓缩 (compact)', black_swan:'黑天鹅事件代理', agent:'通用子代理兜底',
+  embedder:'向量嵌入 (RAG)', image_gen:'图像生成模型',
+};
+const _MOD_TIPS = {
+  gm:'玩家对话主模型', sub_agent:'整理意图+检索;跟随主 GM', set_parser:'/set 命令自然语言解析',
+  console:'侧栏控制台;跟随主 GM', extractor:'GM 叙事二次解析(两步 GM)', card_gen:'创意工具:生成/微调角色卡',
+  card_import:'导入酒馆卡时 LLM 整理字段;跟随主 GM', critic:'角色卡生成的一致性评分子代理',
+  verifier:'GM 输出是否满足 acceptance 条件', phase_digest:'长局历史按阶段浓缩成摘要',
+  black_swan:'主动触发世界突发事件', agent:'未单独配置模型的子代理兜底',
+  embedder:'RAG 召回用 embedding 模型', image_gen:'生图功能默认 provider/模型;需配 BYOK key',
+};
+const MODULES = AGENT_MODULES.map((m) => ({ ...m, label:_MOD_LABELS[m.id], tip:_MOD_TIPS[m.id] }));
 
 function ModuleModelsSection({ nav }) {
   // embedder 平台兜底状态:仅 admin/vip 显示平台 vertex embedding(后端已 _is_admin gate)。

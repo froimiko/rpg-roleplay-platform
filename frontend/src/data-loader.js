@@ -108,7 +108,16 @@ function nowHHMM(d) {
 function fmtNum(n) {
   return n == null ? "—" : (typeof n === "number" ? n.toLocaleString() : String(n));
 }
-window.__fmt = { bytes: fmtBytes, ago: fmtAgo, time: fmtTime, date: fmtDate, nowHHMM, n: fmtNum };
+// K/M 缩写(语义统一 #30,与 fmtNum 分立 —— 后者是纯千分位,不缩写)。
+// 规范语义:falsy → "—";≥1e6 → 整数 M;≥1e3 → 整数 K;否则原样。
+// (= settings.jsx / MobileSettings 的 fmtCtx;platform-app fmtN 是 2/1 位小数的不同变体,不收。)
+function fmtCompact(n) {
+  if (!n) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+window.__fmt = { bytes: fmtBytes, ago: fmtAgo, time: fmtTime, date: fmtDate, nowHHMM, n: fmtNum, compact: fmtCompact };
 window.__guessKind = function () { return guessKind.apply(null, arguments); };
 
 // ----------------------------------------------------------

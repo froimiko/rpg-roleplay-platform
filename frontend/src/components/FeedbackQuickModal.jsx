@@ -12,15 +12,9 @@ import CSSpaceBetween from '@cloudscape-design/components/space-between';
 import CSTextarea from '@cloudscape-design/components/textarea';
 import CSCheckbox from '@cloudscape-design/components/checkbox';
 import CSFormField from '@cloudscape-design/components/form-field';
-import { sha256hex } from '../lib/crypto-safe.js';
 import { plNavigate } from '../router.js';
-
-const CONSENT_TEXT = '我已阅读 AUP §2.J,理解不得包含成人主题节选,同意(此操作记录我的同意)';
-const AUP_LINK = 'https://play.stellatrix.icu/legal/aup#2J';
-const MAX_FREE_TEXT = 10000;
-const QQ_GROUP_NUMBER = '584876566';
-const QQ_JOIN_URL = 'https://qm.qq.com/q/49Dqcr0aw0';
-const QQ_QR_SRC = '/qq-group.jpg';
+// 法务/渠道常量 + 同意文案 + 提交内核共享 lib/feedback.js(语义统一 #22);本弹窗 UI 仍自留。
+import { CONSENT_TEXT, AUP_LINK, MAX_FREE_TEXT, QQ_GROUP_NUMBER, QQ_JOIN_URL, QQ_QR_SRC, submitFeedback } from '../lib/feedback.js';
 
 export function FeedbackQuickModal({ open, onClose }) {
   const [freeText, setFreeText] = React.useState('');
@@ -44,25 +38,8 @@ export function FeedbackQuickModal({ open, onClose }) {
     if (!canSubmit) return;
     setBusy(true); setError(null);
     try {
-      const token = await sha256hex(CONSENT_TEXT);
-      const excerpts = [];
-      if (includeRuntime) {
-        try {
-          let freshHistory = null;
-          try {
-            const st = await window.api?.game?.state?.();
-            if (st && Array.isArray(st.history)) freshHistory = st.history;
-          } catch (_) {}
-          const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot({ includeRecentDialog: true, recentDialog: freshHistory });
-          if (snap && snap.__runtime__) excerpts.push(snap);
-        } catch (_) {}
-      }
-      const res = await fetch('/api/feedback', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ free_text: freeText, excerpts, consent_token: token, app_version: window.__APP_VERSION__ || '' }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+      // consent_token + 运行环境快照 + POST /api/feedback 走共享内核 submitFeedback(语义统一 #22)。
+      await submitFeedback({ freeText, includeRuntime, includeRecentDialog: true });
       setDone(true); setFreeText(''); setConsent(false);
       window.__apiToast?.('反馈已提交,感谢!', { kind: 'ok', duration: 2200 });
     } catch (e) { setError(e?.message || '提交失败,请稍后重试'); }

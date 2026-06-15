@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Icon } from '../icons.jsx';
 import { sha256hex } from '../../lib/crypto-safe.js';
+import { feedbackDecisionLabel } from '../../lib/feedback.js';
 
 /* ──────────────────────────────────────────────────────────────────
    Constants
@@ -663,9 +664,7 @@ function ApisSection({ toast }) {
 /* ──────────────────────────────────────────────────────────────────
    FEEDBACK
    ────────────────────────────────────────────────────────────────── */
-function statusLabel(d) {
-  return !d ? '待处理' : d === 'ok' ? '已采纳' : d === 'spam' ? '未采纳' : d === 'nsfw_terminate' ? '违规处理' : d;
-}
+const statusLabel = feedbackDecisionLabel;  // 语义统一 #26:用户侧决策标签(共享 lib/feedback.js)
 function statusColor(d) {
   return !d ? 'info' : d === 'ok' ? 'ok' : d === 'spam' ? '' : 'danger';
 }

@@ -1134,8 +1134,7 @@ function ImportView({ onBack }) {
       window.__apiToast?.('导入任务已派发后台', { kind: 'ok', duration: 3000 });
       try { window.dispatchEvent(new CustomEvent('rpg-scripts-updated')); } catch (_) {}
     } catch (e) {
-      const isCredsErr = e?.code === 'credentials_required' || e?.payload?.needs_credentials || /credentials_required/.test(String(e));
-      if (isCredsErr) {
+      if (isCredentialsError(e)) {
         window.__apiToast?.('未配置 LLM API Key，请先在设置中配置', { kind: 'warn', duration: 7000 });
         setJob({ status: 'paused_credentials' });
       } else {

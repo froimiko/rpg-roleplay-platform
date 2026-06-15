@@ -24,16 +24,14 @@ import { TavernImportModal, CardSheet, CardEditFields, cardFormInit, cardFormPay
 import AvatarImg from './components/AvatarImg.jsx';
 
 /* ── 相对时间 ─────────────────────────────────────────────────────── */
+// 桶算法委托 data-loader.js 规范 window.__fmt.ago(语义统一 #25);仅本端的「空/坏值 → ''」
+// 语义(__fmt.ago 是 '—' / 原样 ts)在此薄包装里保留,故显示零变化。
 export function relTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   if (isNaN(d.getTime())) return '';
-  const sec = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (sec < 60) return '刚刚';
-  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`;
-  if (sec < 86400 * 7) return `${Math.floor(sec / 86400)} 天前`;
-  return d.toLocaleDateString();
+  const ago = (typeof window !== 'undefined' && window.__fmt && window.__fmt.ago);
+  return ago ? ago(ts) : d.toLocaleDateString();
 }
 
 /* ── 确认弹窗(仿 game-app.jsx 的 pl-modal)─────────────────────────── */

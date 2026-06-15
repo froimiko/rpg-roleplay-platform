@@ -54,6 +54,8 @@ function refLabel(ref_kind, ref_id) {
 }
 
 // ── 格式化字节 ────────────────────────────────────────────────
+// 语义统一 #40(needs-care,保留):KB 用 .toFixed(0)(整数),与 window.__fmt.bytes
+// 的 KB .toFixed(1)(且有 GB 档)显示数字不同,改用统一版会改显示 → 刻意不动。
 function fmtBytes(n) {
   if (!n) return '—';
   if (n < 1024) return n + ' B';

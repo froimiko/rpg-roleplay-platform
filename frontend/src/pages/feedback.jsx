@@ -20,6 +20,7 @@ import CSBadge from '@cloudscape-design/components/badge';
 import CSColumnLayout from '@cloudscape-design/components/column-layout';
 import CSSegmentedControl from '@cloudscape-design/components/segmented-control';
 import { sha256hex } from '../lib/crypto-safe.js';
+import { feedbackDecisionLabel } from '../lib/feedback.js';
 
 const CONSENT_TEXT = '我已阅读 AUP §2.J,理解不得包含成人主题节选,同意(此操作记录我的同意)';
 const AUP_LINK = 'https://play.stellatrix.icu/legal/aup#2J';
@@ -28,9 +29,7 @@ const QQ_GROUP_NUMBER = '584876566';
 const QQ_JOIN_URL = 'https://qm.qq.com/q/49Dqcr0aw0';
 const QQ_QR_SRC = '/qq-group.jpg';
 
-function statusLabel(d) {
-  return !d ? '待处理' : d === 'ok' ? '已采纳' : d === 'spam' ? '未采纳' : d === 'nsfw_terminate' ? '违规处理' : d;
-}
+const statusLabel = feedbackDecisionLabel;  // 语义统一 #26:用户侧决策标签(共享 lib/feedback.js)
 function statusColor(d) {
   return !d ? 'blue' : d === 'ok' ? 'green' : d === 'spam' ? 'grey' : 'red';
 }

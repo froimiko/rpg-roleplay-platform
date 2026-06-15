@@ -12,6 +12,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from '../icons.jsx';
 // 不复用电脑端 cards.jsx 的 UI 组件 —— 移动原生重写卡片读视图/persona 表单 + 纯数据 helper。
+// 注:此处 cardFormInit/cardFormPayload 字段集刻意比 pages/cards.jsx 窄(酒馆 persona 用
+// language_style/secret,无 full_name/importance/first_revealed_chapter/token_budget/
+// priority/enabled/scope),与 _CARD_FIELDS/_CARD_MULTILINE/CardReadout/PersonaFields 强耦合,
+// 字段集未对齐 → 不复用桌面版,保留本地实现(语义统一 #3 GUARD:不齐则保留并注释)。
 const _CARD_FIELDS = [
   ['name', '名称'], ['identity', '身份'], ['background', '背景'], ['appearance', '外貌'],
   ['personality', '性格'], ['language_style', '语言风格'], ['current_status', '当前状态'],
@@ -74,16 +78,13 @@ function PersonaFields({ form, u }) {
 }
 
 /* ─── 工具函数 ─────────────────────────────────────────────────────── */
+// 桶算法委托 data-loader.js 规范 window.__fmt.ago(语义统一 #25);本端「空/坏值 → ''」语义保留。
 function relTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   if (isNaN(d.getTime())) return '';
-  const sec = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (sec < 60) return '刚刚';
-  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`;
-  if (sec < 86400 * 7) return `${Math.floor(sec / 86400)} 天前`;
-  return d.toLocaleDateString();
+  const ago = (typeof window !== 'undefined' && window.__fmt && window.__fmt.ago);
+  return ago ? ago(ts) : d.toLocaleDateString();
 }
 
 function tvNow() {

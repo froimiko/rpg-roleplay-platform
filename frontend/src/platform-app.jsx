@@ -2365,6 +2365,8 @@ function ProfilePage() {
 }
 
 
+// 语义统一 #40(needs-care,保留):此处 KB 用 .toFixed(0)(整数),与 window.__fmt.bytes
+// 的 KB .toFixed(1) 显示数字不同(且无 GB 档),改用统一版会改显示 → 刻意不动。
 function fmtBytes(n) {
   if (n < 1024) return n + " B";
   if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";

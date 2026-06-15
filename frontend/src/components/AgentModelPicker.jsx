@@ -474,7 +474,10 @@ export default function AgentModelPicker({
     const filtered = q ? flat.filter((m) =>
       `${m.label} ${m.real_name} ${m.api_label} ${m.api_id}`.toLowerCase().includes(q)) : flat;
     const selKey = (apiId && model) ? `${apiId}::${model}` : '';
-    const fmtCtx = (n) => !n ? null : (n >= 1000000 ? `${Math.round(n / 1000000)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n));
+    // K/M 缩写走 window.__fmt.compact(语义统一 #30);本组件 falsy → null(非 "—"),故保留该分支。
+    const fmtCtx = (n) => !n ? null
+      : ((window.__fmt && window.__fmt.compact) ? window.__fmt.compact(n)
+        : (n >= 1000000 ? `${Math.round(n / 1000000)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n)));
     const fmtPrice = (m) => (m.price_in != null && m.price_out != null)
       ? (m.price_in === 0 && m.price_out === 0 ? '免费' : `$${m.price_in.toFixed(2)} / $${m.price_out.toFixed(2)} per M`) : null;
 
