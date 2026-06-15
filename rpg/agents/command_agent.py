@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from core.json_parse import parse_llm_json
 from core.llm_backend import (
     detect_default_api as _detect_default_api,
     resolve_preferred_api as _resolve_preferred_api_base,
@@ -282,32 +283,21 @@ def _call_openai_compat_tools(
 
 
 def _parse_tool_call_json_array(text: str) -> list[dict]:
-    """解析模型输出的 JSON,容错地抽出 tool calls 列表。"""
+    """解析模型输出的 JSON,容错地抽出 tool calls 列表。
+
+    解析委托 core.json_parse.parse_llm_json(want=list);**原契约不变**:
+    拿不到 list 返回 [](注:模型偶尔给 {"calls": [...]} 这类 dict 包裹,
+    want=list 会过滤掉它,故先尝试 list,失败再尝试不限类型让 _coerce_calls
+    从 dict 形状里抠 calls/tool_calls/单对象)。
+    """
     if not text:
         return []
-    text = text.strip()
-    # 1) 整段是 JSON
-    try:
-        parsed = json.loads(text)
-        return _coerce_calls(parsed)
-    except Exception:
-        pass
-    # 2) ```json fence
-    import re
-    fence = re.search(r"```(?:json)?\s*\n?\s*([\[\{][\s\S]*?[\]\}])\s*\n?```", text, re.M)
-    if fence:
-        try:
-            return _coerce_calls(json.loads(fence.group(1)))
-        except Exception:
-            return []
-    # 3) 抓第一个 [ ... ] 或 { "calls": [...] }
-    match = re.search(r"\[[\s\S]*\]", text)
-    if match:
-        try:
-            return _coerce_calls(json.loads(match.group(0)))
-        except Exception:
-            return []
-    return []
+    parsed = parse_llm_json(text, want=list)
+    if parsed is None:
+        parsed = parse_llm_json(text)  # 容忍 {"calls": [...]} / 单对象 dict
+    if parsed is None:
+        return []
+    return _coerce_calls(parsed)
 
 
 def _coerce_calls(parsed: Any) -> list[dict]:

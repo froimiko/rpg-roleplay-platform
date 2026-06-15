@@ -59,9 +59,9 @@ gm_provisional active_entity 路径,而不是创建持久卡片。
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
+from core.json_parse import parse_llm_json
 from core.logging import get_logger
 
 log = get_logger(__name__)
@@ -520,24 +520,11 @@ def _resolve_preferred_api(user_id: int | None, role: str) -> str | None:
 
 
 def _parse_json_safely(text: str) -> dict | None:
-    if not text:
-        return None
-    text = text.strip()
-    # 去掉可能的 markdown 围栏
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    try:
-        obj = json.loads(text)
-        return obj if isinstance(obj, dict) else None
-    except Exception:
-        # 尝试抠出第一个 {...}
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except Exception:
-                return None
-        return None
+    """委托 core.json_parse.parse_llm_json(want=dict);**原契约不变**:提不到
+    dict 返 None。底层用带字符串/转义感知的平衡括号扫描,修掉原贪婪 `\\{.*\\}`
+    会跨多个对象误抓的弱点。
+    """
+    return parse_llm_json(text, want=dict)
 
 
 # ════════════════════════════════════════════════════════════════════
