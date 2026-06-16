@@ -485,7 +485,8 @@ async def api_worldbook_update(
     _WB_COLS = (
         "id, title, content, priority, enabled, metadata, "
         "keys, regex_keys, character_filter, scene_filter, "
-        "token_budget, sticky_turns, cooldown_turns, probability, insertion_position"
+        # probability 是 numeric → psycopg 读出 Decimal,JSON 不可序列化 → 必须 ::float8 转浮点
+        "token_budget, sticky_turns, cooldown_turns, probability::float8 as probability, insertion_position"
     )
 
     with connect() as db:
@@ -615,7 +616,8 @@ async def api_worldbook_add(
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, title, content, priority, enabled, metadata,
                       keys, regex_keys, character_filter, scene_filter,
-                      token_budget, sticky_turns, cooldown_turns, probability, insertion_position
+                      token_budget, sticky_turns, cooldown_turns,
+                      probability::float8 as probability, insertion_position
             """,
             (
                 book_id, script_id, title, content,
