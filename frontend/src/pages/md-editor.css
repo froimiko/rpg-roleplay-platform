@@ -25,6 +25,8 @@
   cursor: pointer; font-family: inherit;
 }
 .mde-save:disabled { opacity: 0.6; cursor: default; }
+.mde-newbtn { background: var(--panel-2, #282623); color: var(--text, #ebe7df); border: 1px solid var(--line, #36322d); border-radius: var(--r-2, 6px); padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.mde-newbtn:hover { border-color: var(--accent, #b5654a); }
 
 /* 三栏 */
 .mde-panes { flex: 1 1 auto; display: grid; grid-template-columns: 240px 1fr 320px; min-height: 0; }

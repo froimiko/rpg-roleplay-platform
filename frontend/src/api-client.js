@@ -428,6 +428,8 @@
     // ---------- Scripts ----------
     scripts: {
       list: () => GET(`${API_PREFIX}/scripts`),
+      createBlank: (title) => POST(`${API_PREFIX}/scripts/blank`, { title: title || '' }),  // 作者优先:从零空白剧本
+      addChapter: (sid, title) => POST(`${API_PREFIX}/scripts/${sid}/add-chapter`, { title: title || '' }),
       preview: (body) => POST(`${API_PREFIX}/scripts/preview`, body, { signal: timeoutSignal(90000) }),
       importScript: (body) => POST(`${API_PREFIX}/scripts/import`, body, { signal: timeoutSignal(90000) }),
       delete: (sid, body = {}) => POST(`${API_PREFIX}/scripts/` + sid + "/delete", body),

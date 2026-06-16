@@ -759,6 +759,33 @@ async def api_chapter_update(request: Request, script_id: int, chapter_index: in
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
+@router.post("/api/scripts/blank")
+async def api_create_blank_script(request: Request, user=Depends(require_user)):
+    """作者优先:从零新建空白剧本(含第1章空章),供作者直接写、用选区提取边写边建 KB。返回 script_id。"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        return json_response(script_import.create_blank_script(user["id"], (body or {}).get("title") or ""))
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@router.post("/api/scripts/{script_id}/add-chapter")
+async def api_add_chapter(request: Request, script_id: int, user=Depends(require_user)):
+    """作者优先:给剧本追加一个空白新章(owner 闸)。返回 chapter_index。
+    路径用 add-chapter 而非 chapters/new,避免与 /chapters/{chapter_index:int} 冲突。"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        return json_response(script_import.create_chapter(user["id"], script_id, (body or {}).get("title") or ""))
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
 @router.post("/api/scripts/{script_id}/chapters/merge")
 async def api_chapter_merge(request: Request, script_id: int, user=Depends(require_user)):
     """合并 first_index 与其相邻下一章(second_index 显式指定,缺省取按序的下一章)。"""

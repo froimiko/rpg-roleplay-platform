@@ -193,6 +193,28 @@ export default function MdEditorPage() {
 
   const pickScript = (id) => { setScriptId(id); lsSet('mde.scriptId', id); setTabs([]); setActiveKey(null); };
 
+  // 作者优先:从零新建空白剧本 → 切到它(自动带第1章)。
+  const createBlankScript = async () => {
+    try {
+      const r = await api().scripts.createBlank('新剧本');
+      if (!r?.script_id) throw new Error(r?.error || '创建失败');
+      setScripts((prev) => [{ id: r.script_id, title: r.title }, ...(prev || [])]);
+      pickScript(r.script_id);
+      toast('已新建空白剧本', { kind: 'ok', duration: 1400 });
+    } catch (e) { toast('新建剧本失败', { kind: 'danger', detail: e?.message }); }
+  };
+  // 给当前剧本追加一章并打开。
+  const addChapter = async () => {
+    if (!scriptId) return;
+    try {
+      const r = await api().scripts.addChapter(scriptId, '');
+      if (!r?.chapter_index) throw new Error(r?.error || '创建失败');
+      setTreeReloadKey((x) => x + 1);
+      openNode({ kind: 'chapter', id: r.chapter_index, label: `第${r.chapter_index}章 ${r.title || ''}`.trim() });
+      toast('已新建章节', { kind: 'ok', duration: 1200 });
+    } catch (e) { toast('新建章节失败', { kind: 'danger', detail: e?.message }); }
+  };
+
   // 打开节点 → 新标签(或激活已开)。
   const openNode = useCallback(async (node) => {
     const key = nodeKey(node.kind, node.id);
@@ -305,6 +327,8 @@ export default function MdEditorPage() {
           {scripts && scripts.length === 0 && <option value="">（无可编辑剧本）</option>}
           {(scripts || []).map((s) => <option key={s.id} value={s.id}>{s.title || `剧本 ${s.id}`}</option>)}
         </select>
+        <button className="mde-newbtn" onClick={createBlankScript} title="从零创建空白剧本(作者优先,自带第1章)">+ 空白剧本</button>
+        {scriptId && <button className="mde-newbtn" onClick={addChapter} title="给当前剧本追加一章并打开">+ 章节</button>}
         {active && active.dirty && <button className="mde-save" onClick={() => saveTab(active.key)} disabled={active.saving}>{active.saving ? '保存中…' : '保存 (⌘S)'}</button>}
       </div>
 

@@ -1001,6 +1001,53 @@ def _read_meta(user_dir: Path) -> dict[str, Any]:
 # ══════════════════════════════════════════════════════════════════════
 #  章节手动编辑 / 合并 / 拆分
 # ══════════════════════════════════════════════════════════════════════
+def create_blank_script(user_id: int, title: str = "") -> dict[str, Any]:
+    """作者优先:从零创建空白剧本 —— 建 scripts 行 + 第 1 章空章,供作者直接写、用选区提取边写边建 KB。
+    不跑批量提取器(那是导入已完结小说的路径)。"""
+    init_db()
+    t = (str(title or "").strip() or "新剧本")[:200]
+    with connect() as db:
+        row = db.execute(
+            "insert into scripts(owner_id, title, description) values (%s, %s, '') returning id",
+            (int(user_id), t),
+        ).fetchone()
+        sid = int(row["id"])
+        db.execute(
+            "insert into script_chapters(script_id, chapter_index, title, content, word_count, "
+            "volume_title, source_marker, confidence) values (%s, 1, %s, '', 0, '', 'manual', 1.0)",
+            (sid, "第1章"),
+        )
+        db.execute("update scripts set chapter_count = 1, word_count = 0, updated_at = now() where id = %s", (sid,))
+        db.commit()
+    return {"ok": True, "script_id": sid, "title": t}
+
+
+def create_chapter(user_id: int, script_id: int, title: str = "") -> dict[str, Any]:
+    """作者优先:给剧本追加一个空白新章(owner 闸)。返回新章 chapter_index。"""
+    init_db()
+    with connect() as db:
+        if not script_owned(db, script_id, user_id):
+            raise ValueError("无权编辑该剧本")
+        mx = db.execute(
+            "select coalesce(max(chapter_index),0) as m from script_chapters where script_id = %s",
+            (int(script_id),),
+        ).fetchone()
+        ci = int(mx["m"]) + 1
+        t = (str(title or "").strip() or f"第{ci}章")[:200]
+        db.execute(
+            "insert into script_chapters(script_id, chapter_index, title, content, word_count, "
+            "volume_title, source_marker, confidence) values (%s, %s, %s, '', 0, '', 'manual', 1.0)",
+            (int(script_id), ci, t),
+        )
+        cnt = db.execute(
+            "select count(*) as n from script_chapters where script_id = %s", (int(script_id),),
+        ).fetchone()
+        db.execute("update scripts set chapter_count = %s, updated_at = now() where id = %s",
+                   (int(cnt["n"]), int(script_id)))
+        db.commit()
+    return {"ok": True, "chapter_index": ci, "title": t}
+
+
 def update_chapter(user_id: int, script_id: int, chapter_index: int, *,
                    title: str | None = None, content: str | None = None,
                    volume_title: str | None = None) -> dict[str, Any]:
