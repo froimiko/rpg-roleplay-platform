@@ -449,7 +449,12 @@ export default function AgentModelPicker({
     const flat = [];
     for (const a of apis) {
       const aid = a.api_id || a.id;
-      if (!aid || a.enabled === false) continue;
+      // 门控与上方设置页 providerOptions 一致:只看「该用户是否配了凭据」(credApiIds),
+      // **不**再看全局菜单的 a.enabled。a.enabled 是 admin 策展的全局 provider 菜单开关
+      // (doubao/dashscope/hunyuan/openrouter 等默认 false),它不该覆盖用户自己配了 key+
+      // 启用了模型的 per-account 选择 —— 否则游戏内选择器会漏掉用户「选择显示的模型」
+      // (用户反馈:设置页能看到、游戏里却没有)。单个模型的禁用仍由下方 m.enabled===false 过滤。
+      if (!aid) continue;
       const isCred = credApiIds.has(aid);
       const isPlatV = platformVertexEmbedding && aid === 'vertex_ai';
       if (!isCred && !isPlatV) continue;
