@@ -684,6 +684,8 @@ def build_timeline(db, script_id: int, chapter_extracts: list) -> int:
               sample_summary=case when length(excluded.sample_summary) > 0
                 then excluded.sample_summary else script_timeline_anchors.sample_summary end,
               updated_at=now()
+            -- 撞到编辑器续写新增的锚点(source='editor')时不覆盖,保留用户值;只刷新原著行。
+            where script_timeline_anchors.source <> 'editor'
             """,
             (script_id, "", seg["label"], seg["chapter_min"], seg["chapter_max"],
              seg["chapter_max"] - seg["chapter_min"] + 1, sample_summary, 0.7),

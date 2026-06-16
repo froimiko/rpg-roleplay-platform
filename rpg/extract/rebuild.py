@@ -305,8 +305,12 @@ def rebuild_timeline_from_db(db, script_id: int) -> dict:
     db.execute("SAVEPOINT timeline_rebuild")
     written = 0
     try:
-        # 先清旧 anchors — upsert 也可以但有歪历史数据时 conflict key 不一致会留垃圾
-        db.execute("delete from script_timeline_anchors where script_id = %s", (script_id,))
+        # 先清旧 anchors — upsert 也可以但有歪历史数据时 conflict key 不一致会留垃圾。
+        # 只删原著骨架(source='novel');保留编辑器续写新增的(source='editor')。
+        db.execute(
+            "delete from script_timeline_anchors where script_id = %s and coalesce(source,'novel') <> 'editor'",
+            (script_id,),
+        )
         for seg in segments:
             sums = seg.get("summaries") or []
             if sums:
@@ -332,6 +336,7 @@ def rebuild_timeline_from_db(db, script_id: int) -> dict:
                       sample_summary=case when length(excluded.sample_summary) > 0
                         then excluded.sample_summary else script_timeline_anchors.sample_summary end,
                       updated_at=now()
+                    where script_timeline_anchors.source <> 'editor'
                     """,
                     (script_id, seg["phase"], seg["label"], seg["chapter_min"], seg["chapter_max"],
                      seg["chapter_max"] - seg["chapter_min"] + 1, sample_summary, 0.7),

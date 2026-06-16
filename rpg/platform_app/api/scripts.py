@@ -371,6 +371,7 @@ async def api_script_birthpoints(script_id: int, user=Depends(require_user)):
             select id, story_time_label, chapter_min, chapter_max, chapter_count, sample_summary
             from script_timeline_anchors
             where script_id = %s
+              and coalesce(source, 'novel') = 'novel'
             order by chapter_min asc, id asc
             """,
             (script_id,),

@@ -1834,6 +1834,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         on conflict (user_id, storage_key) do nothing
         """,
     ]),
+    (73, "script_timeline_anchor_source", [
+        # 时间线锚点来源标记:'novel'=原著骨架(chapter_facts 聚合 / 拆书提取生成,
+        #   时间线重建时会被「删后重建」);'editor'=编辑器 agent 续写新事件时 create_anchor 新增,
+        #   重建时必须保留不删(见 script_timeline.rebuild_timeline_anchors /
+        #   extract.rebuild.rebuild_timeline_from_db / collapse_phase_duplicate_anchors 的 source 闸)。
+        "alter table script_timeline_anchors add column if not exists source text not null default 'novel'",
+    ]),
 ]
 
 

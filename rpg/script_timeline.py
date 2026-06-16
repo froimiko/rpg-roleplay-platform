@@ -63,8 +63,11 @@ def rebuild_timeline_anchors(script_id: int) -> dict[str, Any]:
         sc = db.execute("select id, title from scripts where id = %s", (sid,)).fetchone()
         if not sc:
             return {"ok": False, "reason": f"script {sid} not found"}
-        # 删旧锚点
-        db.execute("delete from script_timeline_anchors where script_id = %s", (sid,))
+        # 删旧锚点 —— 只删原著骨架(source='novel');保留编辑器续写新增的(source='editor')。
+        db.execute(
+            "delete from script_timeline_anchors where script_id = %s and coalesce(source,'novel') <> 'editor'",
+            (sid,),
+        )
         # 聚合
         rows = db.execute(
             """
@@ -110,6 +113,7 @@ def rebuild_timeline_anchors(script_id: int) -> dict[str, Any]:
                   chapter_min, chapter_max, chapter_count,
                   sample_title, sample_summary, keywords, confidence
                 ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (script_id, story_phase, story_time_label) do nothing
                 """,
                 (sid, phase, time_label, ch_min, ch_max, n,
                  sample_title, sample_summary, keywords, confidence),
@@ -161,6 +165,7 @@ def collapse_phase_duplicate_anchors(db, script_id: int) -> int:
         delete from script_timeline_anchors a
          where a.script_id = %s
            and coalesce(a.story_phase, '') = ''
+           and coalesce(a.source, 'novel') <> 'editor'
            and exists (
              select 1 from script_timeline_anchors b
               where b.script_id = a.script_id

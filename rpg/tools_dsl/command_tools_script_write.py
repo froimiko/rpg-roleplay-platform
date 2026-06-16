@@ -547,6 +547,82 @@ def _t_update_anchor(user_id: int, script_id: int | None, args: dict, state: Any
         return f"失败: {type(exc).__name__}: {exc}"
 
 
+def _t_create_anchor(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    """新建时间线锚点 —— 编辑器续写出「全新事件/时间节点」时用。
+
+    与 update_anchor(只改已有)互补:本工具 INSERT 一行 source='editor' 的锚点,
+    **时间线重建不会删它**(原著骨架 source='novel' 才会被删后重建)。
+    唯一键 (script_id, story_phase, story_time_label):撞了 → do nothing + 提示改用 update_anchor。
+    必填 story_time_label + chapter_min + chapter_max(该事件大致章节);story_phase 默认空。
+    """
+    sid = _resolve_sid(script_id, args)
+    if sid is None:
+        return "失败: script_id 必填"
+    label = str(args.get("story_time_label") or "").strip()
+    if not label:
+        return "失败: story_time_label 必填(新事件的时间/节点名)"
+    if args.get("chapter_min") is None or args.get("chapter_max") is None:
+        return "失败: chapter_min / chapter_max 必填(该事件大致所处章节)"
+    try:
+        cmin = int(args["chapter_min"]); cmax = int(args["chapter_max"])
+    except (TypeError, ValueError):
+        return "失败: chapter_min / chapter_max 必须是整数"
+    if cmax < cmin:
+        cmax = cmin
+    phase = str(args.get("story_phase") or "")
+    summary = str(args.get("sample_summary") or "")[:1900]
+    title = str(args.get("sample_title") or "")[:200]
+    try:
+        confidence = float(args["confidence"]) if args.get("confidence") is not None else 0.7
+    except (TypeError, ValueError):
+        confidence = 0.7
+    # keywords 是 PostgreSQL 原生 text[]:直接绑 Python list(绝不 Jsonb)。
+    keywords = [str(x) for x in args["keywords"]] if isinstance(args.get("keywords"), list) else []
+    try:
+        from platform_app.api.script_edit import _write_commit
+        from platform_app.db import connect, init_db
+        from platform_app.perms import script_owned
+        init_db()
+        with connect() as db:
+            # ② 严格 owner 闸(写)
+            if not script_owned(db, sid, user_id):
+                return "失败(权限): 剧本不属于当前用户"
+            row = db.execute(
+                """
+                insert into script_timeline_anchors
+                  (script_id, story_phase, story_time_label, chapter_min, chapter_max,
+                   chapter_count, sample_title, sample_summary, keywords, confidence, source)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'editor')
+                on conflict (script_id, story_phase, story_time_label) do nothing
+                returning id
+                """,
+                (sid, phase, label, cmin, cmax, max(1, cmax - cmin + 1),
+                 title, summary, keywords, confidence),
+            ).fetchone()
+            if not row:
+                return (
+                    f"失败: 剧本 #{sid} 已有同名节点「{label}」(阶段「{phase or '未分阶段'}」)。"
+                    "要改它请用 update_anchor(先 list_anchors 拿 anchor_id),不要重复新建。"
+                )
+            aid = int(row["id"])
+            try:
+                _write_commit(
+                    db, script_id=sid, user_id=user_id, kind="anchor_add",
+                    message=f"新增 anchor「{label}」",
+                    payload={"table": "script_timeline_anchors", "op": "add",
+                             "ids": {"anchor_id": aid}, "source": "editor"},
+                )
+            except Exception:
+                pass
+            db.commit()
+        return (
+            f"已新建时间线锚点 #{aid}「{label}」(剧本 #{sid};来源 editor,"
+            "时间线重建不会删它)"
+        )
+    except Exception as exc:
+        return f"失败: {type(exc).__name__}: {exc}"
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # 5) upsert_canon_entity — aliases/attrs 是 jsonb;按 logical_key upsert
 # ────────────────────────────────────────────────────────────────────────────
@@ -790,6 +866,33 @@ def register_script_write_tools() -> None:
                 "required": ["anchor_id"],
             },
             executor=_t_update_anchor,
+            scope="script",
+            origins=_SCRIPT_WRITE_ORIGINS,
+            destructive=False,
+        ),
+        ToolSpec(
+            name="create_anchor",
+            description=(
+                "为剧本「新增」一个时间线锚点 —— 当续写引入了原著时间线里没有的全新事件/时间节点时用。"
+                "必填 story_time_label(节点名)+ chapter_min/chapter_max(该事件大致所处章节);"
+                "story_phase 可选。新增的锚点来源标记为 editor,时间线重建不会删它。"
+                "要改已有锚点用 update_anchor(不要用本工具重复新建)。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "story_time_label": {"type": "string", "description": "新事件/时间节点名"},
+                    "chapter_min": {"type": "integer", "description": "该事件大致起始章"},
+                    "chapter_max": {"type": "integer", "description": "该事件大致结束章"},
+                    "story_phase": {"type": "string", "description": "所属阶段(可空)"},
+                    "sample_title": {"type": "string"},
+                    "sample_summary": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "keywords": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["story_time_label", "chapter_min", "chapter_max"],
+            },
+            executor=_t_create_anchor,
             scope="script",
             origins=_SCRIPT_WRITE_ORIGINS,
             destructive=False,
