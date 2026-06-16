@@ -24,12 +24,54 @@ const NODE_GROUPS = [
 const api = () => (typeof window !== 'undefined' ? window.api : null);
 const toast = (msg, opts) => { try { window.__apiToast?.(msg, opts); } catch (_) {} };
 
-// ── 文件树:按组懒加载列表 ───────────────────────────────────────────────
-function FileTree({ scriptId, openNode, activeKey, reloadKey }) {
-  const [expanded, setExpanded] = useState(() => lsGet('mde.tree.expanded', 'chapter') || 'chapter');
+// 每类实体图标 + 能力。章节删除/重排会断开 RAG 索引(chapter_index 是 chunks/facts/锚点的外键)→ 禁;
+// 拖拽重排仅世界书安全(按 priority);其余实体有结构语义,不做乱序拖拽。
+const KIND_ICON = { chapter: '§', card: '@', worldbook: '#', anchor: '~', canon: '*' };
+const CAN_DELETE = { chapter: false, card: true, worldbook: true, anchor: true, canon: true };
+const CAN_RENAME = { chapter: true, card: true, worldbook: true, anchor: true, canon: true };
+const CAN_DRAG = { worldbook: true };
+
+// ── 实体 CRUD(树内增删改) ─────────────────────────────────────────────
+async function createNode(kind, sid, name) {
+  const A = api(); const nm = (name || '').trim();
+  if (kind === 'chapter')   { const r = await A.scripts.addChapter(sid, nm); return { id: r.chapter_index, label: `第${r.chapter_index}章 ${r.title || ''}`.trim() }; }
+  if (kind === 'worldbook') { const r = await A.scripts.worldbookCreate(sid, { title: nm || '新条目', content: '' }); const e = r?.entry || r; return { id: e.id, label: e.title || nm || '新条目' }; }
+  if (kind === 'card')      { const r = await A.scripts.cardUpsert(sid, { name: nm || '新角色' }); const c = r?.card || r; return { id: c.id, label: c.name || nm || '新角色' }; }
+  if (kind === 'canon')     { const r = await A.scripts.canonUpsert(sid, { name: nm || '新实体', type: 'concept' }); const e = r?.entity || r; return { id: e.logical_key, label: `${e.name || nm || '新实体'}（${e.type || 'concept'}）` }; }
+  if (kind === 'anchor')    { const r = await A.scripts.anchorCreate(sid, { story_time_label: nm || '新时点', chapter_min: 1, chapter_max: 1 }); const a = r?.anchor || r; return { id: a.id, label: nm || '新时点' }; }
+  throw new Error('不支持新建');
+}
+async function renameNode(kind, sid, id, name) {
+  const A = api(); const nm = (name || '').trim(); if (!nm) return;
+  if (kind === 'chapter')   { await A.scripts.updateChapter(sid, id, { title: nm }); return; }
+  if (kind === 'worldbook') { await A.scripts.worldbookUpdate(sid, id, { title: nm }); return; }
+  if (kind === 'anchor')    { await A.scripts.anchorUpdate(sid, id, { story_phase: nm }); return; }
+  // card/canon 是全覆盖 upsert → 必须 re-fetch 全字段再改名,否则抹掉头像/属性等(历史 data-loss 坑)。
+  if (kind === 'card')      { const cur = await A.scripts.cardGet(sid, id); const c = cur?.card || cur; await A.scripts.cardUpsert(sid, { ...c, id, name: nm }); return; }
+  if (kind === 'canon')     { const cur = await A.scripts.canonGet(sid, id); const e = cur?.entity || cur; await A.scripts.canonUpsert(sid, { ...e, logical_key: id, name: nm }); return; }
+}
+async function deleteNode(kind, sid, id) {
+  const A = api();
+  if (kind === 'worldbook') return A.scripts.worldbookDelete(sid, id);
+  if (kind === 'card')      return A.scripts.cardDelete(sid, id);
+  if (kind === 'anchor')    return A.scripts.anchorDelete(sid, id);
+  if (kind === 'canon')     return A.scripts.canonDelete(sid, id);
+  throw new Error('该类型不支持删除');
+}
+
+// ── 文件树:VSCode 风资源管理器(多组展开 / 搜索 / 图标 / 工具栏 / 键盘 / 右键 / 增删改 / 拖拽)──
+function FileTree({ scriptId, openNode, activeKey, reloadKey, onMutate }) {
+  const [expanded, setExpanded] = useState(() => new Set(lsGet('mde.tree.expanded2', ['chapter']) || ['chapter']));
   const [lists, setLists] = useState({});   // kind → {loading, error, items}
   const [filter, setFilter] = useState('');
+  const [sel, setSel] = useState(null);     // 键盘/焦点选中 nodeKey
+  const [ctx, setCtx] = useState(null);     // 右键菜单 {x,y,kind,item|null}
+  const [editing, setEditing] = useState(null); // 就地编辑 {kind, id|'__new__', value}
+  const [busy, setBusy] = useState(false);
+  const [dragK, setDragK] = useState(null); // 拖拽中的 worldbook nodeKey
+  const bodyRef = useRef(null);
 
+  const persistExpanded = (s) => lsSet('mde.tree.expanded2', [...s]);
   const loadGroup = useCallback(async (kind) => {
     if (!scriptId) return;
     setLists((s) => ({ ...s, [kind]: { ...(s[kind] || {}), loading: true } }));
@@ -41,53 +83,186 @@ function FileTree({ scriptId, openNode, activeKey, reloadKey }) {
     }
   }, [scriptId]);
 
-  // 切剧本 → 清缓存,重载当前展开组。
-  useEffect(() => { setLists({}); if (scriptId && expanded) loadGroup(expanded); /* eslint-disable-next-line */ }, [scriptId]);
-  // agent 写库后(reloadKey 变)→ 重载当前展开组(名称/数量可能变)。
-  useEffect(() => { if (reloadKey && scriptId && expanded) loadGroup(expanded); /* eslint-disable-next-line */ }, [reloadKey]);
+  // 切剧本 → 清缓存,重载所有当前展开的组。
+  useEffect(() => { setLists({}); if (scriptId) [...expanded].forEach(loadGroup); /* eslint-disable-next-line */ }, [scriptId]);
+  // agent / CRUD 写库后(reloadKey 变)→ 重载所有展开组(名称/数量可能变)。
+  useEffect(() => { if (reloadKey && scriptId) [...expanded].forEach(loadGroup); /* eslint-disable-next-line */ }, [reloadKey]);
+  // 有搜索词时:自动加载所有组(才能跨组搜),搜索时分组全展开命中。
+  useEffect(() => {
+    if (!scriptId || !filter.trim()) return;
+    NODE_GROUPS.forEach((g) => { if (!lists[g.kind]) loadGroup(g.kind); });
+    /* eslint-disable-next-line */
+  }, [filter, scriptId]);
 
   const toggle = (kind) => {
-    const next = expanded === kind ? '' : kind;
-    setExpanded(next);
-    lsSet('mde.tree.expanded', next);
-    if (next && !lists[next]) loadGroup(next);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(kind)) next.delete(kind); else { next.add(kind); if (!lists[kind]) loadGroup(kind); }
+      persistExpanded(next); return next;
+    });
+  };
+  const collapseAll = () => { setExpanded((p) => { const n = new Set(); persistExpanded(n); return n; }); };
+
+  const q = filter.trim().toLowerCase();
+  const groupItems = (kind) => ((lists[kind]?.items) || []).filter((it) => !q || (it.label || '').toLowerCase().includes(q));
+  const isOpen = (kind) => q ? true : expanded.has(kind);  // 搜索时所有组展开
+
+  // 扁平可见条目(供键盘上下移动)。
+  const flat = [];
+  for (const g of NODE_GROUPS) if (isOpen(g.kind)) for (const it of groupItems(g.kind)) flat.push({ kind: g.kind, id: it.id, label: it.label, meta: it });
+
+  const startNew = (kind) => { if (!isOpen(kind)) toggle(kind); setEditing({ kind, id: '__new__', value: '' }); setCtx(null); };
+  const startRename = (kind, it) => { setEditing({ kind, id: it.id, value: (kind === 'chapter') ? (it.meta?.title ?? it.label) : it.label }); setCtx(null); };
+
+  const commitEdit = async () => {
+    const e = editing; if (!e) return;
+    const nm = (e.value || '').trim();
+    if (!nm) { setEditing(null); return; }
+    setBusy(true);
+    try {
+      if (e.id === '__new__') {
+        const created = await createNode(e.kind, scriptId, nm);
+        await loadGroup(e.kind);
+        onMutate?.('create', e.kind, created.id, created.label);
+        openNode({ kind: e.kind, id: created.id, label: created.label });
+        toast('已新建', { kind: 'ok', duration: 1100 });
+      } else {
+        await renameNode(e.kind, scriptId, e.id, nm);
+        await loadGroup(e.kind);
+        const disp = e.kind === 'chapter' ? `第${e.id}章 ${nm}`.trim() : nm;
+        onMutate?.('rename', e.kind, e.id, disp);
+        toast('已重命名', { kind: 'ok', duration: 1100 });
+      }
+    } catch (err) { toast('操作失败', { kind: 'danger', detail: err?.message }); }
+    finally { setBusy(false); setEditing(null); }
+  };
+
+  const doDelete = async (kind, it) => {
+    setCtx(null);
+    if (!CAN_DELETE[kind]) { toast('章节删除会断开 RAG 索引,暂不支持在此删除', { kind: 'warning' }); return; }
+    const ok = await (window.__confirm
+      ? window.__confirm({ title: '删除该条目?', message: `${it.label}\n此操作不可恢复。`, danger: true, confirmText: '删除' })
+      : Promise.resolve(confirm(`删除「${it.label}」?`)));
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await deleteNode(kind, scriptId, it.id);
+      await loadGroup(kind);
+      onMutate?.('delete', kind, it.id);
+      toast('已删除', { kind: 'ok', duration: 1100 });
+    } catch (err) { toast('删除失败', { kind: 'danger', detail: err?.message }); }
+    finally { setBusy(false); }
+  };
+
+  const duplicate = async (kind, it) => {
+    setCtx(null);
+    if (!CAN_RENAME[kind] || kind === 'chapter') { toast('该类型不支持复制', { kind: 'warning' }); return; }
+    setBusy(true);
+    try {
+      const created = await createNode(kind, scriptId, `${it.label} 副本`);
+      await loadGroup(kind); onMutate?.('create', kind, created.id, created.label);
+      toast('已复制', { kind: 'ok', duration: 1100 });
+    } catch (err) { toast('复制失败', { kind: 'danger', detail: err?.message }); }
+    finally { setBusy(false); }
+  };
+
+  // 键盘:↑↓ 选择 / Enter 打开 / F2 改名 / Delete 删除。
+  const onKeyDown = (ev) => {
+    if (editing) return;
+    if (!flat.length) return;
+    const idx = flat.findIndex((f) => nodeKey(f.kind, f.id) === sel);
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); const n = flat[Math.min(flat.length - 1, idx + 1)] || flat[0]; setSel(nodeKey(n.kind, n.id)); }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); const n = flat[Math.max(0, idx - 1)] || flat[0]; setSel(nodeKey(n.kind, n.id)); }
+    else if (ev.key === 'Enter' && idx >= 0) { ev.preventDefault(); const n = flat[idx]; openNode({ kind: n.kind, id: n.id, label: n.label, meta: n.meta }); }
+    else if (ev.key === 'F2' && idx >= 0) { ev.preventDefault(); const n = flat[idx]; if (CAN_RENAME[n.kind]) startRename(n.kind, n); }
+    else if (ev.key === 'Delete' && idx >= 0) { ev.preventDefault(); const n = flat[idx]; doDelete(n.kind, n); }
+  };
+
+  // 世界书拖拽重排 → 按落点重排 priority(spaced 重编号,只 PUT 变化项)。
+  const onDrop = async (kind, targetIt) => {
+    if (kind !== 'worldbook' || !dragK) { setDragK(null); return; }
+    const items = groupItems('worldbook');
+    const from = items.findIndex((x) => nodeKey('worldbook', x.id) === dragK);
+    const to = items.findIndex((x) => x.id === targetIt.id);
+    setDragK(null);
+    if (from < 0 || to < 0 || from === to) return;
+    const reordered = items.slice(); const [moved] = reordered.splice(from, 1); reordered.splice(to, 0, moved);
+    setBusy(true);
+    try {
+      const A = api(); const n = reordered.length;
+      await Promise.all(reordered.map((it, i) => {
+        const np = (n - i) * 10; // 自顶向下 priority 递减
+        return (it.meta?.priority === np) ? null : A.scripts.worldbookUpdate(scriptId, it.id, { priority: np });
+      }).filter(Boolean));
+      await loadGroup('worldbook'); onMutate?.('reorder', 'worldbook');
+      toast('已重排序', { kind: 'ok', duration: 1000 });
+    } catch (err) { toast('重排失败', { kind: 'danger', detail: err?.message }); }
+    finally { setBusy(false); }
   };
 
   return (
-    <div className="mde-tree">
-      <div className="mde-tree-search">
-        <input value={filter} placeholder="过滤…" onChange={(e) => setFilter(e.target.value)} />
+    <div className="mde-tree" tabIndex={0} ref={bodyRef} onKeyDown={onKeyDown} onClick={() => ctx && setCtx(null)}>
+      <div className="mde-tree-toolbar">
+        <input className="mde-tree-filter" value={filter} placeholder="搜索全部资源…" onChange={(e) => setFilter(e.target.value)} />
+        <NewMenu onPick={startNew} />
+        <button className="mde-tree-tbbtn" title="折叠全部" onClick={collapseAll}>⊟</button>
+        <button className="mde-tree-tbbtn" title="刷新" onClick={() => [...expanded].forEach(loadGroup)}>⟳</button>
       </div>
       <div className="mde-tree-body">
         {NODE_GROUPS.map((g) => {
           const st = lists[g.kind] || {};
-          const isOpen = expanded === g.kind;
-          const q = filter.trim().toLowerCase();
-          const items = (st.items || []).filter((it) => !q || (it.label || '').toLowerCase().includes(q));
+          const open = isOpen(g.kind);
+          const items = groupItems(g.kind);
+          if (q && open && items.length === 0 && (st.items || []).length) return null; // 搜索时无命中的组隐藏
           return (
             <div key={g.kind} className="mde-tree-group">
-              <button className={'mde-tree-grouphead' + (isOpen ? ' open' : '')} onClick={() => toggle(g.kind)}>
-                <span className="mde-tree-caret">{isOpen ? '▾' : '▸'}</span>
-                <span className="mde-tree-gicon">{g.icon}</span>
-                <span className="mde-tree-glabel">{g.label}</span>
-                {st.items && <span className="mde-tree-count">{st.items.length}</span>}
-              </button>
-              {isOpen && (
+              <div className="mde-tree-grouprow" onContextMenu={(e) => { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, kind: g.kind, item: null }); }}>
+                <button className={'mde-tree-grouphead' + (open ? ' open' : '')} onClick={() => toggle(g.kind)}>
+                  <span className="mde-tree-caret">{open ? '▾' : '▸'}</span>
+                  <span className="mde-tree-gicon">{g.icon}</span>
+                  <span className="mde-tree-glabel">{g.label}</span>
+                  {st.items && <span className="mde-tree-count">{q ? items.length : st.items.length}</span>}
+                </button>
+                {CAN_CREATE_KIND(g.kind) && <button className="mde-tree-additem" title={`新建${g.label}`} onClick={(e) => { e.stopPropagation(); startNew(g.kind); }}>＋</button>}
+              </div>
+              {open && (
                 <div className="mde-tree-children">
                   {st.loading && <div className="mde-tree-hint">加载中…</div>}
                   {st.error && <div className="mde-tree-hint err">加载失败:{st.error}</div>}
-                  {!st.loading && !st.error && items.length === 0 && <div className="mde-tree-hint">（空）</div>}
+                  {editing && editing.kind === g.kind && editing.id === '__new__' && (
+                    <input className="mde-tree-edit" autoFocus value={editing.value}
+                      placeholder={`新${g.label}名称`} disabled={busy}
+                      onChange={(e) => setEditing((s) => ({ ...s, value: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(null); }}
+                      onBlur={commitEdit} />
+                  )}
+                  {!st.loading && !st.error && items.length === 0 && !(editing && editing.id === '__new__' && editing.kind === g.kind) && <div className="mde-tree-hint">（空）</div>}
                   {items.map((it) => {
                     const k = nodeKey(g.kind, it.id);
+                    if (editing && editing.kind === g.kind && editing.id === it.id) {
+                      return (
+                        <input key={k} className="mde-tree-edit" autoFocus value={editing.value} disabled={busy}
+                          onChange={(e) => setEditing((s) => ({ ...s, value: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(null); }}
+                          onBlur={commitEdit} />
+                      );
+                    }
                     return (
-                      <button
+                      <div
                         key={k}
-                        className={'mde-tree-item' + (activeKey === k ? ' active' : '')}
+                        className={'mde-tree-item' + (activeKey === k ? ' active' : '') + (sel === k ? ' sel' : '') + (dragK === k ? ' dragging' : '')}
                         title={it.label}
-                        onClick={() => openNode({ kind: g.kind, id: it.id, label: it.label, meta: it })}
+                        draggable={!!CAN_DRAG[g.kind]}
+                        onDragStart={() => CAN_DRAG[g.kind] && setDragK(k)}
+                        onDragOver={(e) => CAN_DRAG[g.kind] && dragK && e.preventDefault()}
+                        onDrop={() => onDrop(g.kind, it)}
+                        onClick={() => { setSel(k); openNode({ kind: g.kind, id: it.id, label: it.label, meta: it }); }}
+                        onDoubleClick={() => CAN_RENAME[g.kind] && startRename(g.kind, it)}
+                        onContextMenu={(e) => { e.preventDefault(); setSel(k); setCtx({ x: e.clientX, y: e.clientY, kind: g.kind, item: it }); }}
                       >
-                        {it.label || `(${g.kind} ${it.id})`}
-                      </button>
+                        <span className="mde-tree-iicon">{KIND_ICON[g.kind]}</span>
+                        <span className="mde-tree-ilabel">{it.label || `(${g.kind} ${it.id})`}</span>
+                      </div>
                     );
                   })}
                 </div>
@@ -96,6 +271,41 @@ function FileTree({ scriptId, openNode, activeKey, reloadKey }) {
           );
         })}
       </div>
+      {ctx && (
+        <div className="mde-ctx" style={{ left: ctx.x, top: ctx.y }} onClick={(e) => e.stopPropagation()}>
+          {ctx.item ? (
+            <>
+              <button onClick={() => { openNode({ kind: ctx.kind, id: ctx.item.id, label: ctx.item.label, meta: ctx.item }); setCtx(null); }}>打开</button>
+              {CAN_RENAME[ctx.kind] && <button onClick={() => startRename(ctx.kind, ctx.item)}>重命名</button>}
+              {CAN_RENAME[ctx.kind] && ctx.kind !== 'chapter' && <button onClick={() => duplicate(ctx.kind, ctx.item)}>复制</button>}
+              {CAN_DELETE[ctx.kind]
+                ? <button className="danger" onClick={() => doDelete(ctx.kind, ctx.item)}>删除</button>
+                : <button disabled title="章节删除会断开 RAG 索引">删除(章节不可)</button>}
+            </>
+          ) : (
+            CAN_CREATE_KIND(ctx.kind) && <button onClick={() => startNew(ctx.kind)}>新建{NODE_GROUPS.find((g) => g.kind === ctx.kind)?.label}</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const CAN_CREATE_KIND = () => true; // 5 类都支持新建
+function NewMenu({ onPick }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mde-newmenu">
+      <button className="mde-tree-tbbtn" title="新建" onClick={() => setOpen((o) => !o)}>＋</button>
+      {open && (
+        <div className="mde-newmenu-pop" onMouseLeave={() => setOpen(false)}>
+          {NODE_GROUPS.map((g) => (
+            <button key={g.kind} onClick={() => { setOpen(false); onPick(g.kind); }}>
+              <span className="mde-tree-gicon">{g.icon}</span> {g.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -277,6 +487,21 @@ export default function MdEditorPage() {
     } catch (_) { /* 静默 */ }
   }, [tabs, scriptId]);
 
+  // 资源管理器增删改后:同步已打开的标签(删→关、改名→更新标题),并触发树重载。
+  const onTreeMutate = useCallback((action, kind, id, label) => {
+    const key = nodeKey(kind, id);
+    if (action === 'delete') {
+      setTabs((cur) => {
+        const idx = cur.findIndex((t) => t.key === key);
+        const next = cur.filter((t) => t.key !== key);
+        if (activeKey === key) setActiveKey(next[Math.max(0, idx - 1)]?.key || null);
+        return next;
+      });
+    } else if (action === 'rename' && label) {
+      setTabs((cur) => cur.map((t) => t.key === key ? { ...t, label } : t));
+    }
+  }, [activeKey]);
+
   // 接受一段续写/改写后的桥接:够长就提示「要不要让助手把新设定同步进知识库」。
   // (续写引擎只产纯文本不落库,知识同步只能由右栏 agent 触发 —— 这条桥接把两路打通。)
   const onProseAccepted = useCallback((text, info) => {
@@ -335,7 +560,7 @@ export default function MdEditorPage() {
       <div className="mde-panes">
         {/* 左:文件树 */}
         <aside className="mde-left">
-          {scriptId ? <FileTree scriptId={scriptId} openNode={openNode} activeKey={activeKey} reloadKey={treeReloadKey} /> : <div className="mde-tree-hint">先选剧本</div>}
+          {scriptId ? <FileTree scriptId={scriptId} openNode={openNode} activeKey={activeKey} reloadKey={treeReloadKey} onMutate={onTreeMutate} /> : <div className="mde-tree-hint">先选剧本</div>}
         </aside>
 
         {/* 中:标签 + 编辑器 */}

@@ -442,6 +442,11 @@
       splitChapter: (sid, idx, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/${idx}/split`, body),
       resplit: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/resplit`, body),
       chapterFacts: (sid, q) => GET(`${API_PREFIX}/scripts/${sid}/chapter-facts`, q),
+      // 剧本内 NPC 角色卡 CRUD(md-editor 资源管理器用):list 见 api.cards.scriptList;
+      // upsert(无 id=新建,有 id=改)/ delete。端点在 platform_app/api/scripts.py。
+      cardUpsert: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/character-cards`, body),
+      cardGet: (sid, cid) => GET(`${API_PREFIX}/scripts/${sid}/character-cards/${cid}`),
+      cardDelete: (sid, cid) => POST(`${API_PREFIX}/scripts/${sid}/character-cards/${cid}/delete`, {}),
       worldbook: (sid, q) => GET(`${API_PREFIX}/scripts/${sid}/worldbook`, q),
       worldbookCreate: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/worldbook`, body),
       worldbookUpdate: (sid, eid, body) => PUT(`${API_PREFIX}/scripts/${sid}/worldbook/${eid}`, body),

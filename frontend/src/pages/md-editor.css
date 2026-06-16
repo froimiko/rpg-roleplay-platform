@@ -161,3 +161,33 @@
   .mde-panes { grid-template-columns: 200px 1fr 0; }
   .mde-right { display: none; }
 }
+
+/* ── VSCode 风资源管理器(P8:多组/搜索/图标/工具栏/键盘/右键/增删改/拖拽)── */
+.mde-tree:focus { outline: none; }
+.mde-tree:focus-visible { outline: 1px solid var(--accent, #b5654a); outline-offset: -2px; }
+.mde-tree-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line-soft, #2a2724); }
+.mde-tree-filter { flex: 1 1 auto; min-width: 0; padding: 4px 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--line-soft, #2a2724); border-radius: 6px; color: var(--text, #ebe7df); font-size: 12px; outline: none; font-family: inherit; }
+.mde-tree-filter::placeholder { color: var(--muted-2, #6b655e); }
+.mde-tree-tbbtn { flex: 0 0 auto; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--muted, #968f85); cursor: pointer; font-size: 13px; line-height: 1; }
+.mde-tree-tbbtn:hover { background: var(--panel-2, #282623); color: var(--text, #ebe7df); border-color: var(--line, #36322d); }
+.mde-tree-grouprow { display: flex; align-items: center; }
+.mde-tree-grouprow .mde-tree-grouphead { flex: 1 1 auto; }
+.mde-tree-additem { flex: 0 0 auto; width: 22px; height: 22px; background: transparent; border: none; color: var(--muted-2, #6b655e); cursor: pointer; font-size: 14px; line-height: 1; opacity: 0; border-radius: 4px; }
+.mde-tree-grouprow:hover .mde-tree-additem { opacity: 1; }
+.mde-tree-additem:hover { background: var(--panel-2, #282623); color: var(--accent, #b5654a); }
+.mde-tree-item { display: flex; align-items: center; gap: 6px; }
+.mde-tree-iicon { flex: 0 0 auto; width: 12px; text-align: center; color: var(--muted-2, #6b655e); font-family: var(--font-mono, monospace); font-size: 11px; }
+.mde-tree-ilabel { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mde-tree-item.sel { background: var(--panel-2, #282623); color: var(--text, #ebe7df); }
+.mde-tree-item.active .mde-tree-iicon, .mde-tree-item.sel .mde-tree-iicon { color: var(--accent, #b5654a); }
+.mde-tree-item.dragging { opacity: 0.45; }
+.mde-tree-edit { width: calc(100% - 4px); margin: 1px 2px; padding: 3px 8px; background: var(--bg-deep, #131211); border: 1px solid var(--accent, #b5654a); border-radius: 5px; color: var(--text, #ebe7df); font-size: 12px; outline: none; font-family: inherit; box-sizing: border-box; }
+.mde-ctx { position: fixed; z-index: 3000; min-width: 132px; background: var(--panel, #211f1d); border: 1px solid var(--line, #36322d); border-radius: 7px; box-shadow: 0 8px 28px rgba(0,0,0,.5); padding: 4px; display: flex; flex-direction: column; }
+.mde-ctx button { text-align: left; background: transparent; border: none; color: var(--text, #ebe7df); padding: 6px 10px; font-size: 12.5px; cursor: pointer; border-radius: 5px; font-family: inherit; }
+.mde-ctx button:hover:not(:disabled) { background: var(--panel-2, #282623); }
+.mde-ctx button:disabled { color: var(--muted-2, #6b655e); cursor: not-allowed; }
+.mde-ctx button.danger { color: var(--danger, #c8675d); }
+.mde-newmenu { position: relative; flex: 0 0 auto; }
+.mde-newmenu-pop { position: absolute; top: 26px; right: 0; z-index: 3000; min-width: 132px; background: var(--panel, #211f1d); border: 1px solid var(--line, #36322d); border-radius: 7px; box-shadow: 0 8px 28px rgba(0,0,0,.5); padding: 4px; display: flex; flex-direction: column; }
+.mde-newmenu-pop button { text-align: left; background: transparent; border: none; color: var(--text, #ebe7df); padding: 6px 10px; font-size: 12.5px; cursor: pointer; border-radius: 5px; font-family: inherit; display: flex; align-items: center; gap: 6px; }
+.mde-newmenu-pop button:hover { background: var(--panel-2, #282623); }
