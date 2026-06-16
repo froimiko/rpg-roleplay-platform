@@ -146,7 +146,7 @@ async function fetchGroupList(kind, sid) {
 }
 
 // ── 标签编辑器(P0:textarea;P3 替换为 CodeMirror)──────────────────────
-function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept }) {
+function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, chapterIndex }) {
   if (!tab) {
     return <div className="mde-empty">从左侧选择一个文件开始编辑<br /><span className="muted">章节正文 / 角色卡 / 世界书 / 时间线 / Canon</span></div>;
   }
@@ -160,6 +160,7 @@ function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept }) 
       scriptId={scriptId}
       onViewReady={onViewReady}
       onContinueAccept={onContinueAccept}
+      chapterIndex={chapterIndex}
     />
   );
 }
@@ -266,7 +267,9 @@ export default function MdEditorPage() {
   const onContinue = useCallback((instruction) => {
     const view = activeViewRef.current;
     if (!view) { toast('请先打开一个文件再续写', { kind: 'warn' }); return; }
-    runContinue(view, { scriptId, instruction, onAccept: onProseAccepted });
+    const _a = activeRef.current;
+    const _ci = (_a && _a.kind === 'chapter') ? _a.id : null;   // 章号→后端装配相关设定+防剧透
+    runContinue(view, { scriptId, instruction, onAccept: onProseAccepted, chapterIndex: _ci });
   }, [scriptId, onProseAccepted]);
 
   // 「同步设定」:把刚接受的正文丢给右栏 agent,按 rule 4 读现状 + 同步知识资产。
@@ -321,7 +324,7 @@ export default function MdEditorPage() {
               </div>
             ))}
           </div>
-          <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} onContinueAccept={onProseAccepted} />
+          <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} onContinueAccept={onProseAccepted} chapterIndex={active && active.kind === 'chapter' ? active.id : null} />
           {syncNudge && (
             <div className="mde-syncbar">
               <span className="mde-syncbar-text">

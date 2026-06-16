@@ -36,5 +36,6 @@ class ConsoleAssistantContinueRequest(_BaseRequest):
     selection: str | None = ""       # 改写模式下被选中要替换的原文
     mode: str | None = "continue"    # 'continue' | 'rewrite'
     script_id: int | None = None     # 用于严格 owner 鉴权 + 用量归属
+    chapter_index: int | None = None  # 正在编辑的章号(1-based);后端据此装配相关设定 + 防剧透截断
     api_id: str | None = None        # 前端选模型(优先)
     model: str | None = None         # 前端选模型 real_name(优先)

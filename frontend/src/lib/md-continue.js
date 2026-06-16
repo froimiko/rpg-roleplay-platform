@@ -157,6 +157,7 @@ export async function runContinue(view, opts = {}) {
         instruction: opts.instruction || '',
         mode: rewrite ? 'rewrite' : 'continue',
         script_id: opts.scriptId,
+        chapter_index: (opts.chapterIndex != null ? opts.chapterIndex : null),  // 后端据此装配相关设定+防剧透
       }),
     });
     let errMsg = '';
@@ -185,7 +186,7 @@ export async function runContinue(view, opts = {}) {
 
 // ── Cmd+K 行内指令:复用全局 __prompt 取指令 → runContinue ────────────────
 // getOnAccept:可选,返回「接受续写后同步知识库」回调,与侧栏「续写到正文」共用同一桥接。
-export function cmdKKeymap(getScriptId, getOnAccept) {
+export function cmdKKeymap(getScriptId, getOnAccept, getChapterIndex) {
   return keymap.of([{
     key: 'Mod-k',
     run: (view) => {
@@ -199,7 +200,7 @@ export function cmdKKeymap(getScriptId, getOnAccept) {
             : Promise.resolve(prompt(title)));
         } catch (_) { instr = null; }
         if (instr === null) return;   // 取消
-        runContinue(view, { scriptId: getScriptId?.(), instruction: instr, onAccept: getOnAccept?.() });
+        runContinue(view, { scriptId: getScriptId?.(), instruction: instr, onAccept: getOnAccept?.(), chapterIndex: getChapterIndex?.() });
       })();
       return true;
     },

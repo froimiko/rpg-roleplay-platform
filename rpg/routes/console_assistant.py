@@ -229,8 +229,12 @@ _CONTINUE_SYSTEM_PROMPT = (
     "  · 对话风格与标点(引号样式、对白与动作的穿插方式);\n"
     "  · 内容尺度(露骨或含蓄的程度与上下文保持一致,除非『指令』另有要求"
     "——本平台允许成人内容)。\n"
-    "不要引入上下文之外的新设定、新人物或新地名;"
     "把 before/after/selection 仅当作可能被截断的上下文。\n"
+    "\n"
+    "【设定一致】若给了【相关设定】(本剧本既有的世界书/人物/词条/时点),续写须援引它保持忠实:"
+    "人物言行合其设定、术语地名用既有的、不与之矛盾;但不要发明【相关设定】与前后文之外的全新人物、"
+    "势力、地名或重大设定——需要的细节优先从给定设定取,未覆盖处做不冲突的合理推演而非凭空另起。"
+    "没给【相关设定】时,基于前后文合理续写,别硬造与剧本冲突的重大新设定。\n"
     "\n"
     "- continue 模式:在『前文』与『后文』之间续写衔接的一段;承接前文、并与后文自然衔接;"
     "若给了『指令』按【最高优先级】执行,否则顺势往下续写,全程守【文风一致】。\n"
@@ -241,9 +245,13 @@ _CONTINUE_SYSTEM_PROMPT = (
 
 def _build_continue_user_prompt(
     *, before: str, after: str, selection: str, instruction: str, mode: str,
+    environment: str = "",
 ) -> str:
-    """把 before/after/selection/instruction 组织进 user_prompt,清楚标注每段。"""
+    """把 before/after/selection/instruction 组织进 user_prompt,清楚标注每段。
+    environment:阶段2 注入的「相关设定」环境块(可空),放最前供 LLM 援引保持忠实一致。"""
     parts: list[str] = []
+    if environment:
+        parts.append(environment)
     parts.append(f"【模式】{'改写(rewrite)' if mode == 'rewrite' else '续写(continue)'}")
     if before:
         parts.append(f"【前文】(正文光标之前,可能已截断)\n{before}")
@@ -282,6 +290,11 @@ async def api_console_assistant_continue(
     script_id = body_dict.get("script_id")
     api_id_in = (str(body_dict.get("api_id")).strip() or None) if body_dict.get("api_id") else None
     model_in = (str(body_dict.get("model")).strip() or None) if body_dict.get("model") else None
+    _ci_in = body_dict.get("chapter_index")
+    try:
+        chapter_index = int(_ci_in) if _ci_in is not None else None
+    except (TypeError, ValueError):
+        chapter_index = None
 
     def _err(message: str):
         return StreamingResponse(
@@ -321,6 +334,17 @@ async def api_console_assistant_continue(
     else:
         script_id = None
 
+    # 阶段2:装配「相关设定」环境块 —— 续写/改写忠于该剧本既有世界书/人物/词条/时点,
+    # 按 chapter_index 防剧透截断(空白剧本/未关联 script → 跳过,退化为纯局部续写)。失败不影响续写。
+    environment = ""
+    if script_id is not None:
+        try:
+            from console_assistant.editor_context import build_editor_environment
+            _scan = "\n".join([before, selection, after]).strip()
+            environment = build_editor_environment(script_id, _scan, chapter_index)
+        except Exception:
+            environment = ""
+
     # 模型解析:body 给了 api_id+model 就用;否则回退到用户编辑器偏好 / 默认 / gm
     try:
         from agents._harness import resolve_api_and_model
@@ -354,7 +378,7 @@ async def api_console_assistant_continue(
     system_prompt = _CONTINUE_SYSTEM_PROMPT
     user_prompt = _build_continue_user_prompt(
         before=before, after=after, selection=selection,
-        instruction=instruction, mode=mode,
+        instruction=instruction, mode=mode, environment=environment,
     )
 
     def _gen():

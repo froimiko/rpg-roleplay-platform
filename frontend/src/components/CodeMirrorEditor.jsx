@@ -28,10 +28,10 @@ const warmTheme = EditorView.theme({
   '.cm-matchingBracket': { backgroundColor: 'rgba(122,166,194,.18)', outline: 'none' },
 }, { dark: true });
 
-function baseExtensions(onChange, readOnly, getScriptId, getOnAccept) {
+function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapterIndex) {
   return [
     aiContinueExtension(),
-    cmdKKeymap(getScriptId, getOnAccept),
+    cmdKKeymap(getScriptId, getOnAccept, getChapterIndex),
     lineNumbers(),
     highlightActiveLineGutter(),
     highlightActiveLine(),
@@ -51,7 +51,7 @@ function baseExtensions(onChange, readOnly, getScriptId, getOnAccept) {
   ];
 }
 
-export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = false, scriptId, onViewReady, onContinueAccept }) {
+export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = false, scriptId, onViewReady, onContinueAccept, chapterIndex }) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const onChangeRef = useRef(onChange);
@@ -62,6 +62,8 @@ export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = f
   onViewReadyRef.current = onViewReady;
   const onContinueAcceptRef = useRef(onContinueAccept);
   onContinueAcceptRef.current = onContinueAccept;
+  const chapterIndexRef = useRef(chapterIndex);
+  chapterIndexRef.current = chapterIndex;
   const lastKeyRef = useRef(docKey);
 
   // 建一次。
@@ -69,7 +71,7 @@ export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = f
     const view = new EditorView({
       state: EditorState.create({
         doc: value || '',
-        extensions: baseExtensions((v) => onChangeRef.current?.(v), readOnly, () => scriptIdRef.current, () => onContinueAcceptRef.current),
+        extensions: baseExtensions((v) => onChangeRef.current?.(v), readOnly, () => scriptIdRef.current, () => onContinueAcceptRef.current, () => chapterIndexRef.current),
       }),
       parent: hostRef.current,
     });
