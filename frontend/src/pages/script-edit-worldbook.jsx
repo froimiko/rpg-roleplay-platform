@@ -25,7 +25,6 @@ import CSInput from '@cloudscape-design/components/input';
 import CSAlert from '@cloudscape-design/components/alert';
 import CSTextFilter from '@cloudscape-design/components/text-filter';
 import CSPagination from '@cloudscape-design/components/pagination';
-import CSSplitPanel from '@cloudscape-design/components/split-panel';
 import CSTextarea from '@cloudscape-design/components/textarea';
 import CSToggle from '@cloudscape-design/components/toggle';
 import CSTokenGroup from '@cloudscape-design/components/token-group';
@@ -689,32 +688,36 @@ export function WorldbookEditorView({ script }) {
           />
         </div>
 
-        {/* ── SplitPanel 右侧编辑面板 ── */}
+        {/* ── 右侧编辑面板(自绘 div,不依赖 AppLayout)──
+            原用 Cloudscape SplitPanel 独立渲染。SplitPanel 只能在 AppLayout 的 splitPanel 槽内工作;
+            前端依赖升级(d61542c29:React 19 + Cloudscape)后,脱离 AppLayout 上下文渲染即崩 →
+            一点「新建/详情」就让整个世界书编辑器失活(反馈·行者无疆:新建条目/详情无反应、
+            启用栏点确认无反应)。改为自绘面板,纯 div + CSS 变量,稳定可靠。 */}
         {panelOpen && draft && (
-          <div style={{ width: 480, flexShrink: 0 }}>
-            <CSSplitPanel
-              header={
-                isNew
+          <div style={{
+            width: 480, flexShrink: 0, alignSelf: 'flex-start',
+            border: '1px solid var(--line, #36322d)', borderRadius: 8,
+            background: 'var(--panel, #211f1d)', overflow: 'hidden',
+            display: 'flex', flexDirection: 'column', maxHeight: '78vh',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+              borderBottom: '1px solid var(--line-soft, #2a2724)', background: 'var(--bg-deep, #131211)',
+            }}>
+              <span style={{ fontWeight: 600, fontSize: 13.5, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {isNew
                   ? t('scripts.edit.worldbook.panel_title_new')
-                  : (draft.title || t('scripts.edit.worldbook.panel_title_edit'))
-              }
-              hidePreferencesButton
-              closeBehavior="hide"
-              i18nStrings={{
-                closeButtonAriaLabel: t('common.close'),
-                openButtonAriaLabel: t('common.open'),
-                preferencesTitle: '',
-                preferencesPositionLabel: '',
-                preferencesPositionDescription: '',
-                preferencesPositionSide: '',
-                preferencesPositionBottom: '',
-                preferencesConfirm: '',
-                preferencesCancel: '',
-                resizeHandleAriaLabel: t('scripts.edit.worldbook.panel_resize'),
-              }}
-            >
+                  : (draft.title || t('scripts.edit.worldbook.panel_title_edit'))}
+              </span>
+              <button
+                onClick={closePanel}
+                aria-label={t('common.close')}
+                style={{ background: 'none', border: 'none', color: 'var(--muted, #968f85)', fontSize: 18, lineHeight: 1, cursor: 'pointer', padding: '0 6px' }}
+              >×</button>
+            </div>
+            <div style={{ padding: 14, overflowY: 'auto' }}>
               {splitPanelContent}
-            </CSSplitPanel>
+            </div>
           </div>
         )}
       </div>
