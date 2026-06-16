@@ -400,7 +400,11 @@ function ModelsSection() {
     display: m.display_name || m.real_name || m.id,
     real_name: m.real_name || m.id,
     enabled: m.enabled !== false,
-    visible: m.hidden !== true,
+    // 可见性 = enabled(目录里没有独立的 hidden 字段,旧的 m.hidden!==true 恒为 true=可见性弹窗
+    // 永远全选、不反映真实隐藏态)。统一用 enabled:与选择器过滤(m.enabled===false 隐藏)和
+    // 可见性端点(写 enabled)一致,弹窗重开能正确显示用户隐藏了哪些。
+    visible: m.enabled !== false,
+    synced: m.synced === true,  // 同步来的(overlay)模型 → 可见性 toggle 走 per-user 端点
     capabilities: m.capabilities || {},
     health: m.health || "untested",
     health_error: m.health_error || "",
@@ -551,9 +555,15 @@ function ModelsSection() {
       : a));
     const api = apis.find(a => a.id === apiId);
     if (api) {
-      await Promise.all(api.models.map(m =>
-        window.api.models.visibility({ api_id: apiId, model: m.id, visible: ids.includes(m.id) }).catch(() => {})
-      ));
+      await Promise.all(api.models.map(m => {
+        const body = { api_id: apiId, model: m.id, visible: ids.includes(m.id) };
+        // 同步来的(overlay)模型走 per-user 端点(任何用户可隐藏自己的、re-sync 不重置);
+        // 全局策展模型走全局端点(admin)。
+        const call = m.synced
+          ? window.api.models.meVisibility(body)
+          : window.api.models.visibility(body);
+        return call.catch(() => {});
+      }));
     }
   };
   const removeModels = async (apiId, ids) => {

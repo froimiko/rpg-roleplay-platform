@@ -800,6 +800,8 @@
       upsertModel: (body) => POST(`${API_PREFIX}/models/model`, body),
       deleteModel: (body) => POST(`${API_PREFIX}/models/model/delete`, body),
       visibility: (body) => POST(`${API_PREFIX}/models/visibility`, body),
+      // per-user:隐藏/显示自己同步来的(overlay)模型,任何用户可调,且 re-sync 不重置。
+      meVisibility: (body) => POST(`${API_PREFIX}/me/models/visibility`, body),
       validate: (body) => POST(`${API_PREFIX}/models/validate`, body),
       remote: (q) => GET(`${API_PREFIX}/models/remote`, q),
       syncRemote: (body) => POST(`${API_PREFIX}/models/remote/sync`, body),

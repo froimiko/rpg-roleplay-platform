@@ -788,6 +788,29 @@ async def api_models_visibility(request: Request):
     return json_response({"ok": True})
 
 
+@router.post("/api/me/models/visibility")
+async def api_me_models_visibility(request: Request):
+    """每用户:隐藏/显示自己【同步来的】单个模型(user_model_entries.enabled)。
+
+    与上面 /api/models/visibility(admin、写全局 model_entries)不同 —— 这个任何用户都能调,
+    只动自己的 overlay。用户「启用某 provider(如 openrouter)但只想留几个模型」靠这个,
+    且 set 后下次 remote/sync 不会被重置(见 user_models.replace_synced_models 的 prev 保留)。
+    body: {api_id, model(=model_id 或 real_name), visible: bool}
+    """
+    user = require_user(request)
+    body = await request.json() or {}
+    api_id = body.get("api_id") or body.get("api")
+    model = body.get("model") or body.get("real_name") or body.get("model_id")
+    visible = body.get("visible")
+    if not api_id or model is None or visible is None:
+        return _bad("缺少参数")
+    from platform_app.user_models import set_overlay_model_enabled
+    n = set_overlay_model_enabled(user["id"], api_id, model, bool(visible))
+    if not n:
+        return _bad("该模型不在你的同步清单里(只能隐藏你自己同步来的模型)", status=404)
+    return json_response({"ok": True, "updated": n})
+
+
 @router.post("/api/models/validate")
 async def api_models_validate(request: Request):
     """Lightweight credentials probe — defers to model_probe.list_remote_models."""
