@@ -207,6 +207,62 @@ def _t_get_chapter_context(user_id: int, script_id: int | None, args: dict, stat
         return f"失败: {type(exc).__name__}: {exc}"
 
 
+def _t_extract_from_selection(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    """对用户选中的一段正文跑结构化提取(复用 extract/per_chapter.extract_chapter 的提取器,含其
+    反史实/反编造/中文别名归并铁律),返回提议的人物/势力/地点/概念/事件/摘要 —— 供 agent 按用户意愿
+    用 upsert_canon_entity / update_npc_card / upsert_worldbook_entry / create_anchor 落库(经写入权限闸)。
+    本工具只产提议、不写库;会调一次提取 LLM(BYOK)。这是「把提取器拆成选区工具」的核心(作者优先)。"""
+    sid = _resolve_sid(script_id, args)
+    if sid is None:
+        return "失败: script_id 必填"
+    text = str(args.get("text") or "").strip()
+    if not text:
+        return "失败: text 必填(要提取信息的选中正文)"
+    text = text[:8000]
+    try:
+        from platform_app.db import connect, init_db
+        init_db()
+        with connect() as db:
+            if not _user_can_read_script(db, sid, user_id):
+                return "失败(权限): 剧本不属于当前用户或未订阅"
+            known = [r["name"] for r in (db.execute(
+                "select name from kb_canon_entities where script_id=%s and coalesce(name,'')<>'' "
+                "order by importance desc, id asc limit 200", (sid,)).fetchall() or [])]
+        from agents._harness import resolve_api_and_model
+        api_id, model_real = resolve_api_and_model(
+            user_id, api_pref_key="extractor.api_id", model_pref_key="extractor.model_real_name")
+        if not api_id or not model_real:
+            return "失败: 未找到可用的提取模型,请到「设置 → 模块模型」配置 extractor(或编辑器/GM)模型后重试。"
+        from extract.llm import ExtractLLM
+        from extract.per_chapter import extract_chapter
+        llm = ExtractLLM(model=str(model_real), api_id=str(api_id), user_id=user_id,
+                         script_id=sid, algorithm="editor_selection")
+        ex = extract_chapter(llm, 0, text, era="", known_entities=known)
+        if not getattr(ex, "raw_ok", False):
+            return "提取失败:模型未返回有效结构,可换更强的提取模型或缩短选区后重试。"
+        proposal = {
+            "summary": getattr(ex, "chapter_summary", ""),
+            "entities": getattr(ex, "entities", []),       # type=character/faction/location/...,含 full_name/aliases/identity/background/subtype/parent
+            "concepts": getattr(ex, "concepts", []),
+            "events": getattr(ex, "events", []),
+            "relationships": getattr(ex, "relationships", []),
+        }
+        body = json.dumps(proposal, ensure_ascii=False, indent=2)[:6000]
+        return ("【从选中段提取到的提议(尚未写库)】先一句话向用户说清要建/改哪些,再落库(写入受三级权限闸):"
+                "entities 里 type=character → upsert_canon_entity 或 generate_character_card_draft 后建 NPC 卡;"
+                "faction/location/concept → upsert_canon_entity 或 upsert_worldbook_entry;events → create_anchor。\n"
+                + body)
+    except Exception as exc:
+        try:
+            from agents.provider_errors import classify_provider_error
+            k = classify_provider_error(exc)
+            if k:
+                return f"提取失败:{k[1]}"
+        except Exception:
+            pass
+        return f"提取失败:{type(exc).__name__}: {str(exc)[:120]}"
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # 1) update_script_chapter — 覆盖整章正文(destructive=True)
 # ────────────────────────────────────────────────────────────────────────────

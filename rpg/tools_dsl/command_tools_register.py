@@ -279,6 +279,7 @@ def _register_phase2_tools() -> None:
 def _register_script_read_tools() -> None:
     from tools_dsl.command_tools_script_write import (
         _SCRIPT_READ_ORIGINS,
+        _t_extract_from_selection,
         _t_get_chapter_context,
         _t_list_anchors,
         _t_list_canon_entities,
@@ -324,6 +325,24 @@ def _register_script_read_tools() -> None:
                 "chapter_index": {"type": "integer", "description": "正在编辑的章号(1-based)"},
             }},
             executor=_t_get_chapter_context,
+            scope="script",
+            origins=_SCRIPT_READ_ORIGINS,
+            destructive=False,
+        ))
+    # extract_from_selection:作者优先「把提取器拆成选区工具」—— 只产提议、不写库(调提取 LLM)。
+    if not registry.has("extract_from_selection"):
+        registry.register(ToolSpec(
+            name="extract_from_selection",
+            description=(
+                "对用户选中的一段正文跑结构化提取(复用提取器:反史实/反编造/中文别名归并铁律),"
+                "返回提议的人物/势力/地点/概念/事件/摘要(只产提议、不写库)。作者把设定写进正文后,"
+                "用它从选中段抽出知识资产,再按用户意愿用 upsert_*/create_anchor 落库(经写入权限闸)。"
+            ),
+            input_schema={"type": "object", "properties": {
+                "script_id": {"type": "integer"},
+                "text": {"type": "string", "description": "要提取信息的选中正文"},
+            }, "required": ["text"]},
+            executor=_t_extract_from_selection,
             scope="script",
             origins=_SCRIPT_READ_ORIGINS,
             destructive=False,
