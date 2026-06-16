@@ -134,6 +134,22 @@ async def api_saves_timeline(
         except Exception:
             current_chapter = None
 
+        # ①.5 出生点兜底:新档首回合前还没有 game_sessions 行(progress_chapter 为空),
+        #     但所选出生点已由 workspace._build_initial_snapshot 写进
+        #     game_saves.state_snapshot.world.timeline.anchor_chapter_range。读它的起始章作当前章,
+        #     否则面板恒退回序章(反馈 #66/#67:游戏实际从选定锚点开始,仅世界线显示错回序章)。
+        if not current_chapter or current_chapter < 1:
+            try:
+                bp = db.execute(
+                    "select (state_snapshot #>> '{world,timeline,anchor_chapter_range,0}') as ch "
+                    "from game_saves where id = %s",
+                    (save_id,),
+                ).fetchone()
+                if bp and bp.get("ch") is not None:
+                    current_chapter = int(bp["ch"])
+            except Exception:
+                pass
+
     if not current_chapter or current_chapter < 1:
         try:
             from agents.anchor_seed_agent import get_progress_window
