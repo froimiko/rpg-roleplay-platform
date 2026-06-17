@@ -4389,6 +4389,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
     'settings-modules': 'settings-modules',
     'settings-memory': 'settings-memory',
     'admin-users': 'admin',
+    'md-editor': 'md-editor', tavern: 'tavern',
     profile: 'intro',
     me: 'intro',
   };

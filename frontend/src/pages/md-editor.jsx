@@ -4,7 +4,7 @@
 // 序列化在 lib/md-serialize.js(P2),agent 面板在 components/MdEditorAgent.jsx(P5)。
 import React from 'react';
 import './md-editor.css';
-import { lsGet, lsSet } from '../lib/storage.js';
+import { lsGet, lsSet, lsGetJSON } from '../lib/storage.js';
 import CodeMirrorEditor from '../components/CodeMirrorEditor.jsx';
 import MdEditorAgent from '../components/MdEditorAgent.jsx';
 import { toMd, fromMd, splitFrontMatter } from '../lib/md-serialize.js';
@@ -39,6 +39,8 @@ const NODE_GROUPS = [
 
 const api = () => (typeof window !== 'undefined' ? window.api : null);
 const toast = (msg, opts) => { try { window.__apiToast?.(msg, opts); } catch (_) {} };
+// 章节标题存「裸标题」(不含「第N章」),显示时由前端加序号前缀。剥掉任何已混入的前缀,防重命名/重建出现「第5章 第5章 …」双序号。
+const stripChapterPrefix = (s) => String(s || '').replace(/^\s*第\s*[0-9一二三四五六七八九十百千零〇两]+\s*章\s*/, '');
 
 // 每类实体图标 + 能力。章节删除/重排会断开 RAG 索引(chapter_index 是 chunks/facts/锚点的外键)→ 禁;
 // 拖拽重排仅世界书安全(按 priority);其余实体有结构语义,不做乱序拖拽。
@@ -129,12 +131,13 @@ function FileTree({ scriptId, openNode, activeKey, reloadKey, onMutate }) {
   for (const g of NODE_GROUPS) if (isOpen(g.kind)) for (const it of groupItems(g.kind)) flat.push({ kind: g.kind, id: it.id, label: it.label, meta: it });
 
   const startNew = (kind) => { if (!isOpen(kind)) toggle(kind); setEditing({ kind, id: '__new__', value: '' }); setCtx(null); };
-  const startRename = (kind, it) => { setEditing({ kind, id: it.id, value: (kind === 'chapter') ? (it.meta?.title ?? it.label) : it.label }); setCtx(null); };
+  const startRename = (kind, it) => { setEditing({ kind, id: it.id, value: (kind === 'chapter') ? stripChapterPrefix(it.meta?.title ?? it.label) : it.label }); setCtx(null); };
 
   const commitEdit = async () => {
     if (submittingRef.current) return;        // 已在提交中(Enter 已触发,onBlur 别再发一次)
     const e = editing; if (!e) return;
-    const nm = (e.value || '').trim();
+    // 章节标题强制剥前缀:存裸标题,显示前端再加「第N章」,杜绝双序号。
+    const nm = (e.kind === 'chapter' ? stripChapterPrefix(e.value) : (e.value || '')).trim();
     if (!nm) { setEditing(null); return; }
     submittingRef.current = true;
     setBusy(true);
@@ -337,7 +340,7 @@ async function fetchGroupList(kind, sid) {
   if (kind === 'chapter') {
     const r = await A.scripts.chapters(sid, { limit: 5000 });
     const arr = r?.chapters || r?.items || [];
-    return arr.map((c) => ({ id: c.chapter_index, label: `第${c.chapter_index}章 ${c.title || ''}`.trim(), word_count: c.word_count }));
+    return arr.map((c) => ({ id: c.chapter_index, title: stripChapterPrefix(c.title || ''), label: `第${c.chapter_index}章 ${stripChapterPrefix(c.title || '')}`.trim(), word_count: c.word_count }));
   }
   if (kind === 'card') {
     const r = await A.cards.scriptList(sid);
@@ -397,7 +400,8 @@ function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, ch
 // ── 主页面 ───────────────────────────────────────────────────────────
 export default function MdEditorPage() {
   const [scripts, setScripts] = useState(null);
-  const [scriptId, setScriptId] = useState(() => lsGet('mde.scriptId', null));
+  // lsGet 返回裸字符串;剧本 id 是整数 → 必须 Number 化,否则 `s.id === scriptId`(数===串)恒不等 → 刷新后工作区显示「未选择」。
+  const [scriptId, setScriptId] = useState(() => { const v = lsGet('mde.scriptId', null); return (v == null || v === '') ? null : (Number(v) || v); });
   const [tabs, setTabs] = useState([]);          // [{key, kind, id, label, content, original, loading, error, dirty}]
   const [activeKey, setActiveKey] = useState(null);
   const [treeReloadKey, setTreeReloadKey] = useState(0);   // agent 写库后 bump,触发文件树重载
@@ -547,6 +551,30 @@ export default function MdEditorPage() {
     setTabs((cur) => cur.map((t) => t.key === key ? { ...t, content: val, dirty: val !== t.original } : t));
   }, []);
 
+  // 刷新 / 切换工作区:恢复该剧本上次打开的标签页 + 激活标签(用户缓存,刷新不丢上下文)。
+  useEffect(() => {
+    if (!scriptId) return;
+    const saved = lsGetJSON('mde.tabs.' + scriptId, null);
+    const savedActive = lsGet('mde.activeKey.' + scriptId, null);
+    if (!Array.isArray(saved) || !saved.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const t of saved) { if (cancelled) return; await openNode({ kind: t.kind, id: t.id, label: t.label }); }
+      if (!cancelled && savedActive) setActiveKey(savedActive);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptId]);
+
+  // 持久化已打开标签:只在非空时写,避免切换工作区瞬间的空态把缓存清掉。
+  useEffect(() => {
+    if (!scriptId || !tabs.length) return;
+    try {
+      lsSet('mde.tabs.' + scriptId, JSON.stringify(tabs.map((t) => ({ kind: t.kind, id: t.id, label: t.label }))));
+      lsSet('mde.activeKey.' + scriptId, activeKey || '');
+    } catch (_) {}
+  }, [tabs, activeKey, scriptId]);
+
   const closeTab = useCallback(async (key) => {
     const t = tabs.find((x) => x.key === key);
     if (t?.dirty) {
@@ -670,12 +698,12 @@ export default function MdEditorPage() {
 
         {/* 编辑操作图标组 */}
         <div className="mde-tb-icons">
-          <button className="mde-tb-ic" title="撤销 ⌘Z" onClick={doUndo}><TbIcon name="undo" /></button>
-          <button className="mde-tb-ic" title="重做 ⌘⇧Z" onClick={doRedo}><TbIcon name="redo" /></button>
+          <button className="mde-tb-ic" data-tip="撤销 ⌘Z" title="撤销 ⌘Z" onClick={doUndo}><TbIcon name="undo" /></button>
+          <button className="mde-tb-ic" data-tip="重做 ⌘⇧Z" title="重做 ⌘⇧Z" onClick={doRedo}><TbIcon name="redo" /></button>
           <span className="mde-tb-divider" />
-          <button className="mde-tb-ic" title="复制 ⌘C" onClick={doCopy}><TbIcon name="copy" /></button>
-          <button className="mde-tb-ic" title="剪切 ⌘X" onClick={doCut}><TbIcon name="cut" /></button>
-          <button className="mde-tb-ic" title="粘贴 ⌘V" onClick={doPaste}><TbIcon name="paste" /></button>
+          <button className="mde-tb-ic" data-tip="复制 ⌘C" title="复制 ⌘C" onClick={doCopy}><TbIcon name="copy" /></button>
+          <button className="mde-tb-ic" data-tip="剪切 ⌘X" title="剪切 ⌘X" onClick={doCut}><TbIcon name="cut" /></button>
+          <button className="mde-tb-ic" data-tip="粘贴 ⌘V" title="粘贴 ⌘V" onClick={doPaste}><TbIcon name="paste" /></button>
         </div>
 
         {/* 文件菜单 */}
@@ -715,8 +743,7 @@ export default function MdEditorPage() {
 
         <div className="mde-tb-spacer" />
         {active && active.dirty && <button className="mde-save" onClick={() => saveTab(active.key)} disabled={active.saving}>{active.saving ? '保存中…' : '保存 ⌘S'}</button>}
-        <button className={'mde-tb-ic' + (rightOpen ? ' on' : '')} title={rightOpen ? '隐藏 AI 助手栏' : '显示 AI 助手栏'} onClick={toggleRight}><TbIcon name="panelRight" /></button>
-        <button className="mde-menubtn" title="剧本编辑器使用帮助" onClick={() => window.__openHelp && window.__openHelp('md-editor')}>帮助</button>
+        <button className={'mde-tb-ic' + (rightOpen ? ' on' : '')} data-tip={rightOpen ? '隐藏 AI 助手栏' : '显示 AI 助手栏'} title={rightOpen ? '隐藏 AI 助手栏' : '显示 AI 助手栏'} onClick={toggleRight}><TbIcon name="panelRight" /></button>
       </div>
 
       <div className={'mde-panes' + (rightOpen ? '' : ' right-collapsed')} ref={panesRef} style={{ '--mde-left-w': leftW + 'px', '--mde-right-w': rightW + 'px' }}>

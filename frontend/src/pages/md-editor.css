@@ -43,6 +43,14 @@
 }
 .mde-tb-ic:hover { background: var(--panel-2, #282623); color: var(--text, #ebe7df); }
 .mde-tb-ic.on { color: var(--accent, #b5654a); }
+/* 顶栏图标即时提示(原生 title 慢/不稳,改 data-tip CSS 浮层) */
+.mde-topbar [data-tip] { position: relative; }
+.mde-topbar [data-tip]:hover::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; background: var(--panel, #211f1d); color: var(--text, #ebe7df);
+  border: 1px solid var(--line, #36322d); border-radius: 5px; padding: 3px 8px; font-size: 11px;
+  z-index: 4000; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+}
 .mde-tb-divider { width: 1px; height: 18px; background: var(--line, #36322d); margin: 0 4px; }
 
 /* 文件 / 编辑 菜单触发按钮 */
