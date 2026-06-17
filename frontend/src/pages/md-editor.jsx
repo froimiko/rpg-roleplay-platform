@@ -34,13 +34,16 @@ const NODE_GROUPS = [
   { kind: 'card',      label: '角色卡',   icon: '@' },
   { kind: 'worldbook', label: '世界书',   icon: '#' },
   { kind: 'anchor',    label: '时间线',   icon: '~' },
-  { kind: 'canon',     label: 'Canon 实体', icon: '*' },
+  { kind: 'canon',     label: '知识库人物', icon: '*' },
 ];
 
 const api = () => (typeof window !== 'undefined' ? window.api : null);
 const toast = (msg, opts) => { try { window.__apiToast?.(msg, opts); } catch (_) {} };
 // 章节标题存「裸标题」(不含「第N章」),显示时由前端加序号前缀。剥掉任何已混入的前缀,防重命名/重建出现「第5章 第5章 …」双序号。
 const stripChapterPrefix = (s) => String(s || '').replace(/^\s*第\s*[0-9一二三四五六七八九十百千零〇两]+\s*章\s*/, '');
+// Canon 实体类型 → 中文(与剧本管理「知识库人物」标签同步:i18n scripts.edit.canon.type_*)。含常见同义词回退。
+const CANON_TYPE_ZH = { character: '人物', person: '人物', faction: '势力', organization: '势力', org: '势力', location: '地点', place: '地点', item: '物品', concept: '概念', event: '事件' };
+const canonTypeZh = (tp) => CANON_TYPE_ZH[String(tp || '').toLowerCase()] || (tp || '概念');
 
 // 每类实体图标 + 能力。章节删除/重排会断开 RAG 索引(chapter_index 是 chunks/facts/锚点的外键)→ 禁;
 // 拖拽重排仅世界书安全(按 priority);其余实体有结构语义,不做乱序拖拽。
@@ -55,7 +58,7 @@ async function createNode(kind, sid, name) {
   if (kind === 'chapter')   { const r = await A.scripts.addChapter(sid, nm); return { id: r.chapter_index, label: `第${r.chapter_index}章 ${r.title || ''}`.trim() }; }
   if (kind === 'worldbook') { const r = await A.scripts.worldbookCreate(sid, { title: nm || '新条目', content: '' }); const e = r?.entry || r; return { id: e.id, label: e.title || nm || '新条目' }; }
   if (kind === 'card')      { const r = await A.scripts.cardUpsert(sid, { name: nm || '新角色' }); const c = r?.card || r; return { id: c.id, label: c.name || nm || '新角色' }; }
-  if (kind === 'canon')     { const r = await A.scripts.canonUpsert(sid, { name: nm || '新实体', type: 'concept' }); const e = r?.entity || r; return { id: e.logical_key, label: `${e.name || nm || '新实体'}（${e.type || 'concept'}）` }; }
+  if (kind === 'canon')     { const r = await A.scripts.canonUpsert(sid, { name: nm || '新实体', type: 'concept' }); const e = r?.entity || r; return { id: e.logical_key, label: `${e.name || nm || '新实体'}（${canonTypeZh(e.type || 'concept')}）` }; }
   if (kind === 'anchor')    { const r = await A.scripts.anchorCreate(sid, { story_time_label: nm || '新时点', chapter_min: 1, chapter_max: 1 }); const a = r?.anchor || r; return { id: a.id, label: nm || '新时点' }; }
   throw new Error('不支持新建');
 }
@@ -366,12 +369,12 @@ async function fetchGroupList(kind, sid) {
     if (A.scripts.canonList) {
       const r = await A.scripts.canonList(sid);
       const arr = r?.entities || r?.items || [];
-      return arr.map((e) => ({ id: e.logical_key, label: `${e.name}（${e.type}）` }));
+      return arr.map((e) => ({ id: e.logical_key, label: `${e.name}（${canonTypeZh(e.type)}）` }));
     }
     try {
       const r = await A.scripts.graph(sid);
       const arr = r?.entities || [];
-      return arr.map((e) => ({ id: e.logical_key, label: `${e.name}（${e.type}）` }));
+      return arr.map((e) => ({ id: e.logical_key, label: `${e.name}（${canonTypeZh(e.type)}）` }));
     } catch (_) { return []; }
   }
   return [];
