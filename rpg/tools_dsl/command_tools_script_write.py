@@ -472,9 +472,10 @@ def _t_upsert_worldbook_entries(user_id: int, script_id: int | None, args: dict,
         return "失败: script_id 必填"
     entries = args.get("entries")
     if not isinstance(entries, list) or not entries:
-        return "失败: entries 必须是非空数组(每项是一条世界书条目对象,新建带 title、改带 entry_id)"
-    if len(entries) > 50:
-        return "失败: 单次最多 50 条,请分批"
+        return ("失败: 没收到 entries(可能单次条数过多,整个工具调用超输出长度被截断了)。"
+                "请每次只传 ≤6 条,把更多条目分成多次调用。每项是一条世界书条目对象(新建带 title、改带 entry_id)。")
+    if len(entries) > 12:
+        return "失败: 单次条数过多易被截断,请每次 ≤6 条、分多次调用"
     try:
         from platform_app.db import connect, init_db
         from platform_app.perms import script_owned
@@ -944,9 +945,10 @@ def register_script_write_tools() -> None:
         ToolSpec(
             name="upsert_worldbook_entries",
             description=(
-                "批量创建/更新世界书条目 —— 一次要建/改多条时必须用本工具(一次调用一并落库),"
+                "批量创建/更新世界书条目 —— 一次要建/改多条时用本工具(一次调用一并落库),"
                 "不要逐条调用 upsert_worldbook_entry(逐条在审查模式下只会成功第一条)。"
                 "entries 是条目数组,每项字段与 upsert_worldbook_entry 相同(新建带 title、改带 entry_id)。"
+                "**每次最多放 6 条**:条数太多整个调用会超输出长度被截断导致失败;超过 6 条请分多次调用。"
             ),
             input_schema={
                 "type": "object",
@@ -975,7 +977,6 @@ def register_script_write_tools() -> None:
                         },
                     },
                 },
-                "required": ["entries"],
             },
             executor=_t_upsert_worldbook_entries,
             scope="script",

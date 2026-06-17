@@ -1,11 +1,60 @@
 """console_assistant.conversations — 对话生命周期管理。"""
 from __future__ import annotations
 
+import json as _json
 import time
 from datetime import datetime
 from typing import Any
 
 from console_assistant import _state
+
+
+# ────────────────────────────────────────────────────────────
+# 跨 worker 共享(Redis):进程内 _conversations dict 在 workers>1 时各进程独立,
+# /chat 建对话(worker A) → /confirm 落到 worker B 找不到 → "conversation 不存在"。
+# 把对话(含 messages + pending_confirmations)落 Redis,任意 worker 可读。
+# Redis 不可用 → 静默降级回进程内 dict(单 worker 下行为不变)。
+# ────────────────────────────────────────────────────────────
+def _conv_redis_key(user_id: int, cid: str) -> str:
+    return f"console_conv:{int(user_id)}:{cid}"
+
+
+def persist_conversation(user_id: int, cid: str, conv: dict[str, Any]) -> None:
+    """每个 /chat、/confirm 回合结束后调用,把对话写回 Redis(TTL=对话 TTL)。"""
+    if not cid or not isinstance(conv, dict):
+        return
+    try:
+        import redis_bus
+        if not redis_bus.is_enabled():
+            return
+        cli = redis_bus.get_sync_client()
+        if not cli:
+            return
+        cli.setex(_conv_redis_key(user_id, cid), _state.CONVERSATION_TTL_SECONDS,
+                  _json.dumps(conv, ensure_ascii=False, default=str))
+    except Exception:
+        pass
+
+
+def _load_conv_redis(user_id: int, cid: str) -> dict[str, Any] | None:
+    if not cid:
+        return None
+    try:
+        import redis_bus
+        if not redis_bus.is_enabled():
+            return None
+        cli = redis_bus.get_sync_client()
+        if not cli:
+            return None
+        raw = cli.get(_conv_redis_key(user_id, cid))
+        if not raw:
+            return None
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8")
+        conv = _json.loads(raw)
+        return conv if isinstance(conv, dict) else None
+    except Exception:
+        return None
 
 # GC 节流: 每 60 秒最多触发一次进程级 GC, 避免每次读都扫全桶
 _last_gc_at: float = 0.0
@@ -81,6 +130,13 @@ def _get_or_create_conversation(
             conv = user_bucket[conversation_id]
             conv["last_used"] = _now_iso()
             return conversation_id, conv
+        # 本进程无此对话 → 试从 Redis 拉(多 worker:别的 worker 建的对话续聊)
+        if conversation_id:
+            loaded = _load_conv_redis(user_id, conversation_id)
+            if loaded is not None:
+                loaded["last_used"] = _now_iso()
+                user_bucket[conversation_id] = loaded
+                return conversation_id, loaded
         new_id = conversation_id or _new_conversation_id()
         conv = {
             "messages": [],
@@ -112,6 +168,7 @@ def new_conversation(user_id: int) -> str:
             "context_limit": 0,
             "last_user_message": "",
         }
+        persist_conversation(user_id, new_id, user_bucket[new_id])
         return new_id
 
 
@@ -136,10 +193,20 @@ def list_conversations(user_id: int) -> list[dict[str, Any]]:
 
 
 def delete_conversation(user_id: int, conversation_id: str) -> bool:
-    """task 111: 删某个对话。"""
+    """task 111: 删某个对话(连带 Redis 副本)。"""
     with _state._lock:
         bucket = _state._conversations.get(user_id, {})
-        return bucket.pop(conversation_id, None) is not None
+        local = bucket.pop(conversation_id, None) is not None
+    redis_hit = False
+    try:
+        import redis_bus
+        if redis_bus.is_enabled():
+            cli = redis_bus.get_sync_client()
+            if cli:
+                redis_hit = bool(cli.delete(_conv_redis_key(user_id, conversation_id)))
+    except Exception:
+        pass
+    return local or redis_hit
 
 
 def _test_only_get_conversation_state(user_id: int) -> dict[str, dict[str, Any]]:

@@ -8,6 +8,7 @@ from console_assistant.conversations import (
     _get_or_create_conversation,
     _new_trace_id,
     _trim_messages,
+    persist_conversation,
 )
 from console_assistant.llm_loop import _run_llm_loop, _sse_event
 
@@ -57,6 +58,9 @@ def stream_chat(
             max_tokens=max_tokens,
         )
     finally:
+        # 跨 worker:把本回合后的对话(含本回合新建的 pending_confirmations)写回 Redis,
+        # 这样 /confirm 落到任意 worker 都能找到该对话 + 其待确认项。
+        persist_conversation(user_id, conv_id, conv)
         yield _sse_event("done", {
             "pending_confirmations": list(conv["pending_confirmations"].keys()),
         })
