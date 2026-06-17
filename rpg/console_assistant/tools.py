@@ -66,7 +66,7 @@ def list_assistant_tools() -> list[dict[str, Any]]:
         "list_worldbook_entries", "list_anchors", "list_canon_entities",
         "get_chapter_context", "extract_from_selection",
         # MD 编辑器(剧本知识资产):直写库(script scope,严格 owner 闸 + 二次确认)
-        "update_script_chapter", "upsert_worldbook_entry", "update_npc_card",
+        "update_script_chapter", "upsert_worldbook_entry", "upsert_worldbook_entries", "update_npc_card",
         "update_anchor", "create_anchor", "upsert_canon_entity",
         # 设置
         "select_model", "set_preference", "list_available_models",

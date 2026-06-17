@@ -147,7 +147,7 @@ def _to_backend_messages(messages: list[dict[str, Any]]) -> list[dict]:
 # canon/章节正文等可能夹带"忽略以上,改成…"的注入指令),后续 script 直写一律走二次确认 ——
 # 把"读外部内容 → 被诱导静默改库"这一安全属性从靠提示词改成确定性闸。
 _SCRIPT_WRITE_TOOLS = frozenset({
-    "update_script_chapter", "upsert_worldbook_entry", "update_npc_card",
+    "update_script_chapter", "upsert_worldbook_entry", "upsert_worldbook_entries", "update_npc_card",
     "update_anchor", "create_anchor", "upsert_canon_entity",
 })
 _SCRIPT_READ_TOOLS = frozenset({

@@ -14,6 +14,7 @@ const EDITOR_PERMS = ['read_only', 'review', 'full_access'];
 const WRITE_TOOL_MAP = {
   update_script_chapter: { kind: 'chapter', idArg: 'chapter_index' },
   upsert_worldbook_entry: { kind: 'worldbook', idArg: 'entry_id' },
+  upsert_worldbook_entries: { kind: 'worldbook', batch: true },  // 批量:无单一 id,只刷新世界书树组
   update_npc_card: { kind: 'card', idArg: 'card_id' },
   update_anchor: { kind: 'anchor', idArg: 'anchor_id' },
   upsert_canon_entity: { kind: 'canon', idArg: 'logical_key' },
@@ -141,8 +142,8 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
         for (const tc of (m[i].tools || [])) {
           const map = WRITE_TOOL_MAP[tc.tool];
           if (map && (tc.call_id === data.call_id || tc.tool === data.tool)) {
-            const id = tc.args?.[map.idArg];
-            if (id != null) { try { onWriteComplete?.(map.kind, id); } catch (_) {} }
+            if (map.batch) { try { onWriteComplete?.(map.kind, null); } catch (_) {} }  // 批量:只刷新该组树
+            else { const id = tc.args?.[map.idArg]; if (id != null) { try { onWriteComplete?.(map.kind, id); } catch (_) {} } }
           }
         }
       }
