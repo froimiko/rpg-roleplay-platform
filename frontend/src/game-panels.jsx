@@ -1621,26 +1621,18 @@ function DemandLedgerPanel({ curator_plan, audit_log }) {
         </div>
       )}
 
-      {/* 风险标记（黄色 chip） */}
+      {/* 风险标记 — 现在是整句提示(非短标签),用可换行的整行卡片堆叠,不能用定高 chip(会重叠) */}
       {riskFlags.length > 0 && (
         <div style={{display: "grid", gap: 6}}>
           <span className="gp-label">{t('game.context.risk_flags')}</span>
-          <div className="gp-chips">
+          <div className="gp-warns">
             {riskFlags.map((v, i) => {
               const text = typeof v === "string" ? v : (v && (v.text || v.label)) || JSON.stringify(v);
               return (
-                <span
-                  key={"rf:" + i}
-                  className="gp-chip warn"
-                  style={{
-                    color: "var(--warn)",
-                    borderColor: "rgba(212, 179, 102, 0.32)",
-                    background: "var(--warn-soft)",
-                  }}
-                >
-                  <Icon name="warn" size={11} style={{marginRight: 4}} />
-                  {text}
-                </span>
+                <div key={"rf:" + i} className="gp-warn">
+                  <Icon name="warn" size={12} />
+                  <span className="gp-warn-text">{text}</span>
+                </div>
               );
             })}
           </div>

@@ -1389,6 +1389,19 @@
   border-radius: var(--r-2);
   background: var(--bg);
 }
+/* 风险标记:整句提示用可换行的整行卡片堆叠(定高 chip 装不下长句会重叠) */
+.gp-warns { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.gp-warn {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 6px 9px;
+  font-size: 12px; line-height: 1.5;
+  color: var(--warn);
+  border: 1px solid rgba(212, 179, 102, 0.32);
+  border-radius: var(--r-2);
+  background: var(--warn-soft);
+}
+.gp-warn svg { flex: 0 0 auto; margin-top: 2px; }
+.gp-warn-text { min-width: 0; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 
 /* character cards */
 .gp-cards { display: grid; gap: 8px; min-width: 0; }
