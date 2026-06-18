@@ -1841,6 +1841,133 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         #   extract.rebuild.rebuild_timeline_from_db / collapse_phase_duplicate_anchors 的 source 闸)。
         "alter table script_timeline_anchors add column if not exists source text not null default 'novel'",
     ]),
+    (74, "temporal_kb_unification_p0", [
+        # 统一时间感知知识库地基(设计 docs/design/O_temporal_kb_unification.md §1.2)。
+        # 全加性、零行为变化:新表/视图默认空、新列默认值不影响现有读路径。新功能由 env flag 分阶段开。
+
+        # --- 现有实体表补「揭示锚点」列(优先于整数 first_revealed_chapter)+ 真0章/未知区分 ---
+        "alter table kb_canon_entities add column if not exists reveal_anchor_key text",
+        "alter table character_cards   add column if not exists reveal_anchor_key text",
+        "alter table worldbook_entries add column if not exists reveal_anchor_key text",
+        "alter table kb_canon_entities add column if not exists reveal_known boolean not null default false",
+        "alter table character_cards   add column if not exists reveal_known boolean not null default false",
+        "alter table worldbook_entries add column if not exists reveal_known boolean not null default false",
+        # --- 向量卫生:脏化标记 + 空间指纹 ---
+        "alter table kb_canon_entities add column if not exists embedding_dirty boolean not null default false",
+        "alter table character_cards   add column if not exists embedding_dirty boolean not null default false",
+        "alter table worldbook_entries add column if not exists embedding_dirty boolean not null default false",
+        "alter table document_chunks   add column if not exists embedding_dirty boolean not null default false",
+        "alter table scripts add column if not exists embed_space_fingerprint text",
+
+        # --- (新表) reveal_anchors:剧本级揭示锚点 DAG(替代标量天花板的图骨架) ---
+        """create table if not exists reveal_anchors (
+          id bigserial primary key,
+          script_id integer not null references scripts(id) on delete cascade,
+          anchor_key text not null,
+          chapter_min integer,
+          chapter_max integer,
+          story_phase text,
+          story_time_label text,
+          requires jsonb not null default '[]'::jsonb,
+          worldline_key text not null default 'main',
+          kind text not null default 'beat',
+          summary text,
+          must_preserve jsonb not null default '{}'::jsonb,
+          may_vary jsonb not null default '{}'::jsonb,
+          importance integer not null default 50,
+          is_fatal boolean not null default false,
+          confidence numeric(4,3),
+          source text not null default 'novel',
+          metadata jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now(),
+          unique (script_id, anchor_key)
+        )""",
+        "create index if not exists idx_reveal_anchors_script on reveal_anchors(script_id)",
+        "create index if not exists idx_reveal_anchors_chapter on reveal_anchors(script_id, chapter_min, chapter_max)",
+        "create index if not exists idx_reveal_anchors_worldline on reveal_anchors(script_id, worldline_key)",
+        "create index if not exists idx_reveal_anchors_requires on reveal_anchors using gin (requires)",
+
+        # --- (新表) save_reveal_frontier:存档级「已到达前沿」(替代 progress_chapter 做天花板) ---
+        """create table if not exists save_reveal_frontier (
+          id bigserial primary key,
+          save_id integer not null references game_saves(id) on delete cascade,
+          script_id integer not null,
+          anchor_key text not null,
+          reached_at_turn integer,
+          reached_via text not null default 'gm',
+          drift_score numeric(3,2) default 0,
+          worldline_key text not null default 'main',
+          metadata jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now(),
+          unique (save_id, anchor_key)
+        )""",
+        "create index if not exists idx_frontier_save on save_reveal_frontier(save_id)",
+        "create index if not exists idx_frontier_worldline on save_reveal_frontier(save_id, worldline_key)",
+
+        # --- (新表) save_visible_anchors:前沿可见集闭包物化(快速门控) ---
+        """create table if not exists save_visible_anchors (
+          save_id integer not null references game_saves(id) on delete cascade,
+          anchor_key text not null,
+          primary key (save_id, anchor_key)
+        )""",
+        "create index if not exists idx_save_visible_save on save_visible_anchors(save_id)",
+
+        # --- (新表) kb_edges:统一关系边(把闲置的 relationships jsonb 行级化) ---
+        """create table if not exists kb_edges (
+          id bigserial primary key,
+          script_id integer not null references scripts(id) on delete cascade,
+          save_id integer,
+          born_commit bigint,
+          retired_at_commit bigint,
+          src_kind text not null,
+          src_key text not null,
+          dst_kind text not null,
+          dst_key text not null,
+          kind text not null,
+          label text,
+          note text,
+          weight numeric(6,3) default 1.0,
+          first_revealed_chapter integer default 0,
+          reveal_anchor_key text,
+          origin text not null default 'extracted',
+          metadata jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now()
+        )""",
+        "create index if not exists idx_kb_edges_src on kb_edges(script_id, src_kind, src_key)",
+        "create index if not exists idx_kb_edges_dst on kb_edges(script_id, dst_kind, dst_key)",
+        "create index if not exists idx_kb_edges_kind on kb_edges(script_id, kind)",
+        "create index if not exists idx_kb_edges_save on kb_edges(save_id) where save_id is not null",
+        # 去重:save_id 可空 → 表级 unique 对 NULL 不去重(NULL 互异);用分区唯一索引各管一边。
+        "create unique index if not exists uq_kb_edges_canonical on kb_edges(script_id, src_kind, src_key, dst_kind, dst_key, kind) where save_id is null",
+        "create unique index if not exists uq_kb_edges_save on kb_edges(save_id, src_kind, src_key, dst_kind, dst_key, kind) where save_id is not null",
+
+        # --- (视图) kb_nodes:统一节点入口(UNION ALL 投影五源表之三;chunk/fact 按章窗口召回不入视图) ---
+        # 三 SELECT 各列类型已逐一核对一致(embedding 均 vector(768)、aliases 均 jsonb、importance/priority 均 int)。
+        """create or replace view kb_nodes as
+          select 'canon_entity'::text as node_kind, cce.script_id, cce.logical_key as node_key,
+                 cce.name, cce.type as subtype, cce.summary as body,
+                 cce.first_revealed_chapter, cce.reveal_known,
+                 coalesce(cce.reveal_anchor_key, cce.metadata->>'reveal_anchor_key') as reveal_anchor_key,
+                 cce.embedding as embedding_vec,
+                 cce.public_knowledge, cce.importance, cce.aliases, cce.metadata
+            from kb_canon_entities cce where coalesce(cce.importance, 0) >= 0
+          union all
+          select 'character'::text, cc.script_id, cc.name, cc.name, cc.card_type,
+                 coalesce(cc.identity, cc.personality),
+                 cc.first_revealed_chapter, cc.reveal_known,
+                 coalesce(cc.reveal_anchor_key, cc.metadata->>'reveal_anchor_key'),
+                 cc.embedding_vec,
+                 false, cc.importance, cc.aliases, cc.metadata
+            from character_cards cc where cc.card_type='npc' and cc.enabled
+          union all
+          select 'worldbook'::text, wb.script_id, wb.title, wb.title, wb.insertion_position,
+                 wb.content, wb.first_revealed_chapter, wb.reveal_known,
+                 coalesce(wb.reveal_anchor_key, wb.metadata->>'reveal_anchor_key'),
+                 wb.embedding_vec,
+                 false, wb.priority, '[]'::jsonb, wb.metadata
+            from worldbook_entries wb where wb.enabled""",
+    ]),
 ]
 
 
