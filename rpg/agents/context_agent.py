@@ -14,6 +14,7 @@ context_agent 本身不再硬编码"小说时间线锚点 / ChapterFact 检索 /
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from collections.abc import Callable, Generator
@@ -30,6 +31,21 @@ from context_providers import (
 from retrieval import retrieve_context
 from timeline_index import timeline_filter_for_label
 from timeline_state import detect_time_directives
+
+log = logging.getLogger(__name__)
+
+# curator harness 调用的瞬时错误特征(命中则重试一次再降级):超时/连接/限流/网关。
+_TRANSIENT_MARKERS = (
+    "timeout", "timed out", "temporarily", "connection", "reset", "econn",
+    "429", "500", "502", "503", "504", "rate limit", "overloaded", "unavailable",
+)
+
+
+def _is_transient_err(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return True
+    m = str(exc).lower()
+    return any(k in m for k in _TRANSIENT_MARKERS)
 
 AGENT_PROMPT = """\
 你是 Demand Resolver 子代理。你的唯一任务是把玩家的自然语言输入翻译成
@@ -541,18 +557,35 @@ def _call_curator_via_harness(
     )
 
     def _do_call() -> str:
-        text, _usage = call_agent_json(
-            api_id=api_id,
-            model=model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            user_id=user_id,
-            tool_schema=_CURATOR_TOOL_SCHEMA,  # 三通道都启用强 schema
-            max_tokens=1200,
-            timeout_sec=30,
-            agent_kind="curator",
-        )
-        return text or ""
+        # 瞬时错误(超时/网络/限流/网关)重试一次再放弃,减少「换模型也容易触发降级」(群反馈)。
+        # 关键:把真实异常 log 出来——旧实现 except 直接吞成 None,导致「不知道是网络还是什么」。
+        attempts = 2
+        for attempt in range(attempts):
+            try:
+                text, _usage = call_agent_json(
+                    api_id=api_id,
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    user_id=user_id,
+                    tool_schema=_CURATOR_TOOL_SCHEMA,  # 三通道都启用强 schema
+                    max_tokens=1200,
+                    timeout_sec=45,   # 30→45:慢 BYOK provider 不至于一上来就超时降级
+                    agent_kind="curator",
+                )
+                return text or ""
+            except Exception as exc:
+                transient = _is_transient_err(exc)
+                log.warning(
+                    "[context_agent] curator harness 失败 (try %d/%d, api=%s model=%s, transient=%s): %s: %s",
+                    attempt + 1, attempts, api_id, model, transient,
+                    type(exc).__name__, str(exc)[:240],
+                )
+                if transient and attempt + 1 < attempts:
+                    time.sleep(0.6)
+                    continue
+                raise
+        return ""
 
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="curator-harness")
     future = executor.submit(_do_call)
