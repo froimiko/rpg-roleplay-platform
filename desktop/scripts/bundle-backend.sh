@@ -12,9 +12,9 @@
 set -euo pipefail
 
 # ── [ADJUST] 版本与来源 ──
-PY_VER="3.12.8"
-PBS_TAG="20241219"                 # astral/python-build-standalone release tag
-PG_VER="16.6.0"                    # theseus-rs/postgresql-binaries
+PY_VER="3.12.13"
+PBS_TAG="20260610"                 # astral/python-build-standalone release tag(核实:含 cpython-3.12.13)
+PG_VER="17.10.0"                   # theseus-rs/postgresql-binaries(核实:最新 17.x)
 PGVECTOR_VER="v0.8.0"
 PBS_BASE="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}"
 PG_BASE="https://github.com/theseus-rs/postgresql-binaries/releases/download/${PG_VER}"

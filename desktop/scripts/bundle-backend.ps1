@@ -7,9 +7,9 @@
 $ErrorActionPreference = 'Stop'
 
 # ── [ADJUST] 版本与来源 ──
-$PyVer       = '3.12.8'
-$PbsTag      = '20241219'
-$PgVer       = '16.6.0'
+$PyVer       = '3.12.13'
+$PbsTag      = '20260610'
+$PgVer       = '17.10.0'
 $PgvectorVer = 'v0.8.0'
 $BuildPgvector = $false
 $PbsBase = "https://github.com/astral-sh/python-build-standalone/releases/download/$PbsTag"
