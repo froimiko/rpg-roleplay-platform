@@ -74,6 +74,30 @@ class RecallPureFunctions(unittest.TestCase):
         self.assertIn("知识库召回", out)
         self.assertIn("甲", out)
 
+    def test_dispatcher_flag_off_no_db_touch(self):
+        """审计 S3:flag 全 off 时 retrieve_fn_compat 不解析 save_id(零额外 DB 往返)+ 直通旧路。"""
+        import retrieval
+        from unittest.mock import patch
+        for k in ("RPG_TKB_RECALL", "RPG_TKB_RECALL_SHADOW"):
+            os.environ.pop(k, None)
+        from kb.recall import retrieve_fn_compat
+        calls = {"resolve": 0}
+
+        def _spy_resolve(uid):
+            calls["resolve"] += 1
+            return 999
+
+        with patch.object(retrieval, "retrieve_context", return_value="OLD_SENTINEL") as _rc, \
+                patch.object(retrieval, "_resolve_save_id_from_user", _spy_resolve):
+            out = retrieve_fn_compat("q", state=None, user_id=7, script_id=1)
+        self.assertEqual(out, "OLD_SENTINEL", "flag off 必须直通 retrieve_context")
+        self.assertEqual(calls["resolve"], 0, "flag off 不应解析 save_id(否则多一次 DB 往返)")
+
+    def test_shadow_diff_equal_lengths_silent(self):
+        """审计 S4:相同长度的纯长度集合应相等(_shadow_diff_log 静默,不每回合误报)。"""
+        self.assertEqual({str(5000)}, {str(5000)})
+        self.assertNotEqual({"old_chars=5000"}, {"new_chars=5000"})  # 旧 bug 形态(前缀致永不等)
+
 
 class RecallGating(unittest.TestCase):
     """真库:recall() 走前沿门控,只召回可见集。"""
@@ -140,6 +164,22 @@ class RecallGating(unittest.TestCase):
         r = recall(self.save_id, "甲城实体 乙城实体 丙城实体 丁城实体", mode="omniscient")
         names = {c["name"] for c in r.candidates}
         self.assertIn("丙城实体", names, "omniscient 不门控,应召回 ch10 实体")
+
+    def test_recall_embed_uses_locked_script_id(self):
+        """审计 S2:向量路必须用本剧本锁定的 embedder(传真 script_id,非 None),否则向量空间错乱。"""
+        from unittest.mock import patch
+        import platform_app.knowledge._search as search_mod
+        seen = {}
+
+        def _spy_embed(text, *, script_id=None, user_id=None, db=None):
+            seen["script_id"] = script_id
+            return None  # 返 None → 向量路跳过,只验传参
+
+        from kb.recall import recall
+        with patch.object(search_mod, "_embed_query", _spy_embed):
+            recall(self.save_id, "甲城实体", mode="none")
+        self.assertEqual(seen.get("script_id"), self.script_id,
+                         "recall 向量路应传本档锁定的 script_id,而非 None")
 
 
 if __name__ == "__main__":

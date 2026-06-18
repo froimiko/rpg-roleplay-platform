@@ -120,6 +120,10 @@ def recall(save_id: int, query: str, *, mode: str = "none", token_budget: int = 
         ceil_chap = max(1, ceil_chap)
         clause, params = reveal_clause_v2(int(save_id), mode, prefix="kn.")  # 三源统一门控
         cols = ", ".join("kn." + c for c in _KN_COLS)
+        # 解析 script_id 一次:embed_query 必须用建库锁定的 embedder(否则向量空间错乱,
+        # 静默错召回);_search_chunks 也复用。NULL(酒馆档)→ None,下游各自安全降级。
+        _srow = _db.execute("select script_id from game_saves where id=%s", (int(save_id),)).fetchone()
+        _script_id = (_srow or {}).get("script_id") if _srow else None
 
         from platform_app.knowledge._utils import _query_tokens
         tokens = _query_tokens(query) or []
@@ -139,7 +143,7 @@ def recall(save_id: int, query: str, *, mode: str = "none", token_budget: int = 
         vec = None
         try:
             from platform_app.knowledge._search import _embed_query
-            vec = _embed_query(query, script_id=None, db=_db) if query else None
+            vec = _embed_query(query, script_id=_script_id, db=_db) if query else None
         except Exception as exc:
             log.debug("[recall] embed 跳过: %s", exc)
         if vec:
@@ -192,15 +196,12 @@ def recall(save_id: int, query: str, *, mode: str = "none", token_budget: int = 
 
         # 原文片段(章窗口,复用 _search_chunks)
         chunk_rows = []
-        try:
-            from platform_app.knowledge._search import _search_chunks
-            chunk_rows = _search_chunks(
-                _db, int((_db.execute(
-                    "select script_id from game_saves where id=%s", (int(save_id),)
-                ).fetchone() or {}).get("script_id") or 0),
-                tokens, None, ceil_chap, 4) or []
-        except Exception as exc:
-            log.debug("[recall] chunks 跳过: %s", exc)
+        if _script_id:
+            try:
+                from platform_app.knowledge._search import _search_chunks
+                chunk_rows = _search_chunks(_db, int(_script_id), tokens, None, ceil_chap, 4) or []
+            except Exception as exc:
+                log.debug("[recall] chunks 跳过: %s", exc)
 
         return RecallResult(candidates=picked, chunks=chunk_rows, ceil_chap=ceil_chap,
                             tokens_used=used)
@@ -257,18 +258,20 @@ def retrieve_fn_compat(query, *, state=None, user_id=None, script_id=None) -> st
     def _old() -> str:
         return retrieve_context(query, state=state, user_id=user_id, script_id=script_id)
 
+    # S3:先用【无 DB】的全局闸早退 —— flag 全 off 时绝不解析 save_id(那会多打一次 runtime_checkouts
+    # 连接),保住「flag-off 零变化」连开销维度也成立。仅在激活后才解析 save_id 走带白名单的 _recall_on。
+    on_global = os.environ.get("RPG_TKB_RECALL", "off").strip().lower() in _TRUTHY
+    shadow = _recall_shadow()
+    if not on_global and not shadow:
+        return _old()
     try:
         from retrieval import _resolve_save_id_from_user
         save_id = _resolve_save_id_from_user(user_id) if user_id else None
     except Exception:
         save_id = None
-
     on = _recall_on(save_id)
-    shadow = _recall_shadow()
-    if not on and not shadow:
-        return _old()
-    if save_id is None:
-        return _old()  # 无存档上下文,recall 无意义
+    if (not on and not shadow) or save_id is None:
+        return _old()  # 未命中白名单 / 无存档上下文 → 旧路
 
     old_text = _old()  # 始终先跑(承载进度 materialize 副作用 + 提供锚点段)
     try:
@@ -286,8 +289,15 @@ def retrieve_fn_compat(query, *, state=None, user_id=None, script_id=None) -> st
             from kb.reveal import _shadow_diff_log
             from context_providers.novel import _split_anchor_pending as _split
             _, old_body = _split(old_text)
-            _shadow_diff_log("recall lengths",
-                             {f"old_chars={len(old_body)}"}, {f"new_chars={len(_render_kb_body(result))}"})
+            # S4:传【纯长度字符串】集合(无前缀),否则 old/new 永不相等、每回合误报 warning。
+            _shadow_diff_log("recall body len",
+                             {str(len(old_body))}, {str(len(_render_kb_body(result)))})
         except Exception:
             pass
+
+    # S1:flag on 但 recall 三路全 miss(如 curator 空 query)→ 召回为空会丢光旧 RAG body,
+    # 降级旧路(old_text 已含进度副作用,保留)。绝不让 GM 拿到空知识库。
+    if on and not result.candidates and not result.chunks:
+        log.debug("[recall] 新路召回为空,降级旧路(save_id=%s)", save_id)
+        return old_text
     return new_text if on else old_text
