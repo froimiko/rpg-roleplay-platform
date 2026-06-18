@@ -39,6 +39,24 @@ class RecallPureFunctions(unittest.TestCase):
             os.environ.pop("RPG_TKB_RECALL", None)
             os.environ.pop("RPG_TKB_RECALL_SAVES", None)
 
+    def test_min_save_id_gate_new_games_only(self):
+        """「只对新游戏开」闸:RPG_TKB_*_MIN_SAVE_ID=N → 仅 save_id>=N 走新路,旧存档留旧逻辑。"""
+        from kb.recall import _recall_on
+        from kb.reveal import _frontier_on
+        os.environ["RPG_TKB_RECALL"] = "on"; os.environ["RPG_TKB_FRONTIER"] = "on"
+        os.environ["RPG_TKB_RECALL_MIN_SAVE_ID"] = "165"
+        os.environ["RPG_TKB_FRONTIER_MIN_SAVE_ID"] = "165"
+        os.environ.pop("RPG_TKB_RECALL_SAVES", None); os.environ.pop("RPG_TKB_FRONTIER_SAVES", None)
+        try:
+            self.assertFalse(_recall_on(100), "旧存档(id<165)应留旧逻辑")
+            self.assertFalse(_frontier_on(100))
+            self.assertTrue(_recall_on(200), "新存档(id>=165)走新路")
+            self.assertTrue(_frontier_on(165))
+        finally:
+            for k in ("RPG_TKB_RECALL", "RPG_TKB_FRONTIER", "RPG_TKB_RECALL_MIN_SAVE_ID",
+                      "RPG_TKB_FRONTIER_MIN_SAVE_ID"):
+                os.environ.pop(k, None)
+
     def test_score_no_divzero_and_clamp(self):
         from kb.recall import score
         # max_importance=0 不崩;无 vscore/kw 仍返回有限值(recency 中性 0.5)

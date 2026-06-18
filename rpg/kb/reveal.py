@@ -37,6 +37,15 @@ def _frontier_on(save_id: int | None = None) -> bool:
     if saves and save_id is not None:
         allow = {s.strip() for s in saves.split(",") if s.strip()}
         return str(int(save_id)) in allow
+    # 「只对新游戏开」闸:RPG_TKB_FRONTIER_MIN_SAVE_ID=N → 仅 save_id>=N(上线后新建的存档)走新路,
+    # 旧存档(id<N)留旧逻辑,避免在锚点稀疏/进度模糊的历史存档上回退或错藏。默认空=不限。
+    min_id = os.environ.get("RPG_TKB_FRONTIER_MIN_SAVE_ID", "").strip()
+    if min_id and save_id is not None:
+        try:
+            if int(save_id) < int(min_id):
+                return False
+        except (TypeError, ValueError):
+            pass
     return True
 
 

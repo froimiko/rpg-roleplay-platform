@@ -40,6 +40,14 @@ def _recall_on(save_id: int | None = None) -> bool:
     saves = os.environ.get("RPG_TKB_RECALL_SAVES", "").strip()
     if saves and save_id is not None:
         return str(int(save_id)) in {s.strip() for s in saves.split(",") if s.strip()}
+    # 「只对新游戏开」闸(与 _frontier_on 同语义):RPG_TKB_RECALL_MIN_SAVE_ID=N → 仅 save_id>=N 走统一召回。
+    min_id = os.environ.get("RPG_TKB_RECALL_MIN_SAVE_ID", "").strip()
+    if min_id and save_id is not None:
+        try:
+            if int(save_id) < int(min_id):
+                return False
+        except (TypeError, ValueError):
+            pass
     return True
 
 
