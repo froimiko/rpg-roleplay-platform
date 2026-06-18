@@ -64,7 +64,18 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 
 ## 快速开始
 
-### 最快路径 — 一条命令
+### 最简单 — 桌面应用(免配置,一键)
+
+不想碰命令行?下载桌面应用 —— 它**自带 PostgreSQL + Python**,一键在本机起整套服务(完全离线、数据不出本机、NSFW 自主)。也内置在线模式,直接连云端账号。
+
+**[→ 下载 macOS / Windows(Releases)](https://github.com/felixchaos/rpg-roleplay-platform/releases)**
+
+- macOS(Apple 芯片)`.dmg` · Windows `.exe` —— 已签名/公证
+- 内置控制台:起停服务、日志、局域网共享(手机扫码访问)、备份恢复、应用内更新
+- 自动创建本地账户;若要在局域网开放,可设用户名/密码
+- 更新渠道:优先 GitHub Releases,GitHub 慢时自动回退镜像
+
+### 从源码自部署 — 一条命令
 
 Postgres 已装好并运行后：
 

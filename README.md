@@ -64,7 +64,18 @@ Worldbook overlays, character-book ingestion, a deterministic opening (`first_me
 
 ## Quick start
 
-### Fastest path — one command
+### Easiest — desktop app (no setup, one click)
+
+Don't want to touch a terminal? Download the desktop app — it bundles its own PostgreSQL + Python and runs the whole stack locally with one click (fully offline, your data never leaves the machine; NSFW is on you). It also has an online mode that just connects to the cloud account.
+
+**[→ Download for macOS / Windows (Releases)](https://github.com/felixchaos/rpg-roleplay-platform/releases)**
+
+- macOS (Apple Silicon) `.dmg` · Windows `.exe` — signed/notarized
+- Built-in console: start/stop the service, logs, LAN sharing (scan a QR from your phone), backup & restore, in-app updates
+- Auto-creates a local account; set a username/password if you expose it on your LAN
+- Update channel: pulls from GitHub Releases, falls back to a mirror if GitHub is slow
+
+### Self-host from source — one command
 
 With Postgres installed and running:
 
