@@ -265,3 +265,36 @@
 9. 组件库:状态 chip、分段控件、按钮(主/次/幽灵/危险)、日志行、进度条、折叠面板、表单控件
 
 > 视觉语言关键词:**运维工具的克制 + 现代感**;深色;无 emoji;信息一眼可读;中文。
+
+---
+
+## 17. 更新机制 + 发版规范(开发规范)
+
+### 17.1 自动更新链路
+- **更新源** = GitHub Releases(`electron-updater`,渠道由 `updateChannel` 控制 stable/beta)。
+- **检查更新**:控制台「更新」页 → `upd:check`。**必须有超时**(当前 15s,见 `main.js`):
+  feed 不可达时不能让「检查中…」永久转圈,超时返回可读文案。
+- **下载 + 安装**:发现新版 → 「下载更新」(`download-progress` 进度条)→ 「重启并安装」(`quitAndInstall`)。
+- **数据库迁移随更新自动执行**:桌面端每次启动 supervisor 都跑 `python -m platform_app.migrate full`
+  (幂等,见 `supervisor.js:_migrate`)。所以**新版只要带了新的 migration,用户装包重启后会自动迁移**,
+  无需用户做任何数据库操作。迁移失败 → 状态置 `error` + 日志,后端不启动(防半迁移脏库)。
+
+### 17.2 更新日志(release notes)= Markdown,强制
+- **发布每个 GitHub Release 时,release body 必须用 Markdown 书写**(标题 `##`、要点 `-`、行内 `code`/**粗体**)。
+- `electron-updater` 把 release body 作为 `updateInfo.releaseNotes` 回传;主进程经 `upd:status` 事件
+  携带 `notes` 字段给渲染层(`main.js` 的 `_notes()` 兼容 string / `[{version,note}]` 数组)。
+- 控制台「更新」页在**发现/下载到新版时,底部渲染该 md 更新日志**(`panel.js` 的极简 `mdToHtml`,
+  支持标题/列表/粗体/行内代码;无新版或检查中时隐藏)。
+- **规范**:更新日志按「新增 / 修复 / 改进 / 已知问题」分节,面向终端用户(非 commit log),中文,无 emoji。
+
+### 17.3 自部署反馈闭环
+- 自部署(`RPG_DEPLOYMENT_MODE=desktop`)下,app 内反馈抽屉的 `POST /api/feedback` 由后端
+  **转发到中央服务器** `${RPG_CENTRAL_URL}/api/feedback/anon`(默认正式站),见 `feedback.py:_forward_feedback_to_central`。
+- 反馈抽屉在自部署模式显示**选填「联系邮箱」**;留邮箱 → 服务器处理后发**站点标准格式邮件回执**;
+  邮箱与某登录账户一致时**自动归并**到该账户(`_match_user_id_by_email`)。
+- 设备 `client_id`(`config.js` 首启生成,经 `RPG_CLIENT_ID` 注入)随反馈上报,便于跨反馈归并同一安装。
+
+### 17.4 备份(账户数据迁移)
+- 「备份恢复」页:导出/导入账户数据 + 本地备份目录 + 自动备份。
+- 默认:**自动备份关闭**;启用后**周期默认一周(168h)**;**保留份数默认 3**(`config.js` DEFAULTS)。
+- 自动备份导出后按 `backupKeep` 修剪旧 zip(`main.js:_pruneBackups`)。

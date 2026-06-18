@@ -145,16 +145,17 @@
 
           <div class="section-divider">
             <div class="block-head">自动备份</div>
-            <div class="field" style="margin-bottom:12px;">
+            <div class="row" style="gap:20px;">
+              <label class="field check" style="margin:0;"><input type="checkbox" id="autoBackup" /><span>启用</span></label>
+              <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin:0;"><span>每</span><input type="number" id="autoBackupHours" class="mono" min="1" max="8760" style="width:70px;" /><span>小时</span></label>
+              <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin:0;"><span>保留</span><input type="number" id="backupKeep" class="mono" min="1" max="99" style="width:56px;" /><span>份</span></label>
+            </div>
+            <div class="field" style="margin-top:14px;">
               <span>备份目录</span>
               <div class="row">
                 <input type="text" id="backupDir" class="mono" readonly placeholder="未设置" style="flex:1;" />
                 <button class="btn" id="pickBackupDirBtn">选择…</button>
               </div>
-            </div>
-            <div class="row" style="gap:18px;">
-              <label class="field check" style="margin:0;"><input type="checkbox" id="autoBackup" /><span>启用</span></label>
-              <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin:0;"><span>每</span><input type="number" id="autoBackupHours" class="mono" min="1" max="720" style="width:64px;" /><span>小时</span></label>
             </div>
             <div class="row" style="margin-top:14px;">
               <button class="btn primary" id="saveBackupBtn">保存</button>
@@ -187,7 +188,7 @@
               <input type="number" id="cfgBackendPort" class="mono" min="0" max="65535" /></label>
             <label class="field"><span>更新渠道</span>
               <select id="cfgChannel"><option value="stable">stable</option><option value="beta">beta</option></select></label>
-            <label class="field check"><input type="checkbox" id="cfgAutoStart" /><span>「打开应用」时自动启动本地服务</span></label>
+            <label class="field check"><input type="checkbox" id="cfgAutoStart" /><span>本地模式下「打开」时自动启动服务</span></label>
           </div>
           <button class="btn ghost xs" id="advToggle" style="margin-top:12px;">高级 ▾</button>
           <label class="field" id="advBox" hidden style="margin-top:10px;"><span>额外环境变量 <em class="muted-2">(每行 KEY=VALUE)</em></span>
@@ -217,6 +218,10 @@
             <button class="btn primary" id="installUpdBtn" hidden>重启并安装</button>
           </div>
           <div class="progress" id="updProgress" hidden style="margin-top:14px;"><div class="bar" id="updBar"></div></div>
+          <div class="notes" id="updNotes" hidden>
+            <div class="notes-h">更新日志</div>
+            <div class="notes-body" id="updNotesBody"></div>
+          </div>
         </section>
 
         <!-- 反馈 -->

@@ -29,8 +29,9 @@ const DEFAULTS = {
   rememberMode: true,      // 记住运行模式选择(否则每次启动让用户选)
   lanEnabled: false,       // 局域网访问:后端绑 0.0.0.0(同网可访问)
   backupDir: '',           // 本地备份目录(自动备份导出 zip 存放处)
-  autoBackup: false,       // 自动备份开关
-  autoBackupHours: 24,     // 自动备份间隔(小时)
+  autoBackup: false,       // 自动备份默认关闭
+  autoBackupHours: 168,    // 自动备份间隔默认一周(168 小时)
+  backupKeep: 3,           // 保留最近份数,默认 3
 };
 
 let _cache = null;

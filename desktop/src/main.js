@@ -98,11 +98,12 @@ function initUpdater() {
   updater.channel = cfg.load().updateChannel || 'stable';
   const send = (channel, payload) => panelWin && !panelWin.isDestroyed() && panelWin.webContents.send(channel, payload);
   updater.on('checking-for-update', () => send('upd:status', { state: 'checking' }));
-  updater.on('update-available', (i) => send('upd:status', { state: 'available', version: i.version }));
+  const _notes = (i) => (Array.isArray(i.releaseNotes) ? i.releaseNotes.map((n) => n && n.note || '').join('\n\n') : (i.releaseNotes || ''));
+  updater.on('update-available', (i) => send('upd:status', { state: 'available', version: i.version, notes: _notes(i) }));
   updater.on('update-not-available', () => send('upd:status', { state: 'none' }));
   updater.on('error', (e) => send('upd:status', { state: 'error', message: String(e && e.message || e) }));
   updater.on('download-progress', (p) => send('upd:status', { state: 'downloading', percent: Math.round(p.percent) }));
-  updater.on('update-downloaded', (i) => send('upd:status', { state: 'downloaded', version: i.version }));
+  updater.on('update-downloaded', (i) => send('upd:status', { state: 'downloaded', version: i.version, notes: _notes(i) }));
 }
 
 // ── IPC ──
@@ -138,8 +139,14 @@ function wireIpc() {
 
   ipcMain.handle('upd:check', async () => {
     if (!updater) return { ok: false, reason: '更新仅在打包版可用' };
-    try { const r = await updater.checkForUpdates(); return { ok: true, version: r && r.updateInfo && r.updateInfo.version }; }
-    catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
+    try {
+      // 加 15s 超时,避免 feed 不可达时「检查中…」永久卡住。
+      const r = await Promise.race([
+        updater.checkForUpdates(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('检查更新超时,请稍后重试')), 15000)),
+      ]);
+      return { ok: true, version: r && r.updateInfo && r.updateInfo.version };
+    } catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
   });
   ipcMain.handle('upd:download', async () => { if (updater) await updater.downloadUpdate(); return { ok: !!updater }; });
   ipcMain.handle('upd:install', () => { if (updater) updater.quitAndInstall(); });
@@ -326,7 +333,7 @@ function _exportToDir(dir) {
       if (res.statusCode >= 400) { res.resume(); return resolve({ ok: false, status: res.statusCode }); }
       const ws = fs.createWriteStream(file);
       res.on('data', (d) => ws.write(d));
-      res.on('end', () => { ws.end(); _pruneBackups(dir); resolve({ ok: true, file }); });
+      res.on('end', () => { ws.end(); _pruneBackups(dir, cfg.load().backupKeep || 3); resolve({ ok: true, file }); });
       res.on('error', (e) => { ws.end(); resolve({ ok: false, error: String(e) }); });
     });
     req.on('error', (err) => resolve({ ok: false, error: String(err && err.message || err) }));

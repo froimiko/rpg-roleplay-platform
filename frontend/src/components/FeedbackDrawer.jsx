@@ -18,6 +18,7 @@ import CSButton       from '@cloudscape-design/components/button';
 import CSAlert        from '@cloudscape-design/components/alert';
 import CSSpaceBetween from '@cloudscape-design/components/space-between';
 import CSTextarea     from '@cloudscape-design/components/textarea';
+import CSInput        from '@cloudscape-design/components/input';
 import CSCheckbox     from '@cloudscape-design/components/checkbox';
 import CSFormField    from '@cloudscape-design/components/form-field';
 import CSContainer    from '@cloudscape-design/components/container';
@@ -55,6 +56,9 @@ export function FeedbackDrawer({ open, onClose }) {
   // 不写就只有 free_text → 一句话bug → 无法定位
   const [includeRuntime, setIncludeRuntime] = React.useState(true);
   const [runtimePreview, setRuntimePreview] = React.useState(null);
+  // 自部署(local/desktop)模式:反馈转发到中央服务器,显示「选填联系邮箱」用于收回执。
+  const [selfHost, setSelfHost] = React.useState(false);
+  const [contactEmail, setContactEmail] = React.useState('');
   // 反馈处理回执:上次开抽屉以来管理员处理过的反馈
   const [newlyReviewed, setNewlyReviewed] = React.useState([]);
   const [feedbackHistory, setFeedbackHistory] = React.useState([]);
@@ -94,10 +98,19 @@ export function FeedbackDrawer({ open, onClose }) {
     setDone(false);
     setError(null);
     setRecentTurns([]);  // 防跨存档残留上一次的对话节选
+    setContactEmail('');
     try {
       const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot();
       setRuntimePreview(snap ? snap.__runtime__ : null);
     } catch (_) { setRuntimePreview(null); }
+    // 探测部署模式:自部署时反馈走中央服务器,需要选填邮箱来收回执。
+    (async () => {
+      try {
+        const st = await window.api?.game?.state?.();
+        const dep = (st?.app?.deployment || '').toLowerCase();
+        setSelfHost(['local', 'desktop', 'self_hosted', 'self-hosted'].includes(dep));
+      } catch (_) { /* 默认非自部署 */ }
+    })();
     loadFeedbackHistory();
   }, [open, loadFeedbackHistory]);
 
@@ -169,7 +182,7 @@ export function FeedbackDrawer({ open, onClose }) {
             .filter((t) => selectedExcerpts.includes(t.idx))
             .map(({ session_id, range, plaintext }) => ({ session_id, range, plaintext }))
         : [];
-      await submitFeedback({ freeText, excerpts, consentText: CONSENT_TEXT, includeRuntime, includeRecentDialog: true });
+      await submitFeedback({ freeText, excerpts, consentText: CONSENT_TEXT, includeRuntime, includeRecentDialog: true, contactEmail: contactEmail.trim() });
       setDone(true);
       await loadFeedbackHistory();
     } catch (e) {
@@ -286,6 +299,23 @@ export function FeedbackDrawer({ open, onClose }) {
                 disabled={busy}
               />
             </CSFormField>
+
+            {/* ── 自部署:选填联系邮箱(用于收处理回执)── */}
+            {selfHost && (
+              <CSFormField
+                label="联系邮箱(选填)"
+                description="自部署反馈会发送到官方服务器处理。留下邮箱可收到处理回执;若与您的登录邮箱一致,将自动归并到该账户。"
+              >
+                <CSInput
+                  value={contactEmail}
+                  onChange={({ detail }) => setContactEmail(detail.value)}
+                  placeholder="you@example.com"
+                  type="email"
+                  inputMode="email"
+                  disabled={busy}
+                />
+              </CSFormField>
+            )}
 
             {/* ── 运行环境切片(默认 ON,bug 排查必备)── */}
             <CSCheckbox

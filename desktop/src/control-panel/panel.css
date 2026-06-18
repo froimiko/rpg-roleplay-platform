@@ -130,9 +130,20 @@ body { background: var(--bg-deep); overflow: hidden; }
 .splitbtn-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .splitbtn-qr { width: 36px; padding: 0; justify-content: center; border-left: 1px solid var(--line-strong); border-top-left-radius: 0; border-bottom-left-radius: 0; color: var(--muted); }
 .splitbtn-qr:hover { color: var(--accent); background: var(--panel-3); }
-.qrpop { position: absolute; bottom: calc(100% + 8px); right: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-3); padding: 12px; z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+/* 弹在按钮下方(原来弹上方会被面板顶部/工具栏裁切) */
+.qrpop { position: absolute; top: calc(100% + 8px); right: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-3); padding: 12px; z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 7px; }
 .qrpop img { width: 168px; height: 168px; border-radius: 8px; background: #f4efe6; display: block; }
 .qrcap { font-size: 11px; }
+
+/* 更新日志(md) */
+.notes { margin-top: 20px; border-top: 1px solid var(--line-soft); padding-top: 16px; }
+.notes-h { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .14em; margin-bottom: 10px; }
+.notes-body { font-size: 13px; line-height: 1.7; color: var(--text-quiet); }
+.notes-body h4 { margin: 12px 0 6px; font-size: 13.5px; color: var(--text); }
+.notes-body ul { margin: 6px 0; padding-left: 18px; }
+.notes-body li { margin: 3px 0; }
+.notes-body p { margin: 6px 0; }
+.notes-body code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-deep); padding: 1px 5px; border-radius: 4px; }
 
 /* 局域网命令框 */
 .cmdbox { margin: 0 0 10px; background: var(--bg-deep); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font: 12px/1.7 var(--font-mono); color: var(--text-quiet); white-space: pre-wrap; word-break: break-all; }

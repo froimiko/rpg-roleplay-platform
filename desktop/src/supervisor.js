@@ -174,6 +174,9 @@ class Supervisor extends EventEmitter {
       DATABASE_URL: this._databaseUrl(),
       RPG_DEPLOYMENT_MODE: 'desktop',
       RPG_MASTER_KEY: c.masterKey,
+      // 自部署反馈转发的中央服务器 + 本机设备 id(供后端把 app 内反馈转走 + 归并)
+      RPG_CENTRAL_URL: c.onlineUrl || 'https://rpg-roleplay.stellatrix.icu',
+      RPG_CLIENT_ID: c.clientId || '',
       RPG_SKIP_AUTO_MIGRATE: '1',      // 我们自己跑 migrate full,后端启动不再自动迁移
       PYTHONNOUSERSITE: '1',
       PYTHONUTF8: '1',

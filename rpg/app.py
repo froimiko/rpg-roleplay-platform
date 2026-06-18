@@ -1064,6 +1064,8 @@ def _payload(api_user: dict[str, Any] | None = None, *, include_catalog: bool = 
         "api_id": model["api_id"],
         "roles": list(ROLES.keys()),
         "preset": PRESET,
+        # 部署模式:local/desktop/self_hosted = 自部署 → 前端反馈抽屉转走中央服务器 + 显示选填邮箱。
+        "deployment": _deployment_mode(),
     }
     # 绝对路径仅 admin 可见
     if is_admin:

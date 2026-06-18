@@ -21,6 +21,27 @@ async function sha256hex(s) {
   return [...new Uint8Array(buf)].map((x) => x.toString(16).padStart(2, '0')).join('');
 }
 async function copy(text) { try { await sv.copyText(text); return true; } catch (_) { try { await navigator.clipboard.writeText(text); return true; } catch (e) { return false; } } }
+// 极简 Markdown → HTML(更新日志用;开发规范:发版 release notes 用 md)
+// 按行处理:标题(#)、无序列表(-/*)、段落;连续列表项归入同一 <ul>,
+// 标题与紧邻列表(单换行)也能正确渲染。
+function mdToHtml(md) {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+?)`/g, '<code>$1</code>').replace(/\[(.+?)\]\((.+?)\)/g, '$1');
+  const out = []; let inList = false; let para = [];
+  const flushPara = () => { if (para.length) { out.push('<p>' + inline(para.join('<br>')) + '</p>'); para = []; } };
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of esc(md).split('\n')) {
+    const l = raw.replace(/\s+$/, '');
+    if (!l.trim()) { flushPara(); closeList(); continue; }
+    const h = l.match(/^(#{1,6})\s+(.+)/);
+    if (h) { flushPara(); closeList(); out.push('<h4>' + inline(h[2]) + '</h4>'); continue; }
+    const li = l.match(/^\s*[-*]\s+(.+)/);
+    if (li) { flushPara(); if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + inline(li[1]) + '</li>'); continue; }
+    para.push(l);
+  }
+  flushPara(); closeList();
+  return out.join('');
+}
 function flash(btn, txt) { const o = btn.textContent; btn.textContent = txt; btn.disabled = true; setTimeout(() => { btn.textContent = o; btn.disabled = false; }, 1200); }
 
 // ── 标签切换 ──
@@ -118,7 +139,8 @@ async function loadEstimate() { try { const r = await sv.accountEstimate(); if (
 function fillBackup() {
   $('backupDir').value = cfg.backupDir || '';
   $('autoBackup').checked = !!cfg.autoBackup;
-  $('autoBackupHours').value = cfg.autoBackupHours || 24;
+  $('autoBackupHours').value = cfg.autoBackupHours || 168;
+  $('backupKeep').value = cfg.backupKeep || 3;
 }
 
 // ── 局域网 ──
@@ -140,6 +162,8 @@ function renderUpdate(u) {
     case 'error': t.textContent = `更新出错:${u.message || ''}`; dot.hidden = true; break;
     default: t.textContent = '—';
   }
+  if ((u.state === 'available' || u.state === 'downloaded') && u.notes) { $('updNotes').hidden = false; $('updNotesBody').innerHTML = mdToHtml(u.notes); }
+  else if (u.state === 'checking' || u.state === 'none' || u.state === 'error') { $('updNotes').hidden = true; }
 }
 
 // ── 反馈 ──
@@ -219,7 +243,7 @@ async function init() {
   });
   $('importAgainBtn').addEventListener('click', () => { importFilePath = null; $('importDone').hidden = true; $('importIdle').hidden = false; $('pickImportBtn').textContent = '选择 .zip 文件…'; $('startImportBtn').disabled = true; });
   $('pickBackupDirBtn').addEventListener('click', async () => { const r = await sv.pickBackupDir(); if (r && r.path) { cfg = await sv.setConfig({ backupDir: r.path }); fillBackup(); } });
-  $('saveBackupBtn').addEventListener('click', async () => { cfg = await sv.setConfig({ autoBackup: $('autoBackup').checked, autoBackupHours: parseInt($('autoBackupHours').value, 10) || 24 }); flash($('saveBackupBtn'), '已保存'); });
+  $('saveBackupBtn').addEventListener('click', async () => { cfg = await sv.setConfig({ autoBackup: $('autoBackup').checked, autoBackupHours: parseInt($('autoBackupHours').value, 10) || 168, backupKeep: Math.max(1, parseInt($('backupKeep').value, 10) || 3) }); flash($('saveBackupBtn'), '已保存'); });
   $('backupNowBtn').addEventListener('click', async () => { $('backupNowBtn').disabled = true; const r = await sv.backupNow(); flash($('backupNowBtn'), r && r.ok ? '已备份' : '失败'); refreshBackupGate(); });
 
   // lan
