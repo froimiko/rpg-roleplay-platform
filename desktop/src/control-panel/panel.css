@@ -125,9 +125,22 @@ body { background: var(--bg-deep); overflow: hidden; }
 /* 局域网命令框 */
 .cmdbox { margin: 0 0 10px; background: var(--bg-deep); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font: 12px/1.7 var(--font-mono); color: var(--text-quiet); white-space: pre-wrap; word-break: break-all; }
 
-/* 关于 */
-.aboutcard { background: var(--bg-deep); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px 18px; }
-.linklist { display: flex; flex-direction: column; gap: 2px; }
-.linkrow { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; border-radius: 8px; border: 1px solid var(--line-soft); color: var(--text-quiet); font-size: 12.5px; }
-.linkrow + .linkrow { margin-top: 6px; }
-.linkrow:hover { background: var(--panel-2); border-color: var(--line); color: var(--text); }
+/* 关于 —— editorial hero + 精致链接行 */
+.pane.about { padding: 40px 34px; }
+.about-hero { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.about-logo { width: 52px; height: 52px; border-radius: 14px; }
+.about-logo::after { width: 17px; height: 17px; border-radius: 4px; }
+.about-name { font-size: 34px; font-weight: 700; color: var(--text); line-height: 1; letter-spacing: .01em; margin: 0; }
+.about-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.about-meta .mono { color: var(--accent); }
+.about-meta > span + span { padding-left: 12px; border-left: 1px solid var(--line); }
+.about-tag { font-size: 18px; line-height: 1.75; color: var(--text-quiet); margin: 26px 0 32px; max-width: 560px; }
+.about-links { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }
+.al { display: flex; align-items: baseline; gap: 12px; padding: 15px 6px 15px 14px; border-bottom: 1px solid var(--line-soft); color: var(--text); position: relative; transition: padding-left .16s ease; }
+.al::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--accent); transition: width .16s ease; }
+.al:hover { padding-left: 22px; }
+.al:hover::before { width: 3px; }
+.al-l { font-size: 14.5px; font-weight: 500; min-width: 96px; }
+.al-r { flex: 1; font-size: 12px; color: var(--muted); }
+.al-a { color: var(--muted-2); transition: transform .16s ease, color .12s ease; }
+.al:hover .al-a { color: var(--accent); transform: translate(2px, -2px); }

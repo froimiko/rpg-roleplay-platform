@@ -64,9 +64,7 @@ function renderMode() {
   const local = cfg.mode === 'local';
   document.querySelectorAll('.modeseg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === cfg.mode));
   $('localSvc').hidden = !local;
-  $('modeHint').textContent = local
-    ? '在本机启动数据库 + 后端,数据完全离线,NSFW 自主。首次启动需初始化,稍候。'
-    : '连接云端服务器,即开即用,数据存于你的云端账号。';
+  $('modeHint').textContent = local ? '本机离线 · NSFW 自主' : '连云端账号';
   renderStatus(last);
 }
 async function setMode(mode) { cfg = await sv.setConfig({ mode }); renderMode(); }

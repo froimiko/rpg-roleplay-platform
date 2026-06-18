@@ -16,11 +16,11 @@
       <div class="onboard-modes">
         <button class="modecard" data-mode="online">
           <div class="modecard-h">在线模式</div>
-          <div class="muted modecard-d">连接云端服务器,即开即用,数据存于你的云端账号。最省心。</div>
+          <div class="muted modecard-d">连云端账号,即开即用。</div>
         </button>
         <button class="modecard" data-mode="local">
           <div class="modecard-h">本地部署</div>
-          <div class="muted modecard-d">在本机启动数据库 + 后端,数据完全离线、NSFW 自主。首次启动需初始化。</div>
+          <div class="muted modecard-d">本机离线运行,NSFW 自主。</div>
         </button>
       </div>
       <div class="onboard-actions">
@@ -76,7 +76,7 @@
             </div>
             <div class="openrow">
               <button class="btn" id="openExtBtn">在浏览器打开</button>
-              <span class="muted-2 openhint">用系统默认浏览器打开(同一个地址)</span>
+              <span class="muted-2 openhint">用系统浏览器</span>
             </div>
             <div id="localSvc" class="localsvc" hidden>
               <div class="block-head" style="margin-top:18px;">本地服务</div>
@@ -113,7 +113,7 @@
 
         <!-- 备份 / 恢复 -->
         <section class="pane" data-pane="backup">
-          <p class="muted hint" style="margin-top:0;">备份 = 把你的剧本、存档、角色卡与偏好打包成单个 <span class="mono">.zip</span>;恢复 = 导入该 .zip。在线账号导出的备份也能导入到本地部署。<span id="bkGate" class="warn"></span></p>
+          <p class="muted-2 hint" style="margin-top:0;">剧本 / 存档 / 角色卡 / 偏好,打包成单个 .zip。<span id="bkGate" class="warn"></span></p>
           <div class="migcards">
             <div class="migcard">
               <div class="migcard-h">备份(导出)</div>
@@ -137,24 +137,22 @@
           </div>
 
           <div class="section-divider">
-            <div class="block-head">本地备份目录 + 自动备份</div>
+            <div class="block-head">自动备份</div>
             <div class="field" style="margin-bottom:12px;">
-              <span>备份目录(自动备份的 .zip 存放处)</span>
+              <span>备份目录</span>
               <div class="row">
                 <input type="text" id="backupDir" class="mono" readonly placeholder="未设置" style="flex:1;" />
-                <button class="btn" id="pickBackupDirBtn">选择目录…</button>
+                <button class="btn" id="pickBackupDirBtn">选择…</button>
               </div>
             </div>
-            <label class="field check"><input type="checkbox" id="autoBackup" /><span>启用自动备份</span></label>
-            <div class="field" style="max-width:220px;margin-top:10px;">
-              <span>自动备份间隔(小时)</span>
-              <input type="number" id="autoBackupHours" class="mono" min="1" max="720" />
+            <div class="row" style="gap:18px;">
+              <label class="field check" style="margin:0;"><input type="checkbox" id="autoBackup" /><span>启用</span></label>
+              <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin:0;"><span>每</span><input type="number" id="autoBackupHours" class="mono" min="1" max="720" style="width:64px;" /><span>小时</span></label>
             </div>
-            <div class="row" style="margin-top:12px;">
-              <button class="btn primary" id="saveBackupBtn">保存备份设置</button>
-              <button class="btn ghost" id="backupNowBtn">立即备份到目录</button>
+            <div class="row" style="margin-top:14px;">
+              <button class="btn primary" id="saveBackupBtn">保存</button>
+              <button class="btn ghost" id="backupNowBtn">立即备份</button>
             </div>
-            <p class="muted-2 hint">自动备份需本地模式 + 服务运行;到点把账号数据导出到上面的目录(保留最近若干份)。</p>
           </div>
         </section>
 
@@ -191,11 +189,10 @@
             <button class="btn primary" id="saveCfgBtn">保存配置</button>
             <button class="btn ghost" id="openDataDirBtn">打开数据目录</button>
           </div>
-          <p class="muted-2 hint">LLM 的 API Key 在应用内「设置」里填(BYOK),不在此处。</p>
 
           <div class="section-divider">
             <div class="block-head danger">危险区</div>
-            <p class="muted-2 hint" style="margin-top:0;">清除本机全部存档与数据库(不可恢复)。建议先到「备份 / 恢复」导出。</p>
+            <p class="muted-2 hint" style="margin-top:0;">不可恢复;建议先去「备份 / 恢复」导出。</p>
             <button class="btn danger" id="wipeBtn">清除本地数据…</button>
           </div>
         </section>
@@ -248,23 +245,19 @@
         </section>
 
         <!-- 关于 -->
-        <section class="pane" data-pane="about">
-          <div class="aboutcard">
-            <div class="brand" style="gap:12px;"><span class="logo" style="width:36px;height:36px;"></span>
-              <div><div class="serif" style="font-size:20px;font-weight:700;color:var(--text);">RPG Roleplay</div>
-              <div class="muted-2 mono" id="aboutVer" style="font-size:11.5px;">v—</div></div>
-            </div>
-            <p class="muted hint" style="margin-top:12px;">小说改编 AI 角色扮演平台。本桌面端是「本地服务端控制台」:在线连云端,或在本机一键起完整后端。由 Stellatrix Labs 出品。</p>
+        <section class="pane about" data-pane="about">
+          <div class="about-hero">
+            <span class="logo about-logo"></span>
+            <h1 class="about-name serif">RPG&nbsp;Roleplay</h1>
+            <div class="about-meta"><span class="mono" id="aboutVer">v1.0.0</span><span>Stellatrix&nbsp;Labs</span></div>
           </div>
-          <div class="section-divider">
-            <div class="block-head">链接</div>
-            <div class="linklist">
-              <a class="linkrow" id="lnLanding" href="#" target="_blank" rel="noreferrer"><span>用户协议 / 使用条款</span><span class="muted-2">落地页 ↗</span></a>
-              <a class="linkrow" id="lnApp" href="#" target="_blank" rel="noreferrer"><span>已上线版本(在线游玩)</span><span class="muted-2 mono">rpg-roleplay.stellatrix.icu ↗</span></a>
-              <a class="linkrow" id="lnRepo" href="#" target="_blank" rel="noreferrer"><span>开源项目(GitHub)</span><span class="muted-2 mono">felixchaos/rpg-roleplay-platform ↗</span></a>
-              <a class="linkrow" id="lnCard" href="#" target="_blank" rel="noreferrer"><span>作者名片</span><span class="muted-2 mono">felixchaos.link ↗</span></a>
-            </div>
-          </div>
+          <p class="about-tag serif">小说改编的 AI 角色扮演。<br>在云端畅玩,或在本机一键起完整后端。</p>
+          <nav class="about-links">
+            <a class="al" id="lnApp" href="#" target="_blank" rel="noreferrer"><span class="al-l">在线游玩</span><span class="al-r mono">rpg-roleplay.stellatrix.icu</span><span class="al-a">↗</span></a>
+            <a class="al" id="lnRepo" href="#" target="_blank" rel="noreferrer"><span class="al-l">开源项目</span><span class="al-r mono">GitHub</span><span class="al-a">↗</span></a>
+            <a class="al" id="lnLanding" href="#" target="_blank" rel="noreferrer"><span class="al-l">用户协议</span><span class="al-r mono">落地页</span><span class="al-a">↗</span></a>
+            <a class="al" id="lnCard" href="#" target="_blank" rel="noreferrer"><span class="al-l">作者</span><span class="al-r mono">felixchaos.link</span><span class="al-a">↗</span></a>
+          </nav>
         </section>
       </div>
     </main>

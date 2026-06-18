@@ -258,29 +258,23 @@ function wireIpc() {
     return { ok: true };
   });
 
-  // ── 局域网:本机 IP + 访问地址 + 按当前系统的放行防火墙命令 ──
+  // ── 局域网:真·本机 LAN IP(排除 VPN/虚拟口)+ 访问地址 + 按系统的端口放行命令 ──
   ipcMain.handle('lan:info', () => {
-    const os = require('os');
-    let ip = '';
-    const ifs = os.networkInterfaces();
-    for (const name of Object.keys(ifs)) {
-      for (const ni of ifs[name] || []) { if (ni.family === 'IPv4' && !ni.internal && !/^169\.254\./.test(ni.address)) { ip = ni.address; break; } }
-      if (ip) break;
-    }
+    const ip = _lanIp();
     const port = supervisor.backendPort || cfg.load().backendPort || 0;
-    const url = ip && port ? `http://${ip}:${port}/` : (ip ? `http://${ip}:<启动服务后的端口>/` : '未检测到局域网 IP');
+    const url = ip && port ? `http://${ip}:${port}/` : (ip ? `http://${ip}:<启动服务后端口>/` : '未检测到局域网 IP');
     let firewallCmd;
     if (process.platform === 'win32') {
       firewallCmd = port
-        ? `netsh advfirewall firewall add rule name="RPG Roleplay LAN ${port}" dir=in action=allow protocol=TCP localport=${port}`
-        : '启动本地服务后这里会显示放行命令(需要后端端口)。';
+        ? `netsh advfirewall firewall add rule name="RPG Roleplay ${port}" dir=in action=allow protocol=TCP localport=${port}`
+        : '启动服务后显示(需要端口)';
     } else if (process.platform === 'darwin') {
-      const py = P.runtimePython();
-      firewallCmd = 'macOS 应用防火墙按「程序」放行(若已关防火墙则无需操作):\n'
-        + `sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add "${py}"\n`
-        + `sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "${py}"`;
+      // macOS 自带防火墙是「按程序」而非「按端口」,且默认多为关闭。无需端口命令。
+      firewallCmd = port
+        ? `# macOS 防火墙默认通常关闭,一般无需放行。\n# 若你开了防火墙:首次有设备连入时系统会弹窗,点「允许」即可。\n# 想用命令按端口放行(pf,高级):\necho "pass in proto tcp from any to any port ${port}" | sudo pfctl -ef -`
+        : '启动服务后显示(需要端口)';
     } else {
-      firewallCmd = port ? `sudo ufw allow ${port}/tcp   # 或 firewalld: sudo firewall-cmd --add-port=${port}/tcp` : '启动本地服务后这里会显示放行命令(需要后端端口)。';
+      firewallCmd = port ? `sudo ufw allow ${port}/tcp` : '启动服务后显示(需要端口)';
     }
     return { ip, port, url, firewallCmd };
   });
@@ -327,6 +321,26 @@ function _pruneBackups(dir, keep = 7) {
       .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t)
       .slice(keep).forEach((x) => { try { fs.unlinkSync(path.join(dir, x.f)); } catch (_) {} });
   } catch (_) {}
+}
+
+// 真·本机局域网 IPv4:只认私有段(10/192.168/172.16-31),排除回环/链路本地 +
+// VPN/虚拟接口(utun/tun/tap/wg/tailscale/vEthernet/vmnet…),优先物理网卡 → 避免拿到 VPN 代理地址。
+function _lanIp() {
+  const os = require('os');
+  const VPN = /^(utun|ipsec|ppp|tun|tap|wg|nordlynx|tailscale|zt|gpd|awdl|llw|bridge|vmnet|vboxnet|vethernet|vmware|virtualbox|hyper-v|zerotier)/i;
+  const PHYS = /^(en0|en1|eth0|eth1|wlan0|wlp|enp|Wi-Fi|以太网|Ethernet)/i;
+  const cands = [];
+  for (const [name, arr] of Object.entries(os.networkInterfaces() || {})) {
+    for (const ni of arr || []) {
+      if (ni.family !== 'IPv4' || ni.internal) continue;
+      const ip = ni.address;
+      if (/^169\.254\./.test(ip)) continue;
+      if (!/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) continue; // 仅私有 LAN 段(VPN 出口公网/非私有自动排除)
+      cands.push({ ip, vpn: VPN.test(name), phys: PHYS.test(name) });
+    }
+  }
+  cands.sort((a, b) => (a.vpn - b.vpn) || (b.phys - a.phys));
+  return cands.length ? cands[0].ip : '';
 }
 
 app.whenReady().then(() => {
