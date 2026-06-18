@@ -14,10 +14,10 @@ set -euo pipefail
 # ── [ADJUST] 版本与来源 ──
 PY_VER="3.12.13"
 PBS_TAG="20260610"                 # astral/python-build-standalone release tag(核实:含 cpython-3.12.13)
-PG_VER="17.10.0"                   # theseus-rs/postgresql-binaries(核实:最新 17.x)
+PG_VER="17.10.0"                   # zonky embedded PG(低部署目标,跨 macOS 版本兼容 + 含 include 头文件可编 pgvector)
 PGVECTOR_VER="v0.8.0"
 PBS_BASE="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}"
-PG_BASE="https://github.com/theseus-rs/postgresql-binaries/releases/download/${PG_VER}"
+ZONKY_BASE="https://repo1.maven.org/maven2/io/zonky/test/postgres"
 
 # ── 路径 ──
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,13 +29,13 @@ WORK="$DESK/.bundle-work"
 # ── 目标平台三元组 ──
 uname_s="$(uname -s)"; uname_m="$(uname -m)"
 case "$uname_s/$uname_m" in
-  Darwin/arm64)  PBS_TRIPLE="aarch64-apple-darwin";        PG_TARGET="aarch64-apple-darwin" ;;
-  Darwin/x86_64) PBS_TRIPLE="x86_64-apple-darwin";         PG_TARGET="x86_64-apple-darwin" ;;
-  Linux/aarch64) PBS_TRIPLE="aarch64-unknown-linux-gnu";   PG_TARGET="aarch64-unknown-linux-gnu" ;;
-  Linux/x86_64)  PBS_TRIPLE="x86_64-unknown-linux-gnu";    PG_TARGET="x86_64-unknown-linux-gnu" ;;
+  Darwin/arm64)  PBS_TRIPLE="aarch64-apple-darwin";        ZONKY_ARTIFACT="darwin-arm64v8" ;;
+  Darwin/x86_64) PBS_TRIPLE="x86_64-apple-darwin";         ZONKY_ARTIFACT="darwin-amd64" ;;
+  Linux/aarch64) PBS_TRIPLE="aarch64-unknown-linux-gnu";   ZONKY_ARTIFACT="linux-arm64v8" ;;
+  Linux/x86_64)  PBS_TRIPLE="x86_64-unknown-linux-gnu";    ZONKY_ARTIFACT="linux-amd64" ;;
   *) echo "✗ 不支持的平台: $uname_s/$uname_m" >&2; exit 1 ;;
 esac
-echo "== 目标: $PBS_TRIPLE / PG $PG_TARGET =="
+echo "== 目标: $PBS_TRIPLE / PG zonky $ZONKY_ARTIFACT =="
 
 rm -rf "$STAGE" "$WORK"; mkdir -p "$STAGE" "$WORK"
 
@@ -60,13 +60,16 @@ grep -viE '^(mypy|pytest|ruff|pluggy|iniconfig)([=<>~ ]|$)' "$ROOT/rpg/requireme
 find "$STAGE/runtime/python" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
 find "$STAGE/runtime/python" -type d \( -name 'tests' -o -name 'test' \) -prune -exec rm -rf {} + 2>/dev/null || true
 
-# ── 3. 便携 PostgreSQL ──
-echo "== 3/5 便携 PostgreSQL ($PG_VER) =="
-PG_TARBALL="postgresql-${PG_VER}-${PG_TARGET}.tar.gz"
-dl "${PG_BASE}/${PG_TARBALL}" "$WORK/pg.tar.gz"
-mkdir -p "$STAGE/pg"; tar -xzf "$WORK/pg.tar.gz" -C "$STAGE/pg" --strip-components=1
+# ── 3. 便携 PostgreSQL(zonky:Maven 上的 jar 内含 postgres-<artifact>.txz)──
+echo "== 3/5 便携 PostgreSQL (zonky $PG_VER $ZONKY_ARTIFACT) =="
+ZONKY_JAR="embedded-postgres-binaries-${ZONKY_ARTIFACT}-${PG_VER}.jar"
+dl "${ZONKY_BASE}/embedded-postgres-binaries-${ZONKY_ARTIFACT}/${PG_VER}/${ZONKY_JAR}" "$WORK/pg.jar"
+( cd "$WORK" && unzip -oq pg.jar 'postgres-*.txz' )
+mkdir -p "$STAGE/pg"
+tar -xf "$WORK"/postgres-*.txz -C "$STAGE/pg"     # libarchive 自动识别 xz;解出 bin/lib/share/include
 PG_CONFIG="$STAGE/pg/bin/pg_config"
 [ -x "$PG_CONFIG" ] || { echo "✗ pg_config 未找到于 $PG_CONFIG" >&2; exit 1; }
+"$PG_CONFIG" --version || { echo "✗ pg_config 无法执行(部署目标不兼容?)" >&2; exit 1; }
 
 # ── 4. 编译 pgvector 进便携 PG ──
 echo "== 4/5 pgvector ($PGVECTOR_VER) =="
