@@ -1336,10 +1336,34 @@ function App() {
     }
     setPickedCommand(cmd); setText(''); setShowSlash(false);
   };
+  // 真实文件上传(对齐酒馆):file/image/card 走文件选择器读成 data_url 真实附件 →
+  // 后端 _save_attachments 取前 6000 字节文本注入 GM,GM 即可读到附件内容(反馈:游戏附件
+  // 此前是假占位,GM 读不到)。其余(chapter/world/mcp/skill/plan)是游戏内引用,保留占位。
+  const fileInputRef = useRef(null);
+  const pendingAttachRef = useRef({ kind: 'file' });
   const onAttachPick = (item) => {
-    const fixtures = { file: { name: '南陵卷宗.md', kind: 'file' }, image: { name: '雾港地图.png', kind: 'image' }, chapter: { name: '第 314 章 · 北港', kind: 'chapter' }, card: { name: '角色卡 · 沈知微', kind: 'card' }, world: { name: '世界书 · 残页', kind: 'world' }, mcp: { name: 'MCP · 文件检索', kind: 'mcp' }, skill: { name: 'Skill · 角色一致性', kind: 'skill' }, plan: { name: '计划模式', kind: 'skill' } };
-    setAttachments((a) => [...a, fixtures[item.id] || { name: item.label, kind: 'file' }]);
     setShowPlus(false);
+    if (item.id === 'file' || item.id === 'image' || item.id === 'card') {
+      pendingAttachRef.current = { kind: item.id };
+      const inp = fileInputRef.current;
+      if (inp) {
+        inp.value = '';
+        inp.accept = item.id === 'card' ? '.png,.json,.webp' : (item.id === 'image' ? 'image/*' : '');
+        inp.click();
+      }
+      return;
+    }
+    const fixtures = { chapter: { name: '第 314 章 · 北港', kind: 'chapter' }, world: { name: '世界书 · 残页', kind: 'world' }, mcp: { name: 'MCP · 文件检索', kind: 'mcp' }, skill: { name: 'Skill · 角色一致性', kind: 'skill' }, plan: { name: '计划模式', kind: 'skill' } };
+    setAttachments((a) => [...a, fixtures[item.id] || { name: item.label, kind: 'file' }]);
+  };
+  const onFilePicked = (e) => {
+    const f = e.target && e.target.files && e.target.files[0];
+    if (!f) return;
+    const kind = (pendingAttachRef.current && pendingAttachRef.current.kind) || 'file';
+    if (f.size > 12 * 1024 * 1024) { window.__apiToast?.('文件过大(上限 12MB)', { kind: 'warn', duration: 2400 }); return; }
+    const reader = new FileReader();
+    reader.onload = () => setAttachments((a) => [...a, { name: f.name, type: f.type || 'application/octet-stream', data_url: String(reader.result || ''), kind }]);
+    reader.readAsDataURL(f);
   };
 
   const _matchPending = (target) => (item, idx) => {
@@ -1484,6 +1508,8 @@ function App() {
             早返条件已是 mountStage>=1,直接挂(不复制桌面 mountStage>=2 守卫)。总线已 install,
             这里只补渲染器,working 总线零变化。 */}
         <GameToastStack />
+        {/* 移动早返的真实文件上传 input(与桌面同 ref/handler;onAttachPick 触发)→ GM 读文本附件 */}
+        <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={onFilePicked} />
         {sseLogOpen && (
           <div className="gc-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'flex-end' }} onClick={() => setSseLogOpen(false)}>
             <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxHeight: '80vh', background: 'var(--panel,#211f1d)', color: 'var(--text)', borderRadius: '14px 14px 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1628,6 +1654,8 @@ function App() {
             saveId={(activeSave && activeSave.id) || (game && game._raw && game._raw.save_id) || null}
             imageGenKind="game"
           />
+          {/* 真实文件上传(file/image/card 共用;onAttachPick 触发)→ GM 可读文本附件内容 */}
+          <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={onFilePicked} />
           {showUsage && lastUsage && (
             <div className="gc-usage-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', alignItems: 'center', padding: '3px 12px 4px', fontSize: 11, lineHeight: 1.5, color: 'var(--muted)', fontFamily: 'var(--font-mono, ui-monospace, Menlo, monospace)' }}>
               <span title="本轮输入 tokens">↑ {Number(lastUsage.input_tokens || 0).toLocaleString()}{lastUsage.cached_input_tokens ? ` · 缓存 ${Number(lastUsage.cached_input_tokens).toLocaleString()}` : ''}</span>
