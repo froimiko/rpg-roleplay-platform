@@ -1414,7 +1414,13 @@ def _stage_worldbook(ctl: JobController, user_id: int, script_id: int) -> int:
                     insert into worldbook_entries(
                       book_id, script_id, title, keys, content, priority, enabled, metadata
                     ) values (%s, %s, %s, %s, %s, %s, true, %s)
-                    on conflict do nothing
+                    on conflict (script_id, title) do update set
+                      content   = excluded.content,
+                      keys      = excluded.keys,
+                      priority  = excluded.priority,
+                      metadata  = excluded.metadata,
+                      updated_at = now()
+                    where coalesce(worldbook_entries.metadata->>'source','') <> 'editor'
                     """,
                     (
                         book_id, script_id,
@@ -1425,7 +1431,8 @@ def _stage_worldbook(ctl: JobController, user_id: int, script_id: int) -> int:
                         Jsonb({"source": "llm_pipeline"}),
                     ),
                 )
-                count += 1
+                # rowcount=1 表示插入或更新成功;冲突且 where 不满足(editor 条目)时 rowcount=0
+                count += db.rowcount
         ctl.update(stage_progress=1)
         # phase_backend: 标记 worldbook 阶段写了多少条 — 0 当作 partial 让上层标 done_with_errors
         setattr(_stage_worldbook, "_last_count", count)
@@ -2848,6 +2855,9 @@ def _run_module_rebuild(
             db.execute(
                 "update import_jobs set finished_at=now() where job_id=%s", (job_id,),
             )
+    finally:
+        # 兜底:无论正常/异常/被吞的错误,确保不留 status='running' 僵尸行(镜像 _run_pipeline)
+        finalize_job_if_unterminated(job_id)
 
 
 def _count(db, table: str, script_id: int) -> int:

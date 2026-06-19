@@ -235,10 +235,7 @@ def _poll(task_id: str, api_key: str) -> dict[str, Any]:
             )
 
         # PENDING / RUNNING — keep waiting
-        # (first attempt is immediate check, subsequent waits are handled above)
-        if attempt == 0:
-            # Wait before the next check
-            time.sleep(_POLL_INTERVAL_SECONDS)
+        # (subsequent waits are handled at the top of the loop)
 
     raise ImageGenError(
         f"dashscope: task {task_id} did not complete after "

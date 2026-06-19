@@ -530,7 +530,7 @@ def embedding_preflight(user_id: int | None) -> dict[str, Any]:
             "model": model,
             "credential_api_id": credential_api_id,
         }
-        if api_id in _OPENAI_API_IDS and _last_openai_embed_error:
+        if (api_id in _OPENAI_API_IDS or api_key) and _last_openai_embed_error:
             base["last_error_hint"] = _last_openai_embed_error
             base["settings_hash"] = "settings-models"
         return base
@@ -577,8 +577,19 @@ def embed_query(
     if force_api_id and force_model:
         # 严格锁定建库时的 provider（召回侧强制路径,不走 admin fallback,
         # 因为换 provider 会让向量维度不匹配,反而召回不出来)
-        _, _, api_key, base_url = _resolve_embed_config(user_id)
+        # BUG-A fix: 必须按 force_api_id 取 key/base_url,而非用户当前选中的 provider。
+        # 用户切换 embed provider 后,_resolve_embed_config(user_id) 会返回新 provider 的
+        # key → 发到旧 provider 端点 → 401/404 → 静默降级 ILIKE。
         api_id, model = force_api_id, force_model
+        try:
+            from platform_app.user_credentials import resolve_api_key
+            from model_registry import default_api_for
+            _cred = resolve_api_key(user_id, force_api_id, env_fallback="")
+            api_key = _cred.get("key", "")
+            base_url = _cred.get("base_url_override", "") or (default_api_for(force_api_id) or {}).get("base_url", "") or ""
+        except Exception:
+            # 极端情况(catalog 不可用):回退到当前用户 config 的 key/base_url 尽力而为
+            _, _, api_key, base_url = _resolve_embed_config(user_id)
         vecs = _embed_provider_dispatch(api_id, model, api_key, [text], base_url=base_url, task_type="RETRIEVAL_QUERY", user_id=user_id)
     else:
         # 常规路径:走 admin fallback(user 自配失败时 admin 自动切平台)

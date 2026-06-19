@@ -256,17 +256,21 @@ class _SsrfGuardTransport:
         self._inner.__exit__(*a)
 
 
-def safe_httpx_client(*, timeout: float = 30.0):
-    """返回一个 SSRF 安全的 httpx.Client:不跟随重定向 + 传输层私网校验。
+def safe_httpx_client(*, timeout: float = 30.0, proxy: str | None = None):
+    """返回一个 SSRF 安全的 httpx.Client:不跟随重定向 + 传输层 use-time 私网校验(缓解 DNS rebinding)。
 
-    用于把 user/admin 可控 base_url 喂给 OpenAI 兼容 SDK 的出站点(如 model_probe 拉模型),
-    与 gm/backends/openai_compat.py 的 `http_client=httpx.Client(follow_redirects=False)` 一致,
-    并额外加传输层私网校验。
+    用于把 user/admin 可控 base_url 喂给 OpenAI 兼容 SDK 的出站点(model_probe 拉模型、
+    gm/backends/openai_compat.py 的 GM LLM 调用)。传输层守卫自身按 `_ssrf_enforced()` 门控:
+    服务器模式才做私网拦截,本地/自部署模式为 no-op(本机大模型 / 梯子 fake-ip 照常)。
+
+    proxy:仅本地模式应传(用户在凭据里配的出站代理);托管多用户后端永不传(防 SSRF —— 代理可
+    合法指向内网,无法用「禁私网」拦)。代理走内层 HTTPTransport,守卫仍校验目标 host。
     """
     import httpx
 
+    inner = httpx.HTTPTransport(proxy=proxy) if proxy else httpx.HTTPTransport()
     return httpx.Client(
         follow_redirects=False,
         timeout=httpx.Timeout(timeout, connect=10.0),
-        transport=_SsrfGuardTransport(httpx.HTTPTransport()),
+        transport=_SsrfGuardTransport(inner),
     )

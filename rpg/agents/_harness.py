@@ -357,6 +357,7 @@ def _openai_compat_json_mode(
     cred = resolve_api_key(user_id, api_id)
     if not cred.get("key"):
         raise RuntimeError(f"无 {api_id} 凭证可用于 agent harness")
+    import urllib.error
     import urllib.request
     base_url = cred.get("base_url_override") or _api_base_url(api_id)
     if not base_url:
@@ -388,7 +389,11 @@ def _openai_compat_json_mode(
         text = payload["choices"][0]["message"]["content"]
         usage = _openai_usage(payload.get("usage") or {})
         return text or "", usage
-    except Exception:
+    except urllib.error.HTTPError as exc:
+        # 仅对 400(endpoint 不支持 response_format)降级重发;5xx/超时/连接错误一律向上抛 ——
+        # 否则把上游瞬时故障误判为「特性不支持」→ 对非幂等 POST 重复请求(重复计费)且掩盖真因。
+        if exc.code != 400:
+            raise
         body_dict.pop("response_format", None)
         body = json.dumps(body_dict).encode("utf-8")
         req = urllib.request.Request(
@@ -426,6 +431,7 @@ def _openai_function_call(
     cred = resolve_api_key(user_id, api_id)
     if not cred.get("key"):
         raise RuntimeError(f"无 {api_id} 凭证可用于 agent harness")
+    import urllib.error
     import urllib.request
     base_url = cred.get("base_url_override") or _api_base_url(api_id)
     if not base_url:
@@ -473,9 +479,13 @@ def _openai_function_call(
                 return args_text, usage
         # 没拿到 tool_call → 降级到文本内容(让调用方 parse)
         return msg.get("content") or "{}", usage
-    except Exception:
-        # endpoint 不支持 tools → 降级到 response_format json_object
-        log.warning(f"[_harness] {api_id} tools 不支持,降级到 json_object")
+    except urllib.error.HTTPError as exc:
+        # 仅对 400(endpoint 不支持 tools)降级到 response_format json_object;
+        # 401/429/5xx/超时一律向上抛,让 provider_errors 正确分类(凭据/限流/上游故障),
+        # 不要误当「tools 不支持」而静默降级 + 重复计费 POST。
+        if exc.code != 400:
+            raise
+        log.warning(f"[_harness] {api_id} tools 不支持(HTTP 400),降级到 json_object")
         return _openai_compat_json_mode(
             api_id, model, system_prompt, user_prompt,
             user_id, timeout_sec, max_tokens,

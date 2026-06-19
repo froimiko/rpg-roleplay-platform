@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json as _json
+import logging
 from typing import Any
 from urllib.parse import quote as _quote
+
+log = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
@@ -385,9 +388,10 @@ async def api_save_anchors(save_id: int, user=Depends(require_user)):
             "recent_pending": recent_pending,
             "recent_occurred": recent_occurred,
         })
-    except Exception as exc:
+    except Exception:
+        log.exception("save anchors error")
         return json_response(
-            {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+            {"ok": False, "error": "服务内部错误，请稍后重试"},
             status_code=500,
         )
 
@@ -410,9 +414,10 @@ async def api_save_anchors_reseed(request: Request, save_id: int, user=Depends(r
         from agents.anchor_seed_agent import reseed_anchors_for_save
         res = reseed_anchors_for_save(save_id, keep_satisfied=keep)
         return json_response({"ok": True, **res})
-    except Exception as exc:
+    except Exception:
+        log.exception("save anchors reseed error")
         return json_response(
-            {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+            {"ok": False, "error": "服务内部错误，请稍后重试"},
             status_code=500,
         )
 
@@ -517,9 +522,10 @@ async def api_save_anchor_satisfy(save_id: int, anchor_key: str, user=Depends(re
             "occurred_at_turn": occurred_turn,
             "advanced_to_chapter": src_ch if isinstance(src_ch, int) and src_ch >= 1 else None,
         })
-    except Exception as exc:
+    except Exception:
+        log.exception("save anchor satisfy error")
         return json_response(
-            {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, status_code=500)
+            {"ok": False, "error": "服务内部错误，请稍后重试"}, status_code=500)
 
 
 @router.post("/api/saves/{save_id}/progress/rewind")
@@ -573,9 +579,10 @@ async def api_save_progress_rewind(save_id: int, request: Request, user=Depends(
                     recompute_visible_set(db, save_id, int(_scr["script_id"]))
         return json_response({"ok": True, "progress_chapter": target,
                               "relocked": len(relocked or [])})
-    except Exception as exc:
+    except Exception:
+        log.exception("save progress rewind error")
         return json_response(
-            {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, status_code=500)
+            {"ok": False, "error": "服务内部错误，请稍后重试"}, status_code=500)
 
 
 # ── Phase F/W6: 创建引导 + 游戏内设置(读 schema/设置,写 apply 锁死 enforcement)──

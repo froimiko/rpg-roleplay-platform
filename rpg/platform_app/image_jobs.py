@@ -247,7 +247,8 @@ async def handle_image_gen(payload: dict[str, Any]) -> None:
             log.info("[image_jobs] image_id=%s 生图完成前已被用户取消,丢弃结果", image_id)
             return
     except Exception as _cexc:
-        log.debug("[image_jobs] cancel-check skipped image_id=%s: %s", image_id, _cexc)
+        log.warning("[image_jobs] cancel-check DB error image_id=%s, 跳过写回以防覆盖取消: %s", image_id, _cexc)
+        return
     try:
         update_image_record(image_id, "done", url=url)
     except Exception as exc:

@@ -142,7 +142,7 @@ def build_tool_call_router(
     )
 
     def _router(server_id: str, tool_name: str, arguments: dict) -> dict[str, Any]:
-        if (server_id or "") == DISPATCHER_SENTINEL or get_registry().has(tool_name):
+        if (server_id or "") == DISPATCHER_SENTINEL or (not (server_id or "") and get_registry().has(tool_name)):
             env = ToolCallEnvelope(
                 user_id=user_id,
                 save_id=save_id,

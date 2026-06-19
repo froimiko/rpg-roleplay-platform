@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 log = logging.getLogger(__name__)
 
 _VEC_COLUMN_CACHE: dict[str, bool] = {}
 
-# script_id → (embed_api_id, embed_model) 进程内 cache，建库后不会变
-_SCRIPT_EMBED_META_CACHE: dict[int, tuple[str, str]] = {}
+# script_id → (embed_api_id, embed_model, cached_at) 进程内 cache
+# TTL = 300s：workers=2 时，worker B 最多 5 分钟后自动感知到 worker A 重嵌后的新 meta
+_SCRIPT_EMBED_META_CACHE: dict[int, tuple[str, str, float]] = {}
+_SCRIPT_EMBED_META_TTL = 300.0
 
 
 def _vector_column_exists(db, table: str) -> bool:
@@ -28,20 +31,26 @@ def _vector_column_exists(db, table: str) -> bool:
 
 def _get_script_embed_meta(db, script_id: int) -> tuple[str, str]:
     """从 scripts 表读取建库时绑定的 (embed_api_id, embed_model)。
-    结果 cache 在进程内（建库后不会变）。
+    结果 cache 在进程内，TTL=300s（workers=2 下保证跨进程最终一致）。
     返回空字符串表示尚未绑定，调用方需 fallback。
     """
-    if script_id in _SCRIPT_EMBED_META_CACHE:
-        return _SCRIPT_EMBED_META_CACHE[script_id]
+    now = time.monotonic()
+    cached = _SCRIPT_EMBED_META_CACHE.get(script_id)
+    if cached is not None:
+        api_id_c, model_c, ts = cached
+        if now - ts < _SCRIPT_EMBED_META_TTL:
+            return api_id_c, model_c
+        # TTL 过期：从 DB 重新拉
     try:
         row = db.execute(
             "select embed_api_id, embed_model from scripts where id = %s",
             (script_id,),
         ).fetchone()
         if row:
-            result = (row["embed_api_id"] or "", row["embed_model"] or "")
-            _SCRIPT_EMBED_META_CACHE[script_id] = result
-            return result
+            result_api = row["embed_api_id"] or ""
+            result_model = row["embed_model"] or ""
+            _SCRIPT_EMBED_META_CACHE[script_id] = (result_api, result_model, now)
+            return result_api, result_model
     except Exception as exc:
         log.debug("[_search] _get_script_embed_meta failed for script %s: %s", script_id, exc)
     return ("", "")

@@ -114,6 +114,55 @@ def _is_loopback_origin(origin: str) -> bool:
 
 # ── lifespan (startup / shutdown) ────────────────────────────────────────
 
+
+def _wait_for_db_ready() -> bool:
+    """冷启动 DB 探活:有界重试直到 DB(经 PgBouncer)接受连接(select 1)。
+
+    根因(审计#8):systemd 下 uvicorn worker 可能早于 PgBouncer/PG 就绪即启动 → init_db /
+    默认账户 / durable 恢复 / zombie 回收 全部失败,而这些恢复步骤是「仅启动跑一次、当轮不重试」
+    (请求路径只自愈 init_db,绝不重跑恢复)→ 残留未回收的 pending/僵尸 job 直到下次重启。
+    先在 DB 就绪后再跑这些步骤即可根治。
+
+    DB 已就绪时只花一次快速探测(零额外延迟);未就绪才退避重试。超时上限 RPG_DB_WAIT_TIMEOUT
+    (秒,默认 25;设 0 跳过等待,供无 DB 的单测)。超时也不阻断启动,返 False 让后续步骤各自兜底。
+    """
+    import time
+
+    try:
+        timeout_s = float(os.environ.get("RPG_DB_WAIT_TIMEOUT", "25"))
+    except ValueError:
+        timeout_s = 25.0
+    if timeout_s <= 0:
+        return True
+    import psycopg
+
+    from platform_app.db.connection import database_url
+    deadline = time.monotonic() + timeout_s
+    delay = 0.25
+    attempt = 0
+    last_exc: Exception | None = None
+    while True:
+        attempt += 1
+        try:
+            with psycopg.connect(database_url(), connect_timeout=5) as c:
+                c.execute("select 1")
+            if attempt > 1:
+                log.info("[startup] DB 就绪(第 %d 次探活)", attempt)
+            return True
+        except Exception as exc:
+            last_exc = exc
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(delay, remaining))
+            delay = min(delay * 1.6, 2.0)
+    log.error(
+        "[startup] DB 探活超时 %.0fs(%d 次尝试),最后错误:%s —— 仍继续启动,依赖请求路径自愈",
+        timeout_s, attempt, last_exc,
+    )
+    return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: startup → yield → shutdown。"""
@@ -129,6 +178,10 @@ async def lifespan(app: FastAPI):
         )
     except Exception:
         log.exception("[startup] set_default_executor failed")
+
+    # 0-pre. 等 DB 就绪:治冷启动竞争(worker 早于 PgBouncer/PG → init_db/恢复/回收 全败且当轮不重试)。
+    #         DB 已就绪时仅一次快速探测,无额外延迟。
+    _wait_for_db_ready()
 
     # 0. init_db — schema 创建 + migration（lazy import 避免循环依赖）
     try:

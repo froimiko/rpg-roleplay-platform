@@ -1995,6 +1995,18 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         ")",
         "create index if not exists idx_desktop_login_user on desktop_login_tokens(user_id) where used_at is null",
     ]),
+    (77, "temporal_kb_bigint_fk", [
+        # 审计修复:v74 的四张新表把 save_id/script_id 误写成 integer(32位),而被引用的
+        # scripts.id / game_saves.id 是 bigint(64位)。id 自增到 2^31 后向这些表插行会
+        # `integer out of range`。这些表新建、当前体量小,ALTER TYPE 很快(配合本批 lock_timeout
+        # 防撞长事务)。kb_nodes 视图只投影其它已是 bigint 的表,不引用这四张表,故无需重建视图。
+        "alter table reveal_anchors        alter column script_id type bigint",
+        "alter table save_reveal_frontier  alter column save_id   type bigint",
+        "alter table save_reveal_frontier  alter column script_id type bigint",
+        "alter table save_visible_anchors  alter column save_id   type bigint",
+        "alter table kb_edges              alter column script_id type bigint",
+        "alter table kb_edges              alter column save_id   type bigint",
+    ]),
 ]
 
 
@@ -2076,6 +2088,11 @@ def _assert_schema_up_to_date() -> None:
 def _apply_versioned_migrations() -> None:
     _migrations = _get_migrations()
     with _get_connect()() as db:
+        # 审计#5:DDL 走 pool 连接,默认 lock_timeout=0=无限等。给本事务设 lock_timeout,防
+        # ALTER TABLE 撞正在飞的长事务(60s+ LLM 流持 ACCESS SHARE 锁)无限阻塞、挂起部署。
+        # advisory-lock 那条独立连接上的 lock_timeout 只管「等 advisory 锁」,管不到这里的 DDL。
+        # SET LOCAL 只作用当前事务,commit 后自动复位,不污染回收的 pool 连接。
+        db.execute(f"set local lock_timeout = {MIGRATION_LOCK_TIMEOUT_MS}")
         db.execute(
             """
             create table if not exists schema_migrations (

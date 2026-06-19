@@ -967,6 +967,7 @@ def request_login_code(email: str, *, ip: str = "", ua: str = "") -> dict[str, A
             select created_at from email_verifications
             where lower(email) = %s
               and purpose = 'login'
+              and used_at is null
             order by created_at desc
             limit 1
             """,

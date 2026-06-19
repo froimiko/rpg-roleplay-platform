@@ -109,6 +109,7 @@ def update_image_record(
                    url    = coalesce(%s, url),
                    error  = coalesce(%s, error)
              where id = %s
+               and status <> 'cancelled'
             """,
             (status, url, error, int(image_id)),
         )
