@@ -73,6 +73,35 @@ def _coerce_seedream_size(size_str: str | None) -> str:
     return f"{best[0]}x{best[1]}"
 
 
+def _clamp_doubao_size(size: str) -> str:
+    """把 WxH 尺寸钳到 doubao seedream 的最小面积(3_686_400 px ≈ 1920×1920),保持宽高比、
+    对齐到 16 的倍数。非 WxH 形式(如 "1:1"/"16:9")原样返回交给 provider。
+
+    背景:用户尺寸选择器可能给更小的(如 1024×1024 = 1_048_576 px)→ doubao 直接
+    `InvalidParameter: image size must be at least 3686400 pixels` 整单失败。确定性放大兜底,
+    不依赖用户选对尺寸。
+    """
+    import math
+    MIN_AREA = 3_686_400
+    s = (size or "").lower().strip()
+    if "x" not in s:
+        return size
+    try:
+        w_s, h_s = s.split("x", 1)
+        w, h = int(w_s), int(h_s)
+    except Exception:
+        return size
+    if w <= 0 or h <= 0 or w * h >= MIN_AREA:
+        return size
+    scale = math.sqrt(MIN_AREA / (w * h))
+    nw = int(math.ceil(w * scale / 16) * 16)
+    nh = int(math.ceil(h * scale / 16) * 16)
+    while nw * nh < MIN_AREA:
+        nw += 16
+        nh += 16
+    return f"{nw}x{nh}"
+
+
 def generate(
     prompt: str,
     params: dict,
@@ -112,6 +141,9 @@ def generate(
     for field in ("size", "n", "seed", "watermark", "response_format"):
         if field in params:
             body[field] = params[field]
+    # doubao seedream 最小面积约束:小尺寸会被直接拒(整单失败)→ 按宽高比放大到下限。
+    if isinstance(body.get("size"), str):
+        body["size"] = _clamp_doubao_size(body["size"])
 
     headers = {
         "Authorization": f"Bearer {api_key}",
