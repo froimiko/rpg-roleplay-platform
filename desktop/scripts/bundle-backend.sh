@@ -97,6 +97,15 @@ cp -R "$STAGE/runtime" "$RUNTIME_CACHE/runtime"
 cp -R "$STAGE/pg" "$RUNTIME_CACHE/pg"
 fi   # ← end「运行时构建/缓存复用」块(命中缓存则跳过上面 1-4 步)
 
+# 仅预热运行时缓存(CI warm-runtime-cache.yml 在 main 上跑,把字节一致的运行时存进 main 作用域的
+# actions/cache;之后每个 release tag 构建都能从 main 恢复同一份 → blockmap 差量极小)。
+# 此模式不需要前端/源码,运行时(+缓存)就绪即退出。
+if [ "${RUNTIME_ONLY:-0}" = "1" ]; then
+  echo "== RUNTIME_ONLY:运行时缓存已就绪,跳过前端+源码组装 =="
+  rm -rf "$WORK"
+  exit 0
+fi
+
 # ── 5. 后端源码 + 前端产物(剔除测试/夹具/venv;小说夹具绝不进包)──
 echo "== 5/5 后端源码 + 前端 =="
 mkdir -p "$STAGE/app-template"

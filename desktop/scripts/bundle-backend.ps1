@@ -91,6 +91,14 @@ Copy-Item "$Stage\runtime" "$RuntimeCache\runtime" -Recurse
 Copy-Item "$Stage\pg" "$RuntimeCache\pg" -Recurse
 }  # ← end「运行时构建/缓存复用」块(命中缓存则跳过上面 1-4 步)
 
+# 仅预热运行时缓存(CI warm-runtime-cache.yml 在 main 上跑 → 字节一致运行时存 main 作用域缓存,
+# 之后每个 release tag 构建从 main 恢复同一份 → blockmap 差量极小)。不需前端/源码,就绪即退出。
+if ($env:RUNTIME_ONLY -eq '1') {
+  Write-Host "== RUNTIME_ONLY:运行时缓存已就绪,跳过前端+源码组装 =="
+  Remove-Item -Recurse -Force $Work
+  exit 0
+}
+
 # ── 5. 后端源码 + 前端(排除测试/夹具/venv;小说夹具绝不进包)──
 Write-Host "== 5/5 后端源码 + 前端 =="
 New-Item -ItemType Directory -Force -Path "$Stage\app-template" | Out-Null
