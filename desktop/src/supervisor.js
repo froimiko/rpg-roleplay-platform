@@ -75,7 +75,12 @@ class Supervisor extends EventEmitter {
   }
 
   _pgEnv(extra) {
-    return { ...process.env, PGHOST: '127.0.0.1', PGPORT: String(this.pgPort), PGUSER: 'rpg', PGDATABASE: 'postgres', PYTHONNOUSERSITE: '1', ...extra };
+    const e = { ...process.env, PGHOST: '127.0.0.1', PGUSER: 'rpg', PGDATABASE: 'postgres', PYTHONNOUSERSITE: '1', ...extra };
+    // ⚠️ initdb 在 _pgStart 之前跑,此时 pgPort 仍是 0 —— 绝不能把 PGPORT=0 传给
+    // initdb 的 bootstrap postgres(会 FATAL "0 is outside the valid range for
+    // parameter port (1..65535)" → pg exited 1 → 服务起不来)。仅在已分配真实端口时注入。
+    if (this.pgPort) e.PGPORT = String(this.pgPort);
+    return e;
   }
 
   _run(cmd, args, opts = {}) {

@@ -140,7 +140,7 @@ async def lifespan(app: FastAPI):
     # 0b. 本地/桌面模式:确保存在一个默认账户。否则全新桌面库零用户 →
     #     current_user 的本地回退取不到用户 → 首个业务接口 401,app 开箱即不可用。
     try:
-        mode = _deployment_mode_cfg().strip().lower()
+        mode = _deployment_mode()   # 模块级函数;_deployment_mode_cfg 仅在其内部局部可见(原 NameError 根因)
         if mode in _LOCAL_MODES:
             from platform_app import auth as _auth
             acct = _auth.bootstrap_local_account()
