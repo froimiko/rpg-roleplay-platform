@@ -9,6 +9,13 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-06-19
+
+### Fixed
+- **切换模型不生效(严重)**:`_gm_by_user` 为 per-worker 内存缓存,`/api/models/select` 仅 evict 处理该请求的 worker;`workers=2` 下另一 worker 仍跑旧模型(且 `session_model` 变更不 bump commit,save/commit drift 抓不到)→ 用户「无论切什么都跑某固定模型、烧错 provider 的 token」。修:`read_runtime` 顺带取 DB 真值 `session_model`(零额外查询),`_ensure_loaded` 检测跨 worker 模型漂移并失效 state+GM 重建。
+- **上下文用量「对话历史」越聊越少**:native-tools 路径(anthropic/vertex/openai-compat)不写 `last_context` token 估算 →「对话历史」只显示当前输入长度。**纯显示问题,模型实际收到完整历史**;已对齐文本路径补算。
+- **酒馆「正在思考…」浮条**:改为「思考过程」折叠条同款克制样式(标签 + 右侧转圈),去掉突兀的大圆角浮条。
+
 ## [1.0.4] - 2026-06-19
 
 ### Fixed
