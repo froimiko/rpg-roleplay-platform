@@ -558,16 +558,23 @@ async def api_chat(
     if not message_for_model.strip():
         return StreamingResponse(iter([_sse("error", {"message": "空消息"})]), media_type="text/event-stream")
 
-    # F#1:把本轮上传的角色卡文件(.png/.json/.webp)落盘路径挂到 state,供 agent 的
-    # import_character_card 工具读取(只读服务端 user 作用域落盘路径,非 agent 注入 → 安全)。
+    # F#1:把本轮所有上传附件的落盘路径挂到 state.data["_uploaded_files"],供 agent 工具按需读取:
+    #   · import_character_card  → 选最近一张卡片类(.png/.json/.webp)
+    #   · read_attached_text     → 读文本类(.txt/.md/.json/.csv/.log)全文
+    #   · import_attached_script → 把文本类作为剧本导入(章节拆分/全流水线)
+    # 只读服务端 user 作用域落盘路径(_save_attachments 已限大小/校验 base64),非 agent 注入 → 安全。
     try:
-        _card_files = [
-            {"name": a.get("name"), "path": a.get("path")}
+        _attach_files = [
+            {
+                "name": a.get("name"), "path": a.get("path"),
+                "type": a.get("type"), "is_image": bool(a.get("is_image")),
+                "size": a.get("size"),
+            }
             for a in (attachments or [])
-            if str(a.get("name") or "").lower().endswith((".png", ".json", ".webp"))
+            if a.get("path")
         ]
-        if _card_files and api_user:
-            _ensure_loaded(api_user).data["_uploaded_files"] = _card_files
+        if _attach_files and api_user:
+            _ensure_loaded(api_user).data["_uploaded_files"] = _attach_files
     except Exception:
         pass
 

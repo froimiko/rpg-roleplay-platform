@@ -376,6 +376,77 @@ def get_job_status(user_id: int, job_id: str | None = None, script_id: int | Non
     return {"ok": True, "found": True, "job": job}
 
 
+def wait_for_import_job(
+    user_id: int, job_id: str, *, timeout_s: float = 180.0, poll_s: float = 2.0,
+) -> dict[str, Any]:
+    """阻塞轮询 import_jobs 直到终态(done/done_with_errors/failed/cancelled)或超时,
+    返回 get_job_status 的 job dict(含 status/overall_progress/overall_total/stages/error/warnings)。
+
+    闭环用(用户反馈:导入/重建后 LLM 不知道好没好)。import_attached_script / rebuild_script_module
+    在 LLM 自主工具循环里【确定性】等真实结果,把成功/失败回灌循环,而非返回「已入队」回执后停摆。
+    job worker 是 in-process daemon thread(rebuild/full_pipeline),DB 轮询跨线程可靠且不依赖
+    in-process 句柄。轮询跑在 GM 工作线程(chat_pipeline 的 asyncio.to_thread 桥接),time.sleep
+    不阻塞事件循环、SSE 照常存活。超时返回当前(pending/running)快照,调用方据此优雅收尾。
+
+    安全:get_job_status 已按 (job_id, user_id) 过滤,他人 job 查不到 → 返 {found:False}。
+    """
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    last: dict[str, Any] = {"status": "pending", "found": False}
+    while True:
+        try:
+            st = get_job_status(user_id, job_id=job_id)
+            if st.get("found") and isinstance(st.get("job"), dict):
+                last = st["job"]
+                if (last.get("status") or "").strip() in _TERMINAL_STATUSES:
+                    return last
+            elif st.get("found") is False:
+                # job 不存在(被清理/越权)→ 立即收尾,别空转到超时
+                return {"status": "not_found", "found": False}
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).debug("[import] wait_for_import_job poll error: %s", exc)
+        if time.monotonic() >= deadline:
+            last = dict(last) if isinstance(last, dict) else {"status": "pending"}
+            last["timed_out"] = True
+            return last
+        time.sleep(poll_s)
+
+
+def summarize_job_result(res: dict[str, Any], action: str) -> str:
+    """把 wait_for_import_job 返回的 job 快照压成给 LLM/用户看的一行中文结果。
+    闭环工具(import_attached_script / rebuild_script_module)用它回灌真实结果。"""
+    res = res or {}
+    status = (res.get("status") or "").strip()
+    if res.get("timed_out"):
+        prog, tot = res.get("overall_progress"), res.get("overall_total")
+        prog_s = f"(进度 {prog}/{tot})" if prog is not None and tot else ""
+        return (f"{action}仍在后台进行{prog_s}:任务会继续跑完,"
+                f"稍后用 get_import_status / list_my_import_jobs 查最终结果。")
+    if status in ("done", "done_with_errors"):
+        parts = [f"{action}完成"]
+        stages = res.get("stages") or []
+        cnts = [
+            f"{s.get('label') or s.get('id')}:{s.get('count')}"
+            for s in stages
+            if isinstance(s, dict) and s.get("count") is not None and s.get("status") != "skipped"
+        ]
+        if cnts:
+            parts.append("(" + " / ".join(cnts) + ")")
+        if status == "done_with_errors":
+            w = res.get("warnings")
+            parts.append(f"— 部分阶段有问题:{w}" if w else "— 部分阶段未完全成功")
+        return " ".join(parts)
+    if status == "failed":
+        return f"{action}失败:{res.get('error') or '未知错误'}"
+    if status == "cancelled":
+        return f"{action}已被取消。"
+    if status == "not_found":
+        return f"{action}任务未找到(可能已被清理或越权)。"
+    return f"{action}当前状态:{status or '未知'}。"
+
+
 def cancel_job(user_id: int, job_id: str) -> dict[str, Any]:
     """请求取消：worker 在下个检查点会退出。"""
     init_db()
