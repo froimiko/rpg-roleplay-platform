@@ -1017,6 +1017,25 @@ def _resolve_user_default_model_view(api_user: dict[str, Any] | None, model_cata
     return None
 
 
+def _resolve_effective_model_view(api_user: dict[str, Any] | None, model_catalog: dict[str, Any]) -> dict[str, Any] | None:
+    """**当前真正生效的模型**视图(单一真相,与 _get_gm 实际所用优先级一致):
+      活动存档的 per-save session_model(游戏内手动切换)> 用户 gm 默认偏好 > None(调用方回退全局 selected)。
+
+    /api/models GET 与 _payload(/api/state)共用此函数 —— 否则二者口径不一(/api/state 反映
+    session_model、/api/models 只看 gm 偏好),游戏内切模型后 picker 重新拉 /api/models 仍读到旧默认 →
+    高亮/选中回退到「列表第一个」(线上反馈:选任何模型都跳回 llama 3.1)。"""
+    try:
+        uid = _user_key(api_user)
+        state = _state_by_user.get(uid)
+        if state is not None:
+            _sess_view = _session_model_app_view(model_catalog, state.get_session_model())
+            if _sess_view:
+                return _sess_view
+    except Exception:
+        pass
+    return _resolve_user_default_model_view(api_user, model_catalog)
+
+
 def _payload(api_user: dict[str, Any] | None = None, *, include_catalog: bool = True) -> dict[str, Any]:
     """游戏状态快照。
 
@@ -1034,18 +1053,9 @@ def _payload(api_user: dict[str, Any] | None = None, *, include_catalog: bool = 
     _uid = int(api_user["id"]) if api_user and api_user.get("id") else None
     model_catalog = load_catalog_for_user(_uid)
     # 默认模型 = 用户 gm 偏好链(与 _get_gm 一致),回退全局 selected_model。
-    model = _resolve_user_default_model_view(api_user, model_catalog) or selected_model(model_catalog)
-    # 修复(游戏内切模型显示回退默认):若当前存档设了 per-save session_model(游戏内 ModelPicker
-    # 手动切换),app.* 必须反映它。否则 /api/state 永远回报全局默认 → 前端 Composer 的当前模型
-    # 标签 + picker 高亮(selectedKey = app.api_id::app.model_real_name)永远显示默认,用户以为
-    # 切换没保存。GM 实际已按优先级用 session_model(_ensure_loaded),此前仅展示层一直错。
-    try:
-        _sess = state.get_session_model()  # (model_id/real_name, api_id) 或 None
-    except Exception:
-        _sess = None
-    _sess_view = _session_model_app_view(model_catalog, _sess)
-    if _sess_view:
-        model = _sess_view
+    # 当前生效模型 = per-save session_model > 用户 gm 偏好 > 全局 selected(单一真相,见
+    # _resolve_effective_model_view;与 /api/models GET 同口径,游戏内切模型后 picker 不再回退默认)。
+    model = _resolve_effective_model_view(api_user, model_catalog) or selected_model(model_catalog)
     is_admin = bool(api_user and api_user.get("role") == "admin")
     payload = state.status_payload()
     # 当前模型的 context window（tokens），由 platform_app.usage.context_window_for
