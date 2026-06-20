@@ -266,6 +266,14 @@ def _vertex_structured(
     """Vertex call_structured 已设了 response_mime_type=application/json。"""
     from agents.gm import _VertexBackend
     backend = _VertexBackend(model=model, user_id=user_id)
+    # SA 缺失时 VertexBackend.client=None;不先拦就会在 client.models.* 抛 AttributeError
+    # ('NoneType' object has no attribute 'models'),日志难懂。给清晰可行动的凭据错误,
+    # 让上层(context_agent curator / extractor)优雅降级 + 用户知道去配 SA。
+    if backend.client is None:
+        raise RuntimeError(
+            getattr(backend, "_unavailable_message", "")
+            or "Vertex AI 不可用:未配置 Service Account(在「设置 → Agent Platform」上传 SA JSON)"
+        )
     text = backend.call_structured(
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
@@ -293,6 +301,13 @@ def _vertex_function_call(
     """
     from agents.gm import _VertexBackend
     backend = _VertexBackend(model=model, user_id=user_id)
+    # SA 缺失 → client=None;先拦,否则 backend.client.models.generate_content 抛
+    # AttributeError('NoneType'...models)(巡检 2026-06-20 抓到:curator harness vertex 路径)。
+    if backend.client is None:
+        raise RuntimeError(
+            getattr(backend, "_unavailable_message", "")
+            or "Vertex AI 不可用:未配置 Service Account(在「设置 → Agent Platform」上传 SA JSON)"
+        )
     from google.genai import types
 
     fn_decl = types.FunctionDeclaration(
