@@ -150,6 +150,20 @@ describe('startTavernRun — 公共骨架折叠语义', () => {
     expect(calls.toast.some((t) => t.code === 'empty')).toBe(true);
   });
 
+  it('on_done 无 token 但存档已落库本轮回复 → 回查兜底渲染,不误报空回复(修「要刷新才出响应」)', async () => {
+    const fake = makeFakeChat();
+    const persisted = { history: [{ role: 'user', content: 'hello' }, { role: 'assistant', content: '落库的回复' }] };
+    const stateFn = vi.fn(() => Promise.resolve(persisted));
+    const { cfg, calls } = baseCfg({ api: { game: { chat: fake.chat, stop: vi.fn(), state: stateFn } } });
+    startTavernRun(cfg);
+    fake.calls[0]._handlers.on_done({});      // 整轮无 on_token(provider 非增量流式 / SSE 丢事件)
+    await Promise.resolve(); await Promise.resolve();   // flush api.game.state().then
+    expect(stateFn).toHaveBeenCalled();
+    expect(cfg.applyState).toHaveBeenCalledWith(persisted);  // 用存档兜底渲染本轮回复
+    expect(calls.toast.some((t) => t.code === 'empty')).toBe(false);  // 不误报空回复
+    expect(calls.text).not.toContain('hello');  // 本轮其实成功,不撤回/弹回输入
+  });
+
   it('idle 120s 超时:停流 + 撤草稿 + setRunning(false) + idle toast', () => {
     const fake = makeFakeChat();
     const stop = vi.fn();

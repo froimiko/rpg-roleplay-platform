@@ -1065,25 +1065,44 @@ function App() {
           clearInterval(tickerId);
           if (!openedAssistant && !gotReceipt) {
             if (runRef.current.doneTimer) { clearTimeout(runRef.current.doneTimer); runRef.current.doneTimer = null; }
-            restoreFailedDraft();
-            const msg = data && data.interrupted
-              ? t('game.console.run.interrupted_msg')
-              : t('game.console.run.empty_reply_msg');
-            setRunState((r) => ({
-              ...r,
-              running: false,
-              label: data && data.interrupted ? t('game.console.run.interrupted') : t('game.console.run.empty_reply'),
-              detail: msg,
-              publicStage: null,
-              completedAt: 0,
-            }));
-            setHasError(msg);
-            window.__apiToast?.(data && data.interrupted ? t('game.console.run.generation_interrupted') : t('game.console.run.empty_reply'), {
-              kind: 'warn',
-              detail: msg,
-              duration: 5000,
-            });
-            runRef.current.sse = null;
+            const _interrupted = !!(data && data.interrupted);
+            // 「要刷新才出响应」(线上反馈):本轮没收到任何增量 token(provider 非增量流式 / SSE 丢事件),
+            // 但 GM 回复其实已生成并落库 → 旧逻辑直接判「空回复」,逼用户手动刷新才看到已存的回复。
+            // 先回查一次最新存档(与开场流 on_done 同款 setTimeout(async) 兜底),若 history 真长出本轮
+            // assistant 回复就直接渲染;确为空/被中断才提示。回查失败/无新轮 → 维持原空回复提示。
+            setTimeout(async () => {
+              if (!isCurrentRun()) return;
+              if (!_interrupted) {
+                try {
+                  const d2 = await window.api.game.state();
+                  const hist = (d2 && Array.isArray(d2.history)) ? d2.history : null;
+                  const lastSrv = (hist && hist.length) ? hist[hist.length - 1] : null;
+                  if (lastSrv && lastSrv.role === 'assistant' && String(lastSrv.content || '').trim()) {
+                    setHistory(hist);
+                    setRunState((r) => ({ ...r, running: false, publicStage: null, label: '', detail: '', completedAt: Date.now() }));
+                    runRef.current.sse = null;
+                    return;  // 已从存档兜底出本轮回复 → 不再误报空回复
+                  }
+                } catch (_) { /* 回查失败 → 落到下面的空回复提示 */ }
+              }
+              restoreFailedDraft();
+              const msg = _interrupted ? t('game.console.run.interrupted_msg') : t('game.console.run.empty_reply_msg');
+              setRunState((r) => ({
+                ...r,
+                running: false,
+                label: _interrupted ? t('game.console.run.interrupted') : t('game.console.run.empty_reply'),
+                detail: msg,
+                publicStage: null,
+                completedAt: 0,
+              }));
+              setHasError(msg);
+              window.__apiToast?.(_interrupted ? t('game.console.run.generation_interrupted') : t('game.console.run.empty_reply'), {
+                kind: 'warn',
+                detail: msg,
+                duration: 5000,
+              });
+              runRef.current.sse = null;
+            }, 0);
             return;
           }
           const stripOps = (txt) => {

@@ -337,15 +337,33 @@ export function startTavernRun(cfg) {
       if (onDoneAlways) { try { onDoneAlways(data); } catch (_) {} }
       setRunning(false);
       if (!openedAssistant) {
-        restoreFailedDraft();
         const interrupted = !!(data && data.interrupted);
-        // 文案宿主可覆盖(MobileTavern 的空回复文案不带「已恢复你的输入」)。
-        const msg = cfg.doneEmptyMsg
-          ? cfg.doneEmptyMsg(interrupted)
-          : (interrupted ? '本轮已中断,已恢复你的输入。' : '本轮没有收到回复,已恢复你的输入。请重试。');
-        setHasError(msg);
-        toast?.(interrupted ? '生成中断' : '空回复', { kind: 'warn', detail: msg, duration: 4500, code: interrupted ? 'interrupted' : 'empty' });
-        rc.sse = null;
+        const showEmpty = () => {
+          restoreFailedDraft();
+          // 文案宿主可覆盖(MobileTavern 的空回复文案不带「已恢复你的输入」)。
+          const msg = cfg.doneEmptyMsg
+            ? cfg.doneEmptyMsg(interrupted)
+            : (interrupted ? '本轮已中断,已恢复你的输入。' : '本轮没有收到回复,已恢复你的输入。请重试。');
+          setHasError(msg);
+          toast?.(interrupted ? '生成中断' : '空回复', { kind: 'warn', detail: msg, duration: 4500, code: interrupted ? 'interrupted' : 'empty' });
+          rc.sse = null;
+        };
+        // 「要刷新才出响应」(线上反馈):本轮没收到增量 token(provider 非增量流式 / SSE 丢事件),
+        // 但回复其实已生成并落库 → 旧逻辑直接判「空回复」逼用户刷新。先回查存档,有本轮 assistant
+        // 回复就 applyState 渲染;确为空/被中断才提示。与 game-console on_done 同款兜底。
+        if (interrupted || !(api && api.game && typeof api.game.state === 'function')) { showEmpty(); return; }
+        api.game.state().then((d2) => {
+          if (!isCurrentRun()) return;
+          const hist = (d2 && Array.isArray(d2.history)) ? d2.history : null;
+          const lastSrv = (hist && hist.length) ? hist[hist.length - 1] : null;
+          if (lastSrv && lastSrv.role === 'assistant' && String(lastSrv.content || '').trim()) {
+            applyState(d2);
+            if (reloadList && !cfg.skipDoneReload) reloadList();
+            rc.sse = null;
+          } else {
+            showEmpty();
+          }
+        }).catch(() => { if (isCurrentRun()) showEmpty(); });
         return;
       }
       setHistory((h) => {
