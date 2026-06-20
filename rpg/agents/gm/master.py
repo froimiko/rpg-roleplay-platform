@@ -440,9 +440,12 @@ class GameMaster:
                         .replace("{char_name}", _char)
                         .replace("{style_block}", style_block)
                     )
-                    # 沉浸式拟人模式:持久 flag(state.data['tavern'].immersive)开 → 确定性追加覆盖块。
+                    # 沉浸式拟人模式:确定性追加覆盖块。flag 来源(任一为真即开):
+                    #   1. self._immersive_mode —— chat_pipeline 每回合从 runtime_checkouts 新鲜读 DB
+                    #      后设上(绕开 per-worker state 缓存,跨 worker 安全,UI 端点即时生效);
+                    #   2. _state.data['tavern'].immersive —— 加载态兜底(LLM 工具 mutate 的同一位)。
                     _tav = (((getattr(_state, "data", {}) or {}).get("tavern")) or {})
-                    if _tav.get("immersive"):
+                    if getattr(self, "_immersive_mode", False) or _tav.get("immersive"):
                         _sys_tav += _IMMERSIVE_OVERRIDE.replace("{char_name}", _char)
                     return _sys_tav
             except Exception:

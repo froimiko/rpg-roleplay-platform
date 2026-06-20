@@ -1012,6 +1012,28 @@ async def run_gm_phase(
     except Exception as _si_err:
         log.warning(f"[chat] 短输入镜头指令注入跳过(不影响 gameplay): {_si_err}")
 
+    # 沉浸式拟人模式:每回合从 DB【新鲜读取】持久 flag 设到 gm 上(绕开 per-worker state 缓存
+    # → 跨 worker 安全 + UI 端点即时生效),由 master._build_system 在 tavern system prompt
+    # 里确定性注入覆盖块。读真相源 runtime_checkouts.state_snapshot(working tree;LLM 工具回合
+    # 持久化 + UI 端点直写都落这里)。默认/失败 → False(零行为变化)。
+    try:
+        if gm is not None:
+            _imm_sid = int(ctx.early_active_save_id or 0)
+            _imm_uid = int(api_user.get("id")) if api_user else 0
+            _imm_on = False
+            if _imm_sid and _imm_uid:
+                from platform_app.db import connect as _connect_im
+                with _connect_im() as _db_im:
+                    _imr = _db_im.execute(
+                        "select state_snapshot->'tavern'->>'immersive' as im "
+                        "from runtime_checkouts where user_id=%s and save_id=%s",
+                        (_imm_uid, _imm_sid),
+                    ).fetchone()
+                _imm_on = str((_imr or {}).get("im") or "").strip().lower() in ("true", "1", "t")
+            gm._immersive_mode = _imm_on
+    except Exception as _imm_err:
+        log.warning(f"[chat] 沉浸式 flag 读取跳过(不影响 gameplay): {_imm_err}")
+
     yield ("agent", {
         "phase": "main_gm",
         "message": "主 GM 正在读取上下文并生成正文。",

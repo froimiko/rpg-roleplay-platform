@@ -41,16 +41,22 @@ class ImmersiveTool(unittest.TestCase):
 
 
 class ImmersivePromptInjection(unittest.TestCase):
-    def _build(self, immersive, char="莉莉"):
+    def _build(self, immersive, char="莉莉", via="state"):
         import agents.gm.master as M
         import context_providers.registry as _reg
         gm = M.GameMaster.__new__(M.GameMaster)  # 跳过 __init__(无需凭证)
         gm.user_id = None
         gm._world_section_for_active_content = lambda: ""
         gm._active_script_id = lambda: None
-        tav = {"immersive": immersive}
+        # via='state' → state.data.tavern.immersive(加载态兜底路径);
+        # via='gm'    → gm._immersive_mode(chat_pipeline 新鲜读 DB 设上的权威路径)。
+        tav = {}
         if char:
             tav["character"] = {"name": char}
+        if via == "state":
+            tav["immersive"] = immersive
+        elif via == "gm":
+            gm._immersive_mode = immersive
         gm._active_state = types.SimpleNamespace(data={"tavern": tav})
         orig = _reg.resolve_content_pack
         _reg.resolve_content_pack = lambda st: {"gm_policy": {"mode": "tavern_gm"}}
@@ -62,6 +68,13 @@ class ImmersivePromptInjection(unittest.TestCase):
     def test_override_only_when_on(self):
         on = self._build(True)
         off = self._build(False)
+        self.assertIn("沉浸式拟人模式", on)
+        self.assertNotIn("沉浸式拟人模式", off)
+
+    def test_gm_flag_path_triggers_override(self):
+        # chat_pipeline 新鲜读 DB → gm._immersive_mode 路径(权威,跨 worker 安全)
+        on = self._build(True, via="gm")
+        off = self._build(False, via="gm")
         self.assertIn("沉浸式拟人模式", on)
         self.assertNotIn("沉浸式拟人模式", off)
 

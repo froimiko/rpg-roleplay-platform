@@ -421,14 +421,27 @@ async def api_tavern_set_immersive(
     body = await request.json()
     enabled = bool(body.get("enabled"))
     init_db()
+    # 真相源是 runtime_checkouts.state_snapshot(per-user working tree,load_active_state 优先读它),
+    # 不是 game_saves.state_snapshot。只写 game_saves 回合根本读不到(turn 从 working tree 加载)。
+    # 故主写 runtime_checkouts,再镜像 game_saves(/api/state self-heal + 展示)。用 jsonb `||` 合并,
+    # 即使 tavern 键不存在也会建好(jsonb_set create_missing 不会创建中间对象)。
+    _merge = (
+        "coalesce({col}, '{{}}'::jsonb) || jsonb_build_object('tavern', "
+        "coalesce({col}->'tavern', '{{}}'::jsonb) || jsonb_build_object('immersive', %s::boolean))"
+    )
     with connect() as db:
         if not _require_tavern_save(db, chat_id, user_id):
             return _bad("无权操作该对话", 403)
         db.execute(
-            "update game_saves set "
-            "state_snapshot = jsonb_set(coalesce(state_snapshot, '{}'::jsonb), "
-            "'{tavern,immersive}', to_jsonb(%s::boolean), true), updated_at = now() "
-            "where id = %s and user_id = %s and save_kind = 'tavern'",
+            "update runtime_checkouts set state_snapshot = "
+            + _merge.format(col="state_snapshot")
+            + ", updated_at = now() where user_id = %s and save_id = %s",
+            (enabled, user_id, chat_id),
+        )
+        db.execute(
+            "update game_saves set state_snapshot = "
+            + _merge.format(col="state_snapshot")
+            + ", updated_at = now() where id = %s and user_id = %s and save_kind = 'tavern'",
             (enabled, chat_id, user_id),
         )
     _invalidate_cache(api_user)
