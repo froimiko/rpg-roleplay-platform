@@ -385,7 +385,7 @@ function CommandMenu({ query, onPick, onClose, triggerRef }) {
   );
 }
 
-function AttachMenu({ onPick, onClose, triggerRef }) {
+function AttachMenu({ onPick, onClose, triggerRef, onAiReply, aiReplyOnly = false }) {
   const menuRef = useRefC(null);
   // PR #14: 55vh 上限 + resize,防止菜单过高挡界面。
   const calcHeight = React.useCallback(() => {
@@ -421,10 +421,24 @@ function AttachMenu({ onPick, onClose, triggerRef }) {
       <div className="gc-menu-head">
         <Icon name="plus" size={12} />
         <span>{t('game.attach.title')}</span>
-        <span className="muted-2" style={{marginLeft: "auto", fontSize: 11}}>{t('game.attach.drag_hint')}</span>
+        {!aiReplyOnly && <span className="muted-2" style={{marginLeft: "auto", fontSize: 11}}>{t('game.attach.drag_hint')}</span>}
       </div>
       <div className="gc-attach-groups">
-        {ATTACH_GROUPS.map(g => (
+        {onAiReply && (
+          <div className="gc-attach-group">
+            <div className="gc-attach-group-title">{t('tavern_app.ai_reply.label')}</div>
+            <div className="gc-attach-items">
+              <button className="gc-attach-item" onClick={() => { onClose && onClose(); onAiReply(); }}>
+                <span className="gc-attach-icon"><Icon name="sparkle" size={16} /></span>
+                <span className="gc-attach-label">
+                  <strong>{t('tavern_app.ai_reply.label')}</strong>
+                  <span className="muted-2">{t('tavern_app.ai_reply.desc')}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+        {!aiReplyOnly && ATTACH_GROUPS.map(g => (
           <div key={g.titleKey} className="gc-attach-group">
             <div className="gc-attach-group-title">{t(g.titleKey)}</div>
             <div className="gc-attach-items">
@@ -722,6 +736,10 @@ function Composer({
   saveId: composerSaveId,
   imageGenKind = 'game',
   hideImageGen = false,
+  // 酒馆专属:AI 帮回回调(提供时在 + 菜单内追加「AI 帮回」入口,仅限酒馆上下文,游戏控制台不受影响)。
+  onAiReply,
+  // 酒馆专属:+ 菜单只显示「AI 帮回」,隐藏游戏附件组(file/image/章节/卡/世界书等)。
+  aiReplyOnly = false,
 }) {
   const { t } = useTranslation();
   const taRef = useRefC(null);
@@ -1004,7 +1022,7 @@ function Composer({
         {mention && filteredChars.length > 0 && (
           <MentionMenu chars={filteredChars} query={mention.query} onPick={insertMention} onClose={() => setMention(null)} />
         )}
-        {showPlus && <AttachMenu onPick={onAttachPick} onClose={togglePlus} triggerRef={plusTriggerRef} />}
+        {showPlus && <AttachMenu onPick={onAttachPick} onClose={togglePlus} triggerRef={plusTriggerRef} onAiReply={onAiReply} aiReplyOnly={aiReplyOnly} />}
         {showModel && <ModelPopover current={model} onPick={(id) => { setModel(id); toggleModel(); }} align="right" gameState={gameState} onClose={toggleModel} triggerRef={modelTriggerRef} />}
         {showPerm && <PermissionPopover current={permission} optionIds={permissionOptions} onPick={(id) => { setPermission(id); togglePerm(); }} onClose={togglePerm} triggerRef={permTriggerRef} />}
         {showImageGen && (

@@ -3853,7 +3853,11 @@
       "saving": "保存中…",
       "sysprompt_title": "系统提示词",
       "sysprompt_empty": "本对话未设置系统提示词。点「编辑」自定义 AI 的行为/人设/越狱(仅影响本对话)。",
-      "sysprompt_placeholder": "输入系统提示词(人设 / 行为约束 / 越狱指令等)…"
+      "sysprompt_placeholder": "输入系统提示词(人设 / 行为约束 / 越狱指令等)…",
+      "immersive_label": "沉浸式拟人模式",
+      "immersive_desc": "AI 以真人(角色卡)口吻实时对话,绝不替你说话或行动",
+      "immersive_on_toast": "沉浸式拟人模式已开启",
+      "immersive_off_toast": "沉浸式拟人模式已关闭"
     },
     "toast": {
       "open_failed": "打开对话失败",
@@ -3894,6 +3898,12 @@
       "eyebrow": "重命名对话",
       "title": "新标题",
       "placeholder": "对话标题"
+    },
+    "ai_reply": {
+      "label": "AI 帮回",
+      "desc": "以你的角色生成一条符合上下文的回复",
+      "empty": "未生成回复,请稍后重试",
+      "fail": "AI 帮回失败,请重试"
     }
   },
   "branch_graph": {

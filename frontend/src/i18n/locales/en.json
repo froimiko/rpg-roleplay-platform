@@ -3853,7 +3853,11 @@
       "saving": "Saving…",
       "sysprompt_title": "System Prompt",
       "sysprompt_empty": "No system prompt set for this chat. Click Edit to customize the AI's behavior, persona, or instructions (affects this chat only).",
-      "sysprompt_placeholder": "Enter a system prompt (persona, behavior rules, jailbreak instructions, etc.)…"
+      "sysprompt_placeholder": "Enter a system prompt (persona, behavior rules, jailbreak instructions, etc.)…",
+      "immersive_label": "Immersive Persona Mode",
+      "immersive_desc": "AI responds as the character in real time, never speaking or acting for you",
+      "immersive_on_toast": "Immersive persona mode enabled",
+      "immersive_off_toast": "Immersive persona mode disabled"
     },
     "toast": {
       "open_failed": "Failed to open chat",
@@ -3894,6 +3898,12 @@
       "eyebrow": "Rename chat",
       "title": "New title",
       "placeholder": "Chat title"
+    },
+    "ai_reply": {
+      "label": "AI Reply",
+      "desc": "Generate a contextual reply as your character",
+      "empty": "No reply generated, please try again",
+      "fail": "AI reply failed, please try again"
     }
   },
   "branch_graph": {
