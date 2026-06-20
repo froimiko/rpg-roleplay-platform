@@ -5490,6 +5490,22 @@
         "save_fail": "Save failed",
         "persona_saved": "Persona saved",
         "create_fail": "Failed to create chat"
+      },
+      "immersive": {
+        "label": "Immersive (human-like) mode",
+        "desc": "The AI talks like a real person (the character), never speaks or acts for you",
+        "on_toast": "Immersive mode on",
+        "off_toast": "Immersive mode off"
+      },
+      "ai_reply": {
+        "label": "AI reply for me",
+        "sub": "Generate a context-appropriate reply as your character, into the input box",
+        "empty": "The AI produced no reply",
+        "fail": "AI reply failed"
+      },
+      "plus": {
+        "aria": "More",
+        "title": "More"
       }
     },
     "new_game": {

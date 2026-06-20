@@ -352,7 +352,7 @@ function SystemPromptSheet({ show, chat, systemPrompt, onClose, onSave }) {
 }
 
 /* ─── 双卡抽屉(右侧滑入 drawer):AI 角色卡 + 我的 persona + 系统提示 ── */
-function TwoCardDrawer({ open, character, persona, systemPrompt, onClose, onSavePersona, onSaveSystemPrompt }) {
+function TwoCardDrawer({ open, character, persona, systemPrompt, immersive, onToggleImmersive, onClose, onSavePersona, onSaveSystemPrompt }) {
   const [tab, setTab] = useState('character');
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(() => cardFormInit(persona));
@@ -411,9 +411,30 @@ function TwoCardDrawer({ open, character, persona, systemPrompt, onClose, onSave
         <div className="drawer-body" style={{ padding: '0 14px' }}>
           {/* ── AI 角色卡 ── */}
           {tab === 'character' && (
-            character
-              ? <CardReadout card={character} />
-              : <div className="muted-2" style={{ padding: '28px 0', textAlign: 'center', fontSize: 13 }}>{t('mobile.tavern.drawer.no_character')}</div>
+            <>
+              {/* 沉浸式拟人模式开关:让 AI 以真人(角色卡)口吻实时对话、不替玩家说话/行动 */}
+              {onToggleImmersive && (
+                <div className="tv-m-immersive-row">
+                  <div className="tv-m-immersive-tx">
+                    <strong>{t('mobile.tavern.immersive.label')}</strong>
+                    <span className="muted-2">{t('mobile.tavern.immersive.desc')}</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={!!immersive}
+                    className={`tv-m-switch${immersive ? ' on' : ''}`}
+                    onClick={() => onToggleImmersive(!immersive)}
+                    aria-label={t('mobile.tavern.immersive.label')}
+                  >
+                    <span className="tv-m-switch-knob" />
+                  </button>
+                </div>
+              )}
+              {character
+                ? <CardReadout card={character} />
+                : <div className="muted-2" style={{ padding: '28px 0', textAlign: 'center', fontSize: 13 }}>{t('mobile.tavern.drawer.no_character')}</div>}
+            </>
           )}
 
           {/* ── Persona ── */}
@@ -677,8 +698,10 @@ function ListView({ chats, archivedChats, activeId, loading, onExit, onOpen, onM
 function ChatView({
   activeChat, character, persona, history, running, hasError, systemPrompt,
   onBack, onSend, onStop, onRetry, onOpenDrawer, onOpenMenu, onToast,
+  onAiReply, aiReplyLoading,
 }) {
   const [text, setText] = useState('');
+  const [plusOpen, setPlusOpen] = useState(false); // + 附加功能 sheet(AI 帮回 等)
   const [pressedIdx, setPressedIdx] = useState(null);
   const [msgSheet, setMsgSheet] = useState(null); // 长按消息 → 操作 sheet(与游戏台同一套交互)
   const lpTimer = useRef(null);
@@ -870,7 +893,7 @@ function ChatView({
         )}
       </div>
 
-      {/* Composer(统一组件 MobileComposer:与游戏台同一套输入框,酒馆不带附件/chip 行) */}
+      {/* Composer(统一组件 MobileComposer:酒馆带 + 附加功能=AI 帮回) */}
       <MobileComposer
         value={text}
         onChange={setText}
@@ -881,7 +904,34 @@ function ChatView({
         sendAria={t('mobile.tavern.chat.send_aria')}
         stopAria={t('mobile.tavern.chat.stop_aria')}
         taRef={taRef}
+        leading={onAiReply ? (
+          <button className="c-plus" onClick={() => setPlusOpen(true)} aria-label={t('mobile.tavern.plus.aria')}>
+            <Icon name="plus" size={20} />
+          </button>
+        ) : null}
       />
+
+      {/* + 附加功能 sheet:AI 帮回(以玩家自己的角色生成一条回复,填入输入框) */}
+      <BottomSheet show={plusOpen} onClose={() => setPlusOpen(false)} maxHeight="40%">
+        <div className="sheet-title">{t('mobile.tavern.plus.title')}</div>
+        <div className="sheet-list">
+          <button
+            className="sheet-item"
+            disabled={aiReplyLoading || running}
+            onClick={async () => {
+              setPlusOpen(false);
+              const reply = await (onAiReply && onAiReply());
+              if (reply) { setText(reply); setTimeout(() => taRef.current?.focus(), 50); }
+            }}
+          >
+            <span className="sheet-ico"><Icon name={aiReplyLoading ? 'refresh' : 'sparkle'} size={18} /></span>
+            <span className="sheet-tx">
+              <strong>{t('mobile.tavern.ai_reply.label')}</strong>
+              <span>{t('mobile.tavern.ai_reply.sub')}</span>
+            </span>
+          </button>
+        </div>
+      </BottomSheet>
 
       {/* 长按消息 → 操作 sheet(与游戏台同一套交互;酒馆无存档/分支,故仅 复制 + 重新生成) */}
       <BottomSheet show={!!msgSheet} onClose={closeMsgSheet} maxHeight="50%">
@@ -920,6 +970,8 @@ export function MobileTavern({ nav }) {
   const [persona, setPersona] = useState(null);
   const [history, setHistory] = useState([]);
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [immersive, setImmersive] = useState(false);
+  const [aiReplyLoading, setAiReplyLoading] = useState(false);
 
   /* ── 流式发送状态 ──────────────────────────────────────────────── */
   const [text, setText] = useState('');
@@ -972,7 +1024,7 @@ export function MobileTavern({ nav }) {
   /* ── applyState(收口到 applyTavernState 核心三段 + 移动端叠加 setSystemPrompt)──── */
   const applyState = useCallback((data) => {
     applyTavernState(data, {
-      setCharacter, setPersona, setHistory, setActiveChat, setSystemPrompt,
+      setCharacter, setPersona, setHistory, setActiveChat, setSystemPrompt, setImmersive,
     });
   }, []);
 
@@ -1176,6 +1228,36 @@ export function MobileTavern({ nav }) {
     }
   }, [applyState, fireToast, t]);
 
+  /* ── 沉浸式拟人模式开关(持久写 state.tavern.immersive,确定性注入 system prompt)── */
+  const onToggleImmersive = useCallback(async (enabled) => {
+    if (!activeId) return;
+    setImmersive(enabled); // 乐观更新
+    try {
+      await window.api.tavern.setImmersive(activeId, enabled);
+      fireToast(enabled ? t('mobile.tavern.immersive.on_toast') : t('mobile.tavern.immersive.off_toast'), 'ok');
+    } catch (e) {
+      setImmersive(!enabled); // 回滚
+      fireToast(t('mobile.tavern.toast.save_fail'), 'danger');
+    }
+  }, [activeId, fireToast, t]);
+
+  /* ── AI 帮回:以玩家自己的角色生成一条回复 → 填入输入框(不自动发送)── */
+  const onAiReply = useCallback(async () => {
+    if (!activeId || aiReplyLoading) return null;
+    setAiReplyLoading(true);
+    try {
+      const r = await window.api.tavern.aiReply(activeId);
+      const reply = (r && r.reply) || '';
+      if (!reply) { fireToast(t('mobile.tavern.ai_reply.empty'), 'warn'); return null; }
+      return reply;
+    } catch (e) {
+      fireToast(t('mobile.tavern.ai_reply.fail'), 'danger');
+      return null;
+    } finally {
+      setAiReplyLoading(false);
+    }
+  }, [activeId, aiReplyLoading, fireToast, t]);
+
   /* ── 列表页打开菜单时,记录操作 chat ─────────────────────────── */
   const openMenu = useCallback((chat) => {
     setMenuTarget(chat);
@@ -1242,6 +1324,8 @@ export function MobileTavern({ nav }) {
               onOpenDrawer={() => setDrawerOpen(true)}
               onOpenMenu={openChatMenu}
               onToast={fireToast}
+              onAiReply={onAiReply}
+              aiReplyLoading={aiReplyLoading}
             />
           </div>
         )}
@@ -1253,6 +1337,8 @@ export function MobileTavern({ nav }) {
         character={character}
         persona={persona}
         systemPrompt={systemPrompt}
+        immersive={immersive}
+        onToggleImmersive={onToggleImmersive}
         onClose={() => setDrawerOpen(false)}
         onSavePersona={onSavePersona}
         onSaveSystemPrompt={onSaveSystemPrompt}

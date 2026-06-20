@@ -290,6 +290,22 @@ _SYSTEM_TAVERN_BOOTSTRAP = """\
 {style_block}
 """
 
+# 沉浸式拟人模式覆盖块(state.data['tavern'].immersive == True 时由 _build_system 追加到
+# _SYSTEM_TAVERN 末尾)。这是【确定性注入】:开关持久存于 state_snapshot,每回合读取后注入,
+# 不依赖模型自己记住。语义上覆盖前面的「小说笔法」基调,把酒馆从"写小说"转为"真人(角色)实时聊天",
+# 并把"绝不替玩家说话/行动"从软约束升为硬铁律。由 set_tavern_immersive 工具 / UI 开关控制。
+_IMMERSIVE_OVERRIDE = """\
+
+# 沉浸式拟人模式(玩家已开启,最高优先级,覆盖上面的叙事基调)
+从现在起你不是在"写小说",而是【{char_name}】这个真实的人正在和对方实时对话(像聊天/发消息):
+- 以【对话 / 台词】为主,像真人那样自然口语地回应;只在必要时夹一两句简短动作或神态,不写大段第三人称场景散文、不堆砌华丽辞藻、不做章节式铺陈。
+- 篇幅贴合真实对话:通常一到几句即可,不必每轮都长篇。
+- 始终用【{char_name}】的身份 / 性格 / 语气说话,绝不跳出角色、绝不切换成旁白或上帝视角叙述者。
+- **绝对禁止替玩家(persona)写任何内容**:不替玩家说话(不写"你说……"),不替玩家行动(不写"你做了……"/"你走向……"),不替玩家描写心理 / 感受 / 决定。你只能呈现【你自己这个角色】+ 你能直接感知到的环境反应。
+- 不知道玩家做了什么 / 想什么时,就用你的角色去【询问 / 等待 / 反应】,绝不替对方编造。
+本段由玩家显式开启,优先级高于前文任何"小说笔法 / 写动作神态台词内心"的措辞。
+"""
+
 def _content_text(content: Any) -> str:
     """从 message content 提取纯文本 —— content 可能是 str 或 Anthropic 结构化 block 列表
     (Q 分层缓存后,最后一条 user 消息可能是 [{type:text,text,...}, ...])。仅供 token 估算。"""
@@ -419,11 +435,16 @@ class GameMaster:
                     # 再用 set_tavern_character 搭好环境。已有角色名 → 沉浸扮演该角色(原行为)。
                     if not _char:
                         return _SYSTEM_TAVERN_BOOTSTRAP.replace("{style_block}", style_block)
-                    return (
+                    _sys_tav = (
                         _SYSTEM_TAVERN
                         .replace("{char_name}", _char)
                         .replace("{style_block}", style_block)
                     )
+                    # 沉浸式拟人模式:持久 flag(state.data['tavern'].immersive)开 → 确定性追加覆盖块。
+                    _tav = (((getattr(_state, "data", {}) or {}).get("tavern")) or {})
+                    if _tav.get("immersive"):
+                        _sys_tav += _IMMERSIVE_OVERRIDE.replace("{char_name}", _char)
+                    return _sys_tav
             except Exception:
                 pass  # 任何异常都退回通用 GM system,绝不让酒馆分支拖垮主流程
         # _SYSTEM_BASE intentionally contains literal JSON examples such as

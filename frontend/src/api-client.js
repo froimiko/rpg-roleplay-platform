@@ -758,6 +758,10 @@
       rename: (id, title) => POST(`/api/tavern/chats/${id}/rename`, { title }),
       // F#3:编辑本对话系统提示词
       setSystemPrompt: (id, sp) => POST(`/api/tavern/chats/${id}/system-prompt`, { system_prompt: sp }),
+      // 沉浸式拟人模式开关(持久写 state.tavern.immersive,确定性注入 system prompt)
+      setImmersive: (id, enabled) => POST(`/api/tavern/chats/${id}/immersive`, { enabled: !!enabled }),
+      // AI 帮回:以玩家自己的角色/persona 生成一条符合上下文的回复(返回文本,前端填入输入框,不自动发送)
+      aiReply: (id) => POST(`/api/tavern/chats/${id}/ai-reply`, {}),
       // 类 Claude:按对话内容自动生成标题(后端幂等,仅 title 为空时生成)
       autotitle: (id) => POST(`/api/tavern/chats/${id}/autotitle`, {}),
       // 删除对话

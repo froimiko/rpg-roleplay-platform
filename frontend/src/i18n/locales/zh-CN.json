@@ -5490,6 +5490,22 @@
         "save_fail": "保存失败",
         "persona_saved": "persona 已保存",
         "create_fail": "新建对话失败"
+      },
+      "immersive": {
+        "label": "沉浸式拟人模式",
+        "desc": "AI 以真人(角色卡)口吻实时对话,绝不替你说话或行动",
+        "on_toast": "已开启沉浸式拟人模式",
+        "off_toast": "已关闭沉浸式拟人模式"
+      },
+      "ai_reply": {
+        "label": "AI 帮回",
+        "sub": "以你的角色生成一条符合上下文的回复,填入输入框",
+        "empty": "AI 没有生成回复",
+        "fail": "AI 帮回失败"
+      },
+      "plus": {
+        "aria": "附加功能",
+        "title": "附加功能"
       }
     },
     "new_game": {

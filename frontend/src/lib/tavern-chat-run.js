@@ -83,7 +83,7 @@ export function applyTavernState(data, setters) {
   if (!data || !setters) return;
   const {
     setCharacter, setPersona, setHistory, setActiveChat,
-    setGameState, setPermission, setSystemPrompt, mapHistory,
+    setGameState, setPermission, setSystemPrompt, setImmersive, mapHistory,
   } = setters;
   const api = setters.api || (typeof window !== 'undefined' && window.api);
 
@@ -125,6 +125,9 @@ export function applyTavernState(data, setters) {
   if (setSystemPrompt && tavern.system_prompt !== undefined) {
     setSystemPrompt(tavern.system_prompt || '');
   }
+
+  // 沉浸式拟人模式开关回填(state.data.tavern.immersive,经 /api/state 顶层 tavern 透出)。
+  if (setImmersive) setImmersive(!!tavern.immersive);
 
   if (data.save_id != null && setActiveChat) {
     setActiveChat((prev) => ({
