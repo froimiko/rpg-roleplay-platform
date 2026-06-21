@@ -24,7 +24,7 @@ from typing import Any
 
 from agents.context_agent import run_context_agent
 from core.logging import get_logger
-from state import GameState, strip_json_state_ops, strip_meta_tool_preamble
+from state import GameState, strip_json_state_ops, strip_leaked_scaffold, strip_meta_tool_preamble
 
 log = get_logger(__name__)
 
@@ -1861,6 +1861,9 @@ async def persist_turn_phase(
     # 确定性兜底:剥掉 GM 在 native tool_use 前泄漏进正文的英文"工具预告"元叙述
     # (例:"Let me mark the anchors that have been satisfied...")。不依赖 GM 听提示词。
     visible_response = strip_meta_tool_preamble(visible_response)
+    # 确定性兜底(反馈 #77):弱模型把检索/世界线脚手架块(=== 时间线检索锚点 === 等)+ 内部推理
+    # 直接吐进正文 → 整块剥掉。这些 header 是后端注入的隐形上下文,正常叙事永不产出,零误伤。
+    visible_response = strip_leaked_scaffold(visible_response)
 
     # 确定性玩家选项兜底(用户反馈"选项有时不弹"):整个选择机制原本只在 GM 主动调 ask_player_choice
     # 时才弹 —— GM 常把选项直接写进正文 markdown 列表却不调工具 → 前端无 chips。这里【确定性】解析
