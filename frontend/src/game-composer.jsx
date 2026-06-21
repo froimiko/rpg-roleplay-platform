@@ -1239,6 +1239,8 @@ function _currentModelLabel(gameState, localModel, t) {
   };
   // catalog 已加载但没有任何「已配置 key」的 provider → 用户无可用模型,
   // 绝不回退显示一个他用不了的默认模型(否则删光 key 仍显示 Opus,误导)。
+  // 后端权威标记:用户无任何可用(已配 key)模型 → 提示去配置,绝不显示用不了的全局默认。
+  if (catalog && catalog.needs_model_config) return (t ? t('game.composer.model_needs_config') : 'Set up model');
   if (apis && !apis.some((a) => a.has_credential && (a.models || []).length)) return _placeholder();
   // 解析优先级:localModel(乐观更新) > 存档 session_model > catalog.selected(per-user 默认) > 后端全局 app。
   // 必须含 catalog.selected —— 否则刷新后掉到 app.model(可能是全局默认 opus)而显示用不了的模型;

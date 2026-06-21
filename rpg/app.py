@@ -1292,6 +1292,7 @@ def _redact_catalog(catalog: dict[str, Any], is_admin: bool, user_id: int | None
     if user_id is not None:
         sel = result.get("selected") or {}
         if normalize_api_id(sel.get("api_id")) not in cred_ids:
+            _picked = False
             for api in result.get("apis", []):
                 if api.get("has_credential") and (api.get("models") or []):
                     first = api["models"][0]
@@ -1299,7 +1300,13 @@ def _redact_catalog(catalog: dict[str, Any], is_admin: bool, user_id: int | None
                         "api_id": api.get("id"),
                         "model_id": first.get("id") or first.get("real_name"),
                     }
+                    _picked = True
                     break
+            # 用户没有任何已配 key 的可用模型 → 不把用不了的全局默认(opus)当成用户的选择,
+            # 标记 needs_model_config,前端据此展示「请先配置模型」CTA 而非假模型名。
+            # admin 可走平台兜底,不标记(BYOK 平台:模型应来自用户自己的 key,不靠平台默认)。
+            if not _picked and not is_admin:
+                result["needs_model_config"] = True
     return result
 
 

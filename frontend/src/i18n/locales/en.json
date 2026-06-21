@@ -2725,7 +2725,8 @@
       "effort_saved": "Thinking effort → {{id}}",
       "effort_save_failed": "Save failed",
       "mention_you": "You",
-      "image_gen_tip": "AI Image Generation"
+      "image_gen_tip": "AI Image Generation",
+      "model_needs_config": "Set up model"
     },
     "command": {
       "title": "Commands",
@@ -6136,7 +6137,8 @@
         "model_fallback": "Model",
         "context_aria": "Context usage",
         "send_aria": "Send",
-        "stop_aria": "Stop"
+        "stop_aria": "Stop",
+        "model_needs_config": "Set up model"
       }
     },
     "game_panels": {

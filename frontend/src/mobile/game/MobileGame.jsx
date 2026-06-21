@@ -589,7 +589,7 @@ export function MobileGame(gc) {
           footer={(
             <>
               <button className="c-chip" onClick={() => setSheet({ type: 'slash' })} aria-label={t('mobile.game.composer.slash_aria')}><Icon name="slash" size={14} /></button>
-              <button className="c-chip" onClick={() => setSheet({ type: 'model' })}><Icon name="sparkle" size={13} /><span className="lbl">{(gc.model && (gc.model.label || gc.model.id)) || t('mobile.game.composer.model_fallback')}</span><Icon name="chevron_down" size={12} /></button>
+              <button className={`c-chip${gc.game && gc.game.models && gc.game.models.needs_model_config ? ' needs-config' : ''}`} onClick={() => setSheet({ type: 'model' })}><Icon name="sparkle" size={13} /><span className="lbl">{(gc.game && gc.game.models && gc.game.models.needs_model_config) ? t('mobile.game.composer.model_needs_config') : ((gc.model && (gc.model.label || gc.model.id)) || t('mobile.game.composer.model_fallback'))}</span><Icon name="chevron_down" size={12} /></button>
               <button className={`c-chip perm ${permission}`} onClick={() => setSheet({ type: 'permission' })}><Icon name={(PERMISSIONS().find((x) => x.id === permission) || PERMISSIONS()[2]).icon} size={13} /></button>
               <span className="c-spacer" />
               <button className="c-ctx" onClick={() => setSheet({ type: 'context' })} aria-label={t('mobile.game.composer.context_aria')}>

@@ -2816,7 +2816,8 @@
       "effort_saved": "思考深度 → {{id}}",
       "effort_save_failed": "保存失败",
       "mention_you": "你",
-      "image_gen_tip": "AI 生图"
+      "image_gen_tip": "AI 生图",
+      "model_needs_config": "配置模型"
     },
     "command": {
       "title": "命令",
@@ -6136,7 +6137,8 @@
         "model_fallback": "模型",
         "context_aria": "上下文用量",
         "send_aria": "发送",
-        "stop_aria": "停止"
+        "stop_aria": "停止",
+        "model_needs_config": "配置模型"
       }
     },
     "game_panels": {
