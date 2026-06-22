@@ -1184,15 +1184,18 @@ def _read_state_snapshot() -> dict[str, Any]:
 
 
 # 列表页只取摘要字段；完整 state_snapshot 通过 save_detail() 单独取
+# 全列用 game_saves. 限定:saves_page() 里有 `left join scripts s`,scripts 同名列(id/title 等)
+# 会让裸列名歧义(AmbiguousColumn 500)。限定后在 saves()(无 join)与 saves_page()(有 join)都成立。
 _SAVE_LIST_COLUMNS = """
-    id, public_id, user_id, script_id, title, state_path,
-    active_commit_id, active_branch_node_id, active_branch_ref_id,
-    created_at, updated_at, coalesce(last_played_at, updated_at) as last_played_at, row_version,
-    (state_snapshot->>'turn')::int as turn,
-    (state_snapshot->'player'->>'name') as player_name,
-    coalesce(jsonb_array_length(state_snapshot->'history'), 0) as history_count,
-    coalesce((state_snapshot->'world'->>'time'), '') as world_time,
-    coalesce(save_kind, 'game') as save_kind
+    game_saves.id, game_saves.public_id, game_saves.user_id, game_saves.script_id, game_saves.title, game_saves.state_path,
+    game_saves.active_commit_id, game_saves.active_branch_node_id, game_saves.active_branch_ref_id,
+    game_saves.created_at, game_saves.updated_at,
+    coalesce(game_saves.last_played_at, game_saves.updated_at) as last_played_at, game_saves.row_version,
+    (game_saves.state_snapshot->>'turn')::int as turn,
+    (game_saves.state_snapshot->'player'->>'name') as player_name,
+    coalesce(jsonb_array_length(game_saves.state_snapshot->'history'), 0) as history_count,
+    coalesce((game_saves.state_snapshot->'world'->>'time'), '') as world_time,
+    coalesce(game_saves.save_kind, 'game') as save_kind
 """
 
 
