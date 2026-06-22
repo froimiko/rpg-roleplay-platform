@@ -500,14 +500,17 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 (new_save_id,),
             ).fetchone()
             if new_session_row is None:
+                # [hotfix] game_sessions 没有 context_size 列(本就不存在)→ 原 insert 报
+                # UndefinedColumn,带 messages 的存档导入 100% 失败。改用真实必填列:
+                # save_id + user_id(user_id 是 NOT NULL 无默认,必须给)。
                 new_session_row = db.execute(
                     """
-                    insert into game_sessions(save_id, context_size)
-                    values (%s, 8192)
+                    insert into game_sessions(save_id, user_id)
+                    values (%s, %s)
                     on conflict do nothing
                     returning id
                     """,
-                    (new_save_id,),
+                    (new_save_id, user_id),
                 ).fetchone()
             new_session_id: int | None = int(new_session_row["id"]) if new_session_row else None
 
