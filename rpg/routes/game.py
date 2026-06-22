@@ -944,8 +944,13 @@ async def api_message_edit(
         return JSONResponse({"ok": False, "error": "invalid save_id or message_index"}, status_code=400)
 
     from platform_app.db import connect
+    from platform_app.perms import owns_save
     try:
         with connect() as db:
+            # [安全] 存档归属校验:原 PR 直接用请求体 save_id 改 messages,无归属校验 = IDOR
+            # (任何登录用户可改他人存档的消息)。与全平台 save 端点统一走 perms.owns_save。
+            if not owns_save(db, int(save_id), int(api_user["id"])):
+                return JSONResponse({"ok": False, "error": "无权访问该存档"}, status_code=403)
             # 按 turn, id 排序拿到有序消息列表,定位到目标行
             rows = db.execute(
                 "select id from messages where save_id = %s order by turn, id",
