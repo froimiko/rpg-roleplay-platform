@@ -1693,7 +1693,7 @@ function ModelsSection({ nav, onBack }) {
           }
         }}
         onDeleteKey={async () => {
-          if (!window.confirm(t('mobile.settings.models.delete_key_confirm', { name: selectedApi.name }))) return;
+          if (!await window.__confirm({ message: t('mobile.settings.models.delete_key_confirm', { name: selectedApi.name }), danger: true })) return;
           try {
             await window.api.credentials.remove({ api_id: credId(selectedApi.id) });
             setSelected(null);

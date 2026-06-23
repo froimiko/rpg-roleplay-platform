@@ -263,6 +263,12 @@
   position: absolute; width: 12px; height: 12px; background: #fff;
   border: 1px solid rgba(0,0,0,.35); border-radius: 2px; touch-action: none;
 }
+/* Enlarged transparent hit area for touch (keeps visible handle at 12×12) */
+.ilb-crop__h::before {
+  content: ''; position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 28px; height: 28px;
+}
 .ilb-crop__h--nw { top: -6px; left: -6px; cursor: nwse-resize; }
 .ilb-crop__h--ne { top: -6px; right: -6px; cursor: nesw-resize; }
 .ilb-crop__h--se { bottom: -6px; right: -6px; cursor: nwse-resize; }
@@ -317,7 +323,7 @@
 /* ── 生图尺寸/比例选择器 ──────────────────────────────────── */
 .isz { display: flex; flex-wrap: wrap; gap: 6px; }
 .isz__btn {
-  height: 30px; padding: 0 12px; border-radius: 99px; cursor: pointer;
+  min-height: 44px; padding: 0 12px; border-radius: 99px; cursor: pointer;
   background: var(--panel-2); border: 1px solid var(--line);
   color: var(--text-quiet); font-size: 12px; font-weight: 500;
   transition: background .15s, border-color .15s, color .15s;

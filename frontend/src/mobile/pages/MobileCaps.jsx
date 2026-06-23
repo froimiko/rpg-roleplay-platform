@@ -209,7 +209,7 @@ function McpSection({ toast }) {
   };
 
   const handleDelete = async (it) => {
-    if (!window.confirm(t('mobile.caps.mcp.confirm.delete', { name: it.name }))) return;
+    if (!await window.__confirm({ message: t('mobile.caps.mcp.confirm.delete', { name: it.name }), danger: true })) return;
     try {
       await window.api.mcp.remove({ id: it.id, server_id: it.id });
       toast(t('mobile.caps.toast.deleted'), 'ok');
@@ -608,7 +608,7 @@ function ApisSection({ toast }) {
   };
 
   const handleRemove = async (prov) => {
-    if (!window.confirm(t('mobile.caps.apis.confirm.delete_key', { name: prov.name || prov.id }))) return;
+    if (!await window.__confirm({ message: t('mobile.caps.apis.confirm.delete_key', { name: prov.name || prov.id }), danger: true })) return;
     try {
       await window.api.credentials.remove({ api_id: prov.id });
       toast(t('mobile.caps.toast.deleted'), 'ok');
@@ -852,7 +852,7 @@ function FeedbackSection({ toast }) {
   };
 
   const handleWithdraw = async (id) => {
-    if (!window.confirm(t('mobile.caps.feedback.confirm.withdraw', { id }))) return;
+    if (!await window.__confirm({ message: t('mobile.caps.feedback.confirm.withdraw', { id }), danger: true })) return;
     try {
       const res = await fetch(`/api/feedback/${id}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

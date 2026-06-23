@@ -1,5 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 
 /* ImageLightbox — 统一的图片全屏预览 + 裁剪。
    · createPortal 到 document.body：彻底逃离任何祖先(如 .msplit__media 的 sticky)
@@ -18,6 +19,7 @@ import { createPortal } from 'react-dom';
 */
 export default function ImageLightbox({ open, src, alt = '', onClose, onCrop, cropHint }) {
   const { useState, useEffect, useRef, useCallback } = React;
+  const { t } = useTranslation();
   const [mode, setMode] = useState('view');     // 'view' | 'crop'
   const [busy, setBusy] = useState(false);
   const [box, setBox] = useState(null);          // 裁剪框(相对图片显示区的 px){x,y,w,h}
@@ -123,7 +125,7 @@ export default function ImageLightbox({ open, src, alt = '', onClose, onCrop, cr
 
   const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
   const node = (
-    <div className="ilb" role="dialog" aria-modal="true" onClick={() => mode === 'view' && onClose && onClose()}>
+    <div className="ilb" role="dialog" aria-modal="true" aria-label={t('common.image_preview')} onClick={() => mode === 'view' && onClose && onClose()}>
       <div className="ilb__stage" onClick={(e) => e.stopPropagation()}>
         <div className="ilb__imgwrap">
           <img ref={imgRef} src={src} alt={alt} className="ilb__img" draggable="false" />
@@ -153,7 +155,7 @@ export default function ImageLightbox({ open, src, alt = '', onClose, onCrop, cr
           )}
         </div>
       </div>
-      <button className="ilb__close" aria-label="关闭" onClick={() => onClose && onClose()}>×</button>
+      <button className="ilb__close" aria-label={t('common.close')} onClick={() => onClose && onClose()}>×</button>
     </div>
   );
   return createPortal(node, document.body);

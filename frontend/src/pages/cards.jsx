@@ -1851,7 +1851,7 @@ function CardEditModal({ card, isNew, kind, onClose, onSave, onPromote, targetSc
   };
 
   const node = (
-    <div style={{ position: 'fixed', top: 53, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'var(--bg, #1a1817)', overflow: 'auto' }}>
+    <div style={{ position: 'fixed', top: 'var(--nav-h, 53px)', left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'var(--bg, #1a1817)', overflow: 'auto' }}>
       {/* 顶部栏(位于平台顶栏下方,保留平台导航) */}
       <div style={{ position: 'sticky', top: 0, zIndex: 3, background: '#131211', borderBottom: '1px solid #36322d' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '13px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>

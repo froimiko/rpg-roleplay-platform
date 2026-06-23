@@ -1168,30 +1168,14 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
             msgIndex={idx} saveId={saveId} commitId={commitId} />;
         })}
 
-        {/* task #65: SSE 慢启动期占位气泡 — running=true 但还没有 assistant streaming 消息时显示。
-            一旦第一个 token 到达(NarrativeBlock streaming=true 出现),本气泡自动消失。 */}
-        {runState.running && (() => {
-          const lastMsg = visible.length > 0 ? visible[visible.length - 1] : null;
-          const hasStreamingAssistant = lastMsg && lastMsg.role === 'assistant' && !lastMsg.streaming_done;
-          if (hasStreamingAssistant) return null;
-          // 最后一条是玩家消息或历史为空 → 等待 GM 响应中
-          const isWaitingForFirstToken = !lastMsg || lastMsg.role === 'user';
-          if (!isWaitingForFirstToken) return null;
-          return (
-            <div className="gc-waiting-gm" aria-live="polite">
-              <span className="gc-waiting-gm-dot" />
-              <span className="gc-waiting-gm-dot" style={{ animationDelay: '0.2s' }} />
-              <span className="gc-waiting-gm-dot" style={{ animationDelay: '0.4s' }} />
-              <span className="gc-waiting-gm-label">{t('game.app.chat.waiting_gm')}</span>
-            </div>
-          );
-        })()}
+        {/* 思考指示器统一(2026-06-23):此前等待首 token 时,这里的 gc-waiting-gm 三点气泡
+            与下方 ThinkingPill 圆环【同时出现】= 一个回合内两种"正在思考"UI 并存,跨回合反复
+            出现(用户反馈"思考ui有两种循环出现")。ThinkingPill 自身已覆盖整段运行(running 全程,
+            含等待首 token 阶段:整理上下文 → 生成正文 → 落库),且带阶段进度/百分比/计时/"已完成"
+            收尾,信息更全。故移除冗余的 gc-waiting-gm 三点气泡,全程只用 ThinkingPill 这一种指示器。 */}
 
-        {/* task 92：原 gc-run-wrap 直接渲染 runState.steps，把后端 raw phase trace
-            （prompt / intent / llm_curator / manifest / provider:xxx / assembly /
-            rules_engine / main_gm / acceptance_check ...）整页铺给玩家。
-            改用 ThinkingPill：一行高层进度 + "已完成 · X.Xs" 短暂收尾；
-            详情藏在折叠里，玩家好奇时再点开看 rawSteps。 */}
+        {/* task 92:高层思考状态(整理上下文→生成正文→落库 + 百分比 + 计时 + "已完成 · X.Xs"),
+            是回合全程唯一的"正在思考"指示器。完整 raw phase trace 折叠在内,需要时展开。 */}
         <ThinkingPill runState={runState} runStyle={runStyle} />
 
         {hasError &&

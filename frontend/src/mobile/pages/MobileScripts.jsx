@@ -107,7 +107,7 @@ function ChaptersView({ script, onBack, nav }) {
 
   const onRename = async () => {
     if (!cur) return;
-    const newTitle = window.prompt(t('mobile.scripts.chapters.rename_prompt'), cur.title || '');
+    const newTitle = await window.__prompt({ title: t('mobile.scripts.chapters.rename_prompt'), default: cur.title || '' });
     if (!newTitle || newTitle === cur.title) return;
     try {
       await window.api.scripts.updateChapter(script.id, curIdx, { title: newTitle });
@@ -118,7 +118,7 @@ function ChaptersView({ script, onBack, nav }) {
 
   const onMergeNext = async () => {
     if (!cur || activeIdx >= chapters.length - 1) return;
-    if (!window.confirm(t('mobile.scripts.chapters.confirm_merge_next', { a: activeIdx + 1, b: activeIdx + 2 }))) return;
+    if (!await window.__confirm({ message: t('mobile.scripts.chapters.confirm_merge_next', { a: activeIdx + 1, b: activeIdx + 2 }), danger: true })) return;
     try {
       const nextCh = chapters[activeIdx + 1];
       const nextIdx = nextCh ? (nextCh.chapter_index ?? nextCh.index ?? (activeIdx + 1)) : (activeIdx + 1);
@@ -130,7 +130,7 @@ function ChaptersView({ script, onBack, nav }) {
   // 合并上一章:把前面那章折进当前章,保留当前章标题(序章/前言折进第一章)。
   const onMergePrev = async () => {
     if (!cur || activeIdx <= 0) return;
-    if (!window.confirm(t('mobile.scripts.chapters.confirm_merge_prev', { a: activeIdx, b: activeIdx + 1 }))) return;
+    if (!await window.__confirm({ message: t('mobile.scripts.chapters.confirm_merge_prev', { a: activeIdx, b: activeIdx + 1 }), danger: true })) return;
     try {
       const prevCh = chapters[activeIdx - 1];
       const prevIdx = prevCh ? (prevCh.chapter_index ?? prevCh.index ?? (activeIdx - 1)) : (activeIdx - 1);
@@ -141,7 +141,7 @@ function ChaptersView({ script, onBack, nav }) {
   };
 
   const onResplit = async () => {
-    const rule = window.prompt(t('mobile.scripts.chapters.resplit_prompt'), 'auto');
+    const rule = await window.__prompt({ title: t('mobile.scripts.chapters.resplit_prompt'), default: 'auto' });
     if (!rule) return;
     try {
       await window.api.scripts.resplit(script.id, { split_rule: rule });
@@ -154,7 +154,7 @@ function ChaptersView({ script, onBack, nav }) {
     return (
       <>
         <div className="pl-head">
-          <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+          <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
           <div className="pl-head-title"><strong>{t('mobile.scripts.chapters.title')}</strong></div>
         </div>
         <div className="pl-body"><div className="pl-pad"><div className="muted" style={{ fontSize: 13 }}>{t('common.loading')}</div></div></div>
@@ -165,7 +165,7 @@ function ChaptersView({ script, onBack, nav }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title">
           <strong>{t('mobile.scripts.chapters.title')}</strong>
           <span className="sub">{t('mobile.scripts.chapters.subtitle', { total: chapters.length, current: activeIdx + 1 })}</span>
@@ -179,7 +179,7 @@ function ChaptersView({ script, onBack, nav }) {
         {chapters.length === 0 ? (
           <div className="pl-pad"><EmptyState icon="file" title={t('mobile.scripts.chapters.empty_title')} desc={t('mobile.scripts.chapters.empty_desc')} /></div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateRows: '1fr', height: '100%' }}>
+          <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr', height: '100%' }}>
             {/* 章节选择器 */}
             <div style={{ overflowX: 'auto', display: 'flex', gap: 6, padding: '10px 16px 0', borderBottom: '1px solid var(--line-soft)' }} className="scroll">
               {chapters.map((c, i) => (
@@ -209,12 +209,12 @@ function ChaptersView({ script, onBack, nav }) {
                   <strong style={{ fontFamily: 'var(--font-serif)', fontSize: 15 }}>{cur.title || t('mobile.scripts.no_title')}</strong>
                   <span className="mono muted-2" style={{ fontSize: 11 }}>{fmtN(cur.word_count || 0)}{t('mobile.scripts.unit.chars')}</span>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 7 }}>
-                    <button className="pl-pill" style={{ height: 28 }} onClick={onRename}><Icon name="edit" size={13} /> {t('mobile.scripts.chapters.rename_btn')}</button>
+                    <button className="pl-pill" style={{ minHeight: 44, paddingTop: 6, paddingBottom: 6 }} onClick={onRename}><Icon name="edit" size={13} /> {t('mobile.scripts.chapters.rename_btn')}</button>
                     {activeIdx > 0 && (
-                      <button className="pl-pill" style={{ height: 28 }} onClick={onMergePrev}><Icon name="link" size={13} /> {t('mobile.scripts.chapters.merge_prev_btn')}</button>
+                      <button className="pl-pill" style={{ minHeight: 44, paddingTop: 6, paddingBottom: 6 }} onClick={onMergePrev}><Icon name="link" size={13} /> {t('mobile.scripts.chapters.merge_prev_btn')}</button>
                     )}
                     {activeIdx < chapters.length - 1 && (
-                      <button className="pl-pill" style={{ height: 28 }} onClick={onMergeNext}><Icon name="link" size={13} /> {t('mobile.scripts.chapters.merge_next_btn')}</button>
+                      <button className="pl-pill" style={{ minHeight: 44, paddingTop: 6, paddingBottom: 6 }} onClick={onMergeNext}><Icon name="link" size={13} /> {t('mobile.scripts.chapters.merge_next_btn')}</button>
                     )}
                   </div>
                 </div>
@@ -252,7 +252,7 @@ function WorldbookView({ script, onBack }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title center">
           <strong>{t('mobile.scripts.worldbook.title')}</strong>
           <span className="sub">{script?.title}</span>
@@ -306,7 +306,7 @@ function NpcView({ script, onBack }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title center">
           <strong>{t('mobile.scripts.npc.title')}</strong>
           <span className="sub">{script?.title}</span>
@@ -378,7 +378,7 @@ function TimelineView({ script, onBack }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title center">
           <strong>{t('mobile.scripts.timeline.title')}</strong>
           <span className="sub">{script?.title}</span>
@@ -458,7 +458,7 @@ function VersionsView({ script, currentUserId, onBack, nav }) {
   const isOwner = script && currentUserId && script.owner_id === currentUserId;
 
   const onRollback = async (commit) => {
-    if (!window.confirm(t('mobile.scripts.versions.confirm_rollback', { id: (commit.id || '').slice(0, 8) }))) return;
+    if (!await window.__confirm({ message: t('mobile.scripts.versions.confirm_rollback', { id: (commit.id || '').slice(0, 8) }), danger: true })) return;
     setRollingBack(commit.id);
     try {
       await window.api.scripts.checkout(script.id, commit.id);
@@ -473,7 +473,7 @@ function VersionsView({ script, currentUserId, onBack, nav }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title center">
           <strong>{t('mobile.scripts.versions.title')}</strong>
           <span className="sub">{script?.title}</span>
@@ -506,7 +506,7 @@ function VersionsView({ script, currentUserId, onBack, nav }) {
                       onClick={() => onRollback(c)}
                       disabled={rollingBack === c.id}
                       style={{
-                        marginTop: 8, height: 28, padding: '0 12px', borderRadius: 8,
+                        marginTop: 8, minHeight: 44, padding: '6px 12px', borderRadius: 8,
                         fontSize: 12, color: 'var(--accent)', border: '1px solid var(--accent-edge)',
                         background: 'var(--accent-soft)',
                       }}
@@ -573,7 +573,7 @@ function OverridesView({ script, onBack, nav }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title center">
           <strong>{t('mobile.scripts.overrides.title')}</strong>
           <span className="sub">{script?.title}</span>
@@ -640,7 +640,7 @@ function ShareView({ script, currentUserId, onBack, onRefresh, nav }) {
       nav.toast(t('mobile.scripts.share.need_review'), 'accent', 'warn');
       return;
     }
-    if (next && !window.confirm(t('mobile.scripts.share.confirm_publish', { title: script.title }))) return;
+    if (next && !await window.__confirm({ message: t('mobile.scripts.share.confirm_publish', { title: script.title }) })) return;
     setSaving(true);
     try {
       const r = await window.api.scripts.setVisibility(script.id, next);
@@ -662,7 +662,7 @@ function ShareView({ script, currentUserId, onBack, onRefresh, nav }) {
   };
 
   const onFork = async () => {
-    if (!window.confirm(t('mobile.scripts.share.confirm_fork', { title: script.title }))) return;
+    if (!await window.__confirm({ message: t('mobile.scripts.share.confirm_fork', { title: script.title }) })) return;
     try {
       const r = await window.api.scripts.fork(script.id, { title: `${script.title} (${t('mobile.scripts.share.copy_suffix')})` });
       if (!r || r.ok === false) throw new Error(r?.error || t('mobile.scripts.op_failed'));
@@ -675,7 +675,7 @@ function ShareView({ script, currentUserId, onBack, onRefresh, nav }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title center">
           <strong>{t('mobile.scripts.share.title')}</strong>
           <span className="sub">{script?.title}</span>
@@ -800,7 +800,7 @@ function ScriptDetailView({ script, saves, embedStatus, currentUserId, onBack, o
   };
 
   const onDelete = async () => {
-    if (!window.confirm(t('mobile.scripts.detail.confirm_delete', { title: script.title }))) return;
+    if (!await window.__confirm({ message: t('mobile.scripts.detail.confirm_delete', { title: script.title }), danger: true })) return;
     try {
       const r = await window.api.scripts.delete(script.id, { force: true });
       if (!r || r.ok !== true) throw new Error(r?.error || t('mobile.scripts.detail.delete_error'));
@@ -811,7 +811,7 @@ function ScriptDetailView({ script, saves, embedStatus, currentUserId, onBack, o
   };
 
   const onUnsubscribe = async () => {
-    if (!window.confirm(t('mobile.scripts.detail.confirm_unsubscribe', { title: script.title }))) return;
+    if (!await window.__confirm({ message: t('mobile.scripts.detail.confirm_unsubscribe', { title: script.title }), danger: true })) return;
     try {
       const r = await window.api.scripts.unsubscribe(script.id);
       if (!r || r.ok !== true) throw new Error(r?.error || t('mobile.scripts.detail.unsubscribe_error'));
@@ -834,7 +834,7 @@ function ScriptDetailView({ script, saves, embedStatus, currentUserId, onBack, o
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title">
           <strong style={{ fontSize: 14.5 }}>{script.title}</strong>
           <span className="sub mono">{script.uid}</span>
@@ -1165,7 +1165,7 @@ function ImportView({ onBack, nav }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={step === 0 ? onBack : () => { if (step < 3) setStep(s => s - 1); else onBack(); }}>
+        <button className="pl-back" onClick={step === 0 ? onBack : () => { if (step < 3) setStep(s => s - 1); else onBack(); }} aria-label={t('common.back')}>
           <Icon name="chevron_left" size={20} />
         </button>
         <div className="pl-head-title center">
@@ -1439,7 +1439,7 @@ function LibraryView({ onBack, nav }) {
     return (
       <>
         <div className="pl-head">
-          <button className="pl-back" onClick={() => setSelectedItem(null)}><Icon name="chevron_left" size={20} /></button>
+          <button className="pl-back" onClick={() => setSelectedItem(null)} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
           <div className="pl-head-title">
             <strong style={{ fontSize: 14.5 }}>{s.title}</strong>
             <span className="sub">{t('mobile.scripts.library.title')} · {s.author || s.author_username || t('mobile.scripts.library.unknown_author')}</span>
@@ -1489,7 +1489,7 @@ function LibraryView({ onBack, nav }) {
   return (
     <>
       <div className="pl-head">
-        <button className="pl-back" onClick={onBack}><Icon name="chevron_left" size={20} /></button>
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}><Icon name="chevron_left" size={20} /></button>
         <div className="pl-head-title center">
           <strong>{t('mobile.scripts.library.title')}</strong>
           <span className="sub">{t('mobile.scripts.library.subtitle')}</span>

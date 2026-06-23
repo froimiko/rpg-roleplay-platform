@@ -432,7 +432,7 @@ function PanelMemory({ state, density }) {
           <h3>{t('game.memory.pinned')}<span className="muted-2" style={{marginLeft: 8, fontSize: 11, textTransform: "none"}}>{t('game.memory.pinned_subtitle')}</span></h3>
           <button className="iconbtn" data-tip={t('game.memory.add_pinned_tip')} data-tip-pos="below" aria-label={t('game.memory.add_pinned_tip')}
             onClick={async () => {
-              const txt = prompt(t('game.memory.add_pinned_prompt'), "");
+              const txt = await window.__prompt({ title: t('game.memory.add_pinned_prompt') });
               if (!txt) return;
               // bucket=pinned(后端 Pydantic 字段名,旧版误用 kind 被 extra='ignore' 吞掉
               // 实际全落 notes 桶,等于固定记忆按钮一直在加到笔记 — 现修)
@@ -449,7 +449,7 @@ function PanelMemory({ state, density }) {
               <span className="serif">{item}</span>
               <button className="iconbtn" data-tip={t('game.memory.unpin_tip')} aria-label={t('game.memory.unpin_tip')}
                 onClick={async () => {
-                  if (!confirm(t('game.memory.unpin_confirm'))) return;
+                  if (!await window.__confirm({ message: t('game.memory.unpin_confirm'), danger: true })) return;
                   try { await window.api.game.memoryRemove({ bucket: "pinned", index: i }); try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {} window.__apiToast?.(t('game.memory.unpinned_ok'), { kind: "ok" }); }
                   catch (e) { window.__apiToast?.(t('game.memory.action_failed'), { kind: "danger", detail: e?.message }); }
                 }}>
@@ -471,7 +471,7 @@ function PanelMemory({ state, density }) {
         <div className="section-head"><h3>{t('game.memory.notes')}</h3>
           <button className="iconbtn" data-tip={t('game.memory.add_note_tip')} data-tip-pos="below"
             onClick={async () => {
-              const txt = prompt(t('game.memory.add_note_prompt'), "");
+              const txt = await window.__prompt({ title: t('game.memory.add_note_prompt') });
               if (!txt) return;
               try { await window.api.game.memoryAdd({ bucket: "notes", text: txt }); try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {} window.__apiToast?.(t('game.memory.added_ok'), { kind: "ok" }); }
               catch (e) { window.__apiToast?.(t('game.memory.add_failed'), { kind: "danger", detail: e?.message }); }
@@ -485,7 +485,7 @@ function PanelMemory({ state, density }) {
               <span style={{flex: 1}}>{item}</span>
               <button className="iconbtn" data-tip={t('game.memory.delete_note_tip')}
                 onClick={async () => {
-                  if (!confirm(t('game.memory.delete_note_confirm'))) return;
+                  if (!await window.__confirm({ message: t('game.memory.delete_note_confirm'), danger: true })) return;
                   try { await window.api.game.memoryRemove({ bucket: "notes", index: i }); try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {} window.__apiToast?.(t('game.memory.deleted_ok'), { kind: "ok" }); }
                   catch (e) { window.__apiToast?.(t('game.memory.action_failed'), { kind: "danger", detail: e?.message }); }
                 }}>
@@ -818,7 +818,7 @@ function PanelCharacters({ state }) {
                   window.__apiToast?.(t('game.characters.relationship_updated', { name, status }), { kind: "ok", duration: 1500 });
                 }}
                 onDelete={async () => {
-                  if (!confirm(t('game.characters.delete_relationship_confirm', { name }))) return;
+                  if (!await window.__confirm({ message: t('game.characters.delete_relationship_confirm', { name }), danger: true })) return;
                   try { await window.api.game.relationshipDelete({ character: name });
                     try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {}
                     window.__apiToast?.(t('game.characters.deleted_ok'), { kind: "ok" }); }
@@ -831,9 +831,9 @@ function PanelCharacters({ state }) {
         {/* 手动添加关系入口 */}
         <button className="iconbtn" style={{marginTop: 8, fontSize: 12, padding: "4px 10px", width: "auto"}} aria-label={t('game.characters.add_relationship')}
           onClick={async () => {
-            const ch = prompt(t('game.characters.npc_name_prompt'), "");
+            const ch = await window.__prompt({ title: t('game.characters.npc_name_prompt') });
             if (!ch) return;
-            const st = prompt(t('game.characters.relationship_status_prompt', { name: ch }), t('game.characters.status_default'));
+            const st = await window.__prompt({ title: t('game.characters.relationship_status_prompt', { name: ch }), default: t('game.characters.status_default') });
             if (!st) return;
             try { await window.api.game.relationshipSet({ character: ch.trim(), status: st.trim() });
               window.__apiToast?.(t('game.characters.relationship_updated', { name: ch, status: st }), { kind: "ok" }); }
@@ -915,7 +915,7 @@ function WorldlineAnchorsSection({ saveId, refreshKey = 0, onAnchorSatisfied }) 
   // FIX2: 玩家确定性推进 — 把一个非 fatal 的 pending 锚点标记为已到达。
   const markSatisfied = async (anchorKey) => {
     if (!saveId || !anchorKey || satisfying) return;
-    if (typeof confirm === "function" && !confirm(t('game.timeline.satisfy_confirm'))) return;
+    if (!await window.__confirm({ message: t('game.timeline.satisfy_confirm'), danger: true })) return;
     setSatisfying(anchorKey);
     try {
       const base = (typeof window !== "undefined" && window.__API_BASE) || "";

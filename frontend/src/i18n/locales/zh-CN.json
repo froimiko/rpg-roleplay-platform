@@ -107,7 +107,10 @@
     "unknown": "未知",
     "open": "打开",
     "error": "错误",
-    "load_more": "加载更多"
+    "load_more": "加载更多",
+    "back": "返回",
+    "image_preview": "图片预览",
+    "info_hint": "说明"
   },
   "settings": {
     "title": "设置",
@@ -2226,7 +2229,8 @@
       "kv_world_time": "故事时间",
       "kv_played": "最后游玩",
       "kv_created": "创建于",
-      "snippet_empty": "（暂无最新片段，进入游戏后会自动同步。）"
+      "snippet_empty": "（暂无最新片段，进入游戏后会自动同步。）",
+      "export_tier_label": "导出级别"
     },
     "settings_form": {
       "title": "游戏设置",

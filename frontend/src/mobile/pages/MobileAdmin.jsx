@@ -1479,7 +1479,7 @@ function SectionFeedback({ nav }) {
                 </div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '12px 0 6px' }}>{t('mobile.admin.feedback.terminate_notice')}</div>
                 <button style={{ width: '100%', padding: '10px', borderRadius: 12, background: 'var(--danger-soft)', border: '1px solid rgba(200,103,93,0.4)', color: 'var(--danger)', fontSize: 13 }}
-                  onClick={() => { const reason = window.prompt(t('mobile.admin.feedback.terminate_prompt')); if (reason) doDecision(detail.id, 'nsfw_terminate', reason); }}>
+                  onClick={async () => { const reason = await window.__prompt({ title: t('mobile.admin.feedback.terminate_prompt') }); if (reason) doDecision(detail.id, 'nsfw_terminate', reason); }}>
                   {t('mobile.admin.feedback.terminate_btn')}
                 </button>
               </div>

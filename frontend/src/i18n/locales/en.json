@@ -16,7 +16,10 @@
     "unknown": "Unknown",
     "open": "Open",
     "error": "Error",
-    "load_more": "Load more"
+    "load_more": "Load more",
+    "back": "Back",
+    "image_preview": "Image preview",
+    "info_hint": "Info"
   },
   "settings": {
     "title": "Settings",
@@ -2135,7 +2138,8 @@
       "kv_world_time": "Story Time",
       "kv_played": "Last Played",
       "kv_created": "Created",
-      "snippet_empty": "(No recent snippet — will sync automatically when you play.)"
+      "snippet_empty": "(No recent snippet — will sync automatically when you play.)",
+      "export_tier_label": "Export tier"
     },
     "settings_form": {
       "title": "Game Settings",

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import CSButton from '@cloudscape-design/components/button';
 
 /* DetailDrawer — 右侧覆盖抽屉。
@@ -14,6 +14,33 @@ import CSButton from '@cloudscape-design/components/button';
      closeLabel : ✕ 的 aria-label(默认「关闭」)
 */
 export default function DetailDrawer({ open, title, onClose, width = 460, closeLabel = '关闭', children }) {
+  const drawerRef = useRef(null);
+  const prevFocusRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    // Save currently focused element and move focus into the drawer.
+    prevFocusRef.current = document.activeElement;
+    // Try to focus the first focusable element in the drawer, else the drawer itself.
+    const el = drawerRef.current;
+    if (el) {
+      const focusable = el.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable) { focusable.focus(); } else { el.focus(); }
+    }
+    // Escape key handler.
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && onClose) onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      // Restore focus when drawer closes.
+      if (prevFocusRef.current && typeof prevFocusRef.current.focus === 'function') {
+        prevFocusRef.current.focus();
+      }
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
     <>
@@ -21,7 +48,13 @@ export default function DetailDrawer({ open, title, onClose, width = 460, closeL
         onClick={onClose}
         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000 }}
       />
-      <div style={{
+      <div
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || closeLabel}
+        tabIndex={-1}
+        style={{
         position: 'fixed', top: 0, right: 0, height: '100vh', width: `min(${width}px, 94vw)`,
         background: 'var(--panel, #211f1d)', borderLeft: '1px solid var(--line, #36322d)',
         boxShadow: '-8px 0 28px rgba(0,0,0,.45)', zIndex: 1001,

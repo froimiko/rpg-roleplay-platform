@@ -5,7 +5,7 @@
  *   splashVersion  string   当前 splash 版本常量，需与后端 SPLASH_CURRENT_VERSION 一致
  *   onAcked        () => void  ack 成功后的回调，父组件撤销覆盖层
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 
 const LEGAL_BASE = 'https://play.stellatrix.icu/legal/adult-content-disclaimer';
 
@@ -40,6 +40,13 @@ export default function AdultSplash({ splashVersion, onAcked }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const confirmBtnRef = useRef(null);
+  const titleId = useId();
+
+  // Move focus to primary action on mount.
+  useEffect(() => {
+    if (confirmBtnRef.current) confirmBtnRef.current.focus();
+  }, []);
 
   const handleConfirm = async () => {
     setLoading(true);
@@ -68,6 +75,9 @@ export default function AdultSplash({ splashVersion, onAcked }) {
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
       style={{
         position: 'fixed',
         inset: 0,
@@ -92,6 +102,7 @@ export default function AdultSplash({ splashVersion, onAcked }) {
       >
         {/* Title */}
         <h2
+          id={titleId}
           style={{
             fontFamily: 'var(--font-serif, Georgia, serif)',
             fontSize: 17,
@@ -131,6 +142,7 @@ export default function AdultSplash({ splashVersion, onAcked }) {
         {/* Buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button
+            ref={confirmBtnRef}
             onClick={handleConfirm}
             disabled={loading}
             style={{

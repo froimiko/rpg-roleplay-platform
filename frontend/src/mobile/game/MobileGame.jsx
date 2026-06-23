@@ -605,11 +605,11 @@ export function MobileGame(gc) {
           )}
           footer={(
             <>
-              <button className="c-chip" onClick={() => setSheet({ type: 'slash' })} aria-label={t('mobile.game.composer.slash_aria')}><Icon name="slash" size={14} /></button>
-              <button className={`c-chip${gc.game && gc.game.models && gc.game.models.needs_model_config ? ' needs-config' : ''}`} onClick={() => setSheet({ type: 'model' })}><Icon name="sparkle" size={13} /><span className="lbl">{(gc.game && gc.game.models && gc.game.models.needs_model_config) ? t('mobile.game.composer.model_needs_config') : ((gc.model && (gc.model.label || gc.model.id)) || t('mobile.game.composer.model_fallback'))}</span><Icon name="chevron_down" size={12} /></button>
-              <button className={`c-chip perm ${permission}`} onClick={() => setSheet({ type: 'permission' })}><Icon name={(PERMISSIONS().find((x) => x.id === permission) || PERMISSIONS()[2]).icon} size={13} /></button>
+              <button className="c-chip" onClick={() => setSheet({ type: 'slash' })} aria-label={t('mobile.game.composer.slash_aria')} style={{ minHeight: 44, paddingTop: 6, paddingBottom: 6 }}><Icon name="slash" size={14} /></button>
+              <button className={`c-chip${gc.game && gc.game.models && gc.game.models.needs_model_config ? ' needs-config' : ''}`} onClick={() => setSheet({ type: 'model' })} style={{ minHeight: 44, paddingTop: 6, paddingBottom: 6 }}><Icon name="sparkle" size={13} /><span className="lbl">{(gc.game && gc.game.models && gc.game.models.needs_model_config) ? t('mobile.game.composer.model_needs_config') : ((gc.model && (gc.model.label || gc.model.id)) || t('mobile.game.composer.model_fallback'))}</span><Icon name="chevron_down" size={12} /></button>
+              <button className={`c-chip perm ${permission}`} onClick={() => setSheet({ type: 'permission' })} style={{ minHeight: 44, paddingTop: 6, paddingBottom: 6 }}><Icon name={(PERMISSIONS().find((x) => x.id === permission) || PERMISSIONS()[2]).icon} size={13} /></button>
               <span className="c-spacer" />
-              <button className="c-ctx" onClick={() => setSheet({ type: 'context' })} aria-label={t('mobile.game.composer.context_aria')}>
+              <button className="c-ctx" onClick={() => setSheet({ type: 'context' })} aria-label={t('mobile.game.composer.context_aria')} style={{ minHeight: 44, paddingTop: 6, paddingBottom: 6 }}>
                 <svg width="19" height="19" viewBox="0 0 19 19" style={{ transform: 'rotate(-90deg)' }}>
                   <circle cx="9.5" cy="9.5" r="7" fill="none" stroke="var(--line-strong)" strokeWidth="2.4" />
                   <circle cx="9.5" cy="9.5" r="7" fill="none" stroke="var(--accent)" strokeWidth="2.4" strokeLinecap="round" strokeDasharray={`${((gc.lastUsage?.context_pct || 0) / 100) * 2 * Math.PI * 7} 999`} />

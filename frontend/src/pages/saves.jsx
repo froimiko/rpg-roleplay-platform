@@ -297,7 +297,7 @@ function ExportBundleModal({ open, save, onClose }) {
     >
       <CSSpaceBetween size="m">
         {/* tier selector cards */}
-        <div role="radiogroup" style={{ display: 'grid', gap: 8 }}>
+        <div role="radiogroup" aria-label={t('saves.detail.export_tier_label')} style={{ display: 'grid', gap: 8 }}>
           {tierCards.map(({ key, labelKey, descKey }) => {
             const selected = tier === key;
             const isDefault = key === defaultTier;
@@ -2362,7 +2362,7 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
   };
 
   const node = (
-    <div style={{ position: 'fixed', top: 53, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'var(--bg, #1a1817)', overflow: 'auto' }}>
+    <div style={{ position: 'fixed', top: 'var(--nav-h, 53px)', left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'var(--bg, #1a1817)', overflow: 'auto' }}>
       {/* 顶部栏:标题 + 取消(位于平台顶栏下方,保留平台导航) */}
       <div style={{ position: 'sticky', top: 0, zIndex: 3, background: '#131211', borderBottom: '1px solid #36322d' }}>
         <div style={{ maxWidth: 1240, margin: '0 auto', padding: '13px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
@@ -2371,8 +2371,10 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
         </div>
       </div>
 
+      {/* 响应式:窄屏两栏变单栏 */}
+      <style>{'.ng-modal-cols{display:flex;gap:20px;align-items:flex-start}.ng-modal-summary{width:320px;flex-shrink:0;position:sticky;top:72px}@media(max-width:768px){.ng-modal-cols{flex-direction:column}.ng-modal-summary{width:100%;position:static;top:auto}}'}</style>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '20px 24px 80px' }}>
-        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+        <div className="ng-modal-cols">
           {/* 左:各模块平铺 */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <CSSpaceBetween size="l">
@@ -2401,9 +2403,9 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
             </CSSpaceBetween>
           </div>
 
-          {/* 右:概要 + 创建(sticky)
+          {/* 右:概要 + 创建(sticky → 窄屏 static)
               CSSpaceBetween 内部 flattenChildren+map, 每个 child 需要 key 否则 wrapper key 为 undefined */}
-          <div style={{ width: 320, flexShrink: 0, position: 'sticky', top: 72 }}>
+          <div className="ng-modal-summary">
             <CSContainer header={<CSHeader variant="h2">{t('saves.new_game.summary_title')}</CSHeader>}>
               <CSSpaceBetween size="m">
                 <CSSpaceBetween key="status" size="xs">

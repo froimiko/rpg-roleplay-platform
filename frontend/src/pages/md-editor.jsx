@@ -705,8 +705,11 @@ export default function MdEditorPage() {
   }, [tabs, activeKey, scriptId]);
 
   const closeTab = useCallback(async (key) => {
-    const t = tabs.find((x) => x.key === key);
-    if (t?.dirty) {
+    // 修复:局部 `const t` 曾遮蔽 useTranslation 的 t() → t('…') 把 tab 对象当函数调 = TypeError;
+    // 且 message: tab.label 引用了未定义的 `tab`(实际变量被命名为遮蔽的 t)→ ReferenceError。
+    // 关闭「有未保存改动」的标签必崩。改名局部为 tab,恢复 t() 为翻译函数。
+    const tab = tabs.find((x) => x.key === key);
+    if (tab?.dirty) {
       const ok = await (window.__confirm ? window.__confirm({ title: t('md_editor.confirm.discard_changes'), message: tab.label, danger: true, confirmText: t('md_editor.confirm.discard') }) : Promise.resolve(confirm(t('md_editor.confirm.discard_changes'))));
       if (!ok) return;
     }

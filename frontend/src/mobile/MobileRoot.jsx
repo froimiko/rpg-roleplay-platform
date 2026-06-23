@@ -31,6 +31,7 @@ import { MobileMe } from './pages/MobileMe.jsx';
 import { MobileTavern } from './pages/MobileTavern.jsx';
 import { MobileAdmin } from './pages/MobileAdmin.jsx';
 import { MobileNewGame } from './pages/MobileNewGame.jsx';
+import { MobileDialogHost } from './dialog.jsx';
 
 const TAB_DEFS = [
   { id: 'home', labelKey: 'mobile.root.tab.home', icon: 'home', root: 'profile' },
@@ -250,6 +251,9 @@ export function MobileRoot({ page = 'profile', setPage }) {
 
         {toast && <div className={`toast show ${toast.kind}`} style={{ zIndex: 200 }}><Icon name={toast.icon} size={15} />{toast.msg}</div>}
       </div>
+      {/* 命令式确认/输入弹窗(底抽屉)——接管裸 window.confirm/prompt,提供与桌面同名的
+          window.__confirm / window.__prompt 全局,移动页统一走底抽屉而非系统原生弹窗。 */}
+      <MobileDialogHost />
     </div>
   );
 }

@@ -42,6 +42,7 @@
   color: var(--muted, #968f85); cursor: pointer;
 }
 .mde-tb-ic:hover { background: var(--panel-2, #282623); color: var(--text, #ebe7df); }
+.mde-tb-ic:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
 .mde-tb-ic.on { color: var(--accent, #b5654a); }
 /* 顶栏图标即时提示(原生 title 慢/不稳,改 data-tip CSS 浮层) */
 .mde-topbar [data-tip] { position: relative; }
@@ -59,6 +60,7 @@
   border-radius: 5px; padding: 5px 10px; font-size: 12.5px; cursor: pointer; font-family: inherit;
 }
 .mde-menubtn:hover, .mde-menubtn.on { background: var(--panel-2, #282623); }
+.mde-menubtn:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
 
 /* 下拉菜单(文件/编辑/工作区共用) */
 .mde-menu {
@@ -110,6 +112,7 @@
   padding: 5px 6px; font-size: 12.5px; cursor: pointer; border-radius: 5px; font-family: inherit;
 }
 .mde-tree-grouphead:hover { background: var(--panel-2, #282623); }
+.mde-tree-grouphead:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
 .mde-tree-caret { width: 10px; color: var(--muted-2, #6b655e); font-size: 10px; }
 .mde-tree-gicon { width: 12px; text-align: center; color: var(--accent, #b5654a); font-family: var(--font-mono, monospace); }
 .mde-tree-glabel { font-weight: 600; }
@@ -134,8 +137,9 @@
 }
 .mde-tab.active { background: var(--bg, #1a1817); color: var(--text, #ebe7df); }
 .mde-tab-label { overflow: hidden; text-overflow: ellipsis; }
-.mde-tab-close { color: var(--muted-2, #6b655e); border-radius: 3px; width: 16px; text-align: center; }
+.mde-tab-close { color: var(--muted-2, #6b655e); border-radius: 3px; width: 16px; text-align: center; min-width: 24px; min-height: 24px; display: inline-flex; align-items: center; justify-content: center; padding: 4px; box-sizing: border-box; }
 .mde-tab-close:hover { background: var(--panel-2, #282623); color: var(--text, #ebe7df); }
+.mde-tab-close:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
 
 /* 编辑器主体 */
 .mde-textarea {
@@ -248,6 +252,7 @@
 .mde-tree-filter::placeholder { color: var(--muted-2, #6b655e); }
 .mde-tree-tbbtn { flex: 0 0 auto; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--muted, #968f85); cursor: pointer; font-size: 13px; line-height: 1; }
 .mde-tree-tbbtn:hover { background: var(--panel-2, #282623); color: var(--text, #ebe7df); border-color: var(--line, #36322d); }
+.mde-tree-tbbtn:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
 .mde-tree-grouprow { display: flex; align-items: center; }
 .mde-tree-grouprow .mde-tree-grouphead { flex: 1 1 auto; }
 .mde-tree-additem { flex: 0 0 auto; width: 22px; height: 22px; background: transparent; border: none; color: var(--muted-2, #6b655e); cursor: pointer; font-size: 14px; line-height: 1; opacity: 0; border-radius: 4px; }
@@ -279,3 +284,17 @@
 .mde-newmenu-pop { position: absolute; top: 26px; right: 0; z-index: 3000; min-width: 132px; background: var(--panel, #211f1d); border: 1px solid var(--line, #36322d); border-radius: 7px; box-shadow: 0 8px 28px rgba(0,0,0,.5); padding: 4px; display: flex; flex-direction: column; }
 .mde-newmenu-pop button { text-align: left; background: transparent; border: none; color: var(--text, #ebe7df); padding: 6px 10px; font-size: 12.5px; cursor: pointer; border-radius: 5px; font-family: inherit; display: flex; align-items: center; gap: 6px; }
 .mde-newmenu-pop button:hover { background: var(--panel-2, #282623); }
+.mde-newmenu-pop button:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
+.mde-ctx-item:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
+.mde-save:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 2px; }
+.mde-ws:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
+
+/* ── 小屏(<768px)响应式:收窄左侧文件树,保护中间编辑区 ── */
+@media (max-width: 768px) {
+  /* 左树收窄到 160px,给编辑区留更多空间 */
+  .mde-panes { grid-template-columns: 160px 5px minmax(0, 1fr) 0 0; }
+  /* 右栏在小屏始终以浮层形式展示(已由 ≤1100px 规则处理),
+     小屏不显示右侧分隔条(已在 ≤1100px 中 display:none) */
+  /* 顶栏工作区名按钮限宽,防止挤压 */
+  .mde-ws { max-width: 140px; }
+}

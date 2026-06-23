@@ -12,7 +12,7 @@
 // - header 传自定义节点可整体覆盖默认的 eyebrow/title 头;eyebrow/title/header 都没有则不渲染头部。
 // - footer 为 null(默认)则不渲染底栏。
 // - closeDisabled:忙碌态下背景点击与关闭按钮都禁用,避免操作进行中误关。
-import React from 'react';
+import React, { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
 
@@ -31,12 +31,20 @@ export default function Modal({
   children,
 }) {
   const { t } = useTranslation();
+  const titleId = useId();
   if (!open) return null;
   const hasHeader = header != null || title != null || eyebrow != null;
   const tryClose = () => { if (!closeDisabled && onClose) onClose(); };
+  // aria-labelledby if we have a title element; fall back to aria-label with title prop string.
+  const ariaProps = title != null
+    ? { 'aria-labelledby': titleId }
+    : (title == null && eyebrow != null ? { 'aria-label': eyebrow } : {});
   return (
     <div className="pl-modal-backdrop" onClick={tryClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        {...ariaProps}
         className={`pl-modal${className ? ' ' + className : ''}`}
         onClick={(e) => e.stopPropagation()}
         style={{ width: `min(${width}px, 100%)`, ...(panelStyle || {}) }}
@@ -46,7 +54,7 @@ export default function Modal({
             {header != null ? header : (
               <div>
                 {eyebrow != null && <div className="pl-modal-eyebrow">{eyebrow}</div>}
-                {title != null && <h2 className="pl-modal-title">{title}</h2>}
+                {title != null && <h2 id={titleId} className="pl-modal-title">{title}</h2>}
               </div>
             )}
             {showClose && onClose && (

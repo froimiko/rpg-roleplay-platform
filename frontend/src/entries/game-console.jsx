@@ -41,6 +41,8 @@ import { ErrorBoundary } from '../components/ErrorBoundary.jsx';
 import { FeedbackDrawerRoot } from '../components/FeedbackDrawer.jsx';
 import GlobalTaskFloater from '../components/GlobalTaskFloater.jsx';
 import ModelConfigInterceptModal, { capConfig } from '../components/ModelConfigInterceptModal.jsx';
+import DesktopDialogHost from '../components/DesktopDialogHost.jsx';
+import { MobileDialogHost } from '../mobile/dialog.jsx';
 const SPLASH_VERSION = 'v1.0-2026-05-31';
 
 // density preset + narrative font init（等价原 HTML 非 babel inline script）
@@ -544,7 +546,10 @@ function App() {
                 let openingRetried = false;
                 setHistory((h) => {
                   const arr = Array.isArray(h) ? [...h] : [];
-                  arr.push({ role: 'assistant', content: t('game.console.opening.curtain'), _opening: true, _thinking: 'starting' });
+                  // 思考指示器统一:不再给开场占位消息打 _thinking(否则 NarrativeBlock 渲染
+                  // gc-msg-thinking 旋转 spinner,与同时出现的 ThinkingPill 圆环构成第二对重复思考UI)。
+                  // 占位仍显示「拉开帷幕…」文本,随 on_token 流式替换为真实开场;思考动画只由 ThinkingPill 承担。
+                  arr.push({ role: 'assistant', content: t('game.console.opening.curtain'), _opening: true });
                   return arr;
                 });
                 const triggerOpening = () => {
@@ -563,7 +568,8 @@ function App() {
                       setHistory((h) => {
                         const arr = Array.isArray(h) ? [...h] : [];
                         if (arr.length && arr[arr.length - 1]._opening && !openingText) {
-                          arr[arr.length - 1] = { ...arr[arr.length - 1], content: label || arr[arr.length - 1].content, _thinking: phase };
+                          // 只更新占位文本为阶段标签,不再设 _thinking(避免 spinner 与 ThinkingPill 圆环重复)。
+                          arr[arr.length - 1] = { ...arr[arr.length - 1], content: label || arr[arr.length - 1].content };
                         }
                         return arr;
                       });
@@ -1536,7 +1542,7 @@ function App() {
           hasError={hasError}
           activeSave={activeSave} realSaves={realSaves.length ? realSaves : ((window.RPG_AUTH && window.RPG_AUTH.authed) ? [] : (window.MOCK_PLATFORM?.saves || []))}
           onSwitchSave={async (sid) => { try { if (runRef.current.sse || runState.running) stopRun(); await window.api.saves.activate(sid); reloadState(); } catch (e) { window.__apiToast?.(t('game.console.save.switch_failed'), { kind: 'danger', detail: e?.message }); } }}
-          onNew={() => { if (!confirm(t('game.console.save.new_confirm'))) return; location.href = '/saves'; }}
+          onNew={async () => { if (!await window.__confirm({ message: t('game.console.save.new_confirm') })) return; location.href = '/saves'; }}
           onSave={async () => { try { await window.api.game.saveGame(); window.__apiToast?.(t('common.save') + ' ✓', { kind: 'ok' }); } catch (e) { window.__apiToast?.(t('game.console.save.save_failed'), { kind: 'danger', detail: e?.message }); } }}
           onMemoryMode={async (mode) => { setGame((g) => ({ ...g, memory: { ...(g.memory || {}), mode } })); try { await window.api.game.memoryMode(mode); } catch (_) {} }}
           reloadState={reloadState}
@@ -1560,6 +1566,10 @@ function App() {
             早返条件已是 mountStage>=1,直接挂(不复制桌面 mountStage>=2 守卫)。总线已 install,
             这里只补渲染器,working 总线零变化。 */}
         <GameToastStack />
+        {/* 移动游戏台同样需要命令式确认/输入弹窗 Host(底抽屉),否则 onNew 新建确认 +
+            game-panels 记忆/时间线 prompt/confirm 调 window.__confirm 时该全局未安装 → 报错。
+            桌面 return 用 DesktopDialogHost(模态);移动早返用 MobileDialogHost(底抽屉)。 */}
+        <MobileDialogHost />
         {/* 移动早返的真实文件上传 input(与桌面同 ref/handler;onAttachPick 触发)→ GM 读文本附件 */}
         <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={onFilePicked} />
         {sseLogOpen && (
@@ -1585,6 +1595,9 @@ function App() {
 
   return (
     <div className="gc-shell" style={{ ...rootStyle, '--gc-rail-w': gcRailW + 'px' }}>
+      {/* 命令式确认/输入弹窗 Host:为本独立入口提供 window.__confirm / window.__prompt
+          (游戏台不经 platform-app,否则 onNew 新建确认、game-panels 记忆/时间线操作全回退原生弹窗)。 */}
+      <DesktopDialogHost />
       {/* A2: 多 tab 冲突 banner */}
       {tabConflictBanner && (
         <div style={{
@@ -1616,7 +1629,7 @@ function App() {
         collapsed={railCollapsed}
         onToggle={() => { setRailCollapsed((c) => !c); setMobileNav(false); }}
         state={game} runState={runState}
-        onNew={() => { if (!confirm(t('game.console.save.new_confirm'))) return; window.open('/saves', '_blank'); }}
+        onNew={async () => { if (!await window.__confirm({ message: t('game.console.save.new_confirm') })) return; window.open('/saves', '_blank'); }}
         onSave={async () => { try { await window.api.game.saveGame(); window.__apiToast?.(t('common.save') + ' ✓', { kind: 'ok' }); } catch (e) { window.__apiToast?.(t('game.console.save.save_failed'), { kind: 'danger', detail: e?.message }); } }}
         onSwitchSave={async (sid) => { setMobileNav(false); try { if (runRef.current.sse || runState.running) stopRun(); await window.api.saves.activate(sid); reloadState(); } catch (e) { window.__apiToast?.(t('game.console.save.switch_failed'), { kind: 'danger', detail: e?.message }); } }}
         onMemoryMode={async (mode) => { setGame((g) => ({ ...g, memory: { ...(g.memory || {}), mode } })); try { await window.api.game.memoryMode(mode); } catch (_) {} }}
