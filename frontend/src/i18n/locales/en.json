@@ -3861,6 +3861,7 @@
       "persona_fallback": "Your persona",
       "tab_character": "AI Character",
       "tab_persona": "My Persona",
+      "persona_image": "Persona Image",
       "tab_system": "System Prompt",
       "collapse": "Collapse",
       "char_not_found": "No character card found for this chat.",

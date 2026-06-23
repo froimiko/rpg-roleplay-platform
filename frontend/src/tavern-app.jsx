@@ -475,6 +475,51 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
  * inline=false(独立 tavern-app):portal 全屏抽屉(旧行为)。
  * inline=true(Platform 内嵌 tavern.jsx):页内可折叠右侧栏,不盖顶栏(open=false → collapsed)。
  * 新增「系统提示」tab —— 编辑本对话 system_prompt(onSaveSystemPrompt 持久化)。 */
+// 人设图海报(侧栏顶部):拉 persona-images,当前图做大图 + 缩略条。修「侧栏不显示人设图」。
+function PersonaHero({ cardId }) {
+  const { t } = useTranslation();
+  const [imgs, setImgs] = useState([]);
+  const [zoom, setZoom] = useState(null);
+  useEffect(() => {
+    if (!cardId) { setImgs([]); return; }
+    let alive = true;
+    Promise.resolve(window.api.cards.personaImages(cardId))
+      .then((r) => { if (alive) setImgs(Array.isArray(r) ? r : (r && r.items) || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [cardId]);
+  if (!imgs.length) return null;
+  const cur = imgs.find((i) => i.is_current) || imgs[0];
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.2, color: 'var(--accent)', marginBottom: 8 }}>
+        {t('tavern_app.drawer.persona_image') || '人设图'}
+      </div>
+      {cur && cur.image_url && (
+        <img src={cur.image_url} alt="" onClick={() => setZoom(cur.image_url)}
+          style={{ width: '100%', maxHeight: 380, objectFit: 'contain', borderRadius: 12,
+                   border: '1px solid var(--line)', background: 'var(--panel-2, #282623)', cursor: 'zoom-in', display: 'block' }} />
+      )}
+      {imgs.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto', paddingBottom: 2 }}>
+          {imgs.map((i) => (
+            <img key={i.id} src={i.image_url} alt="" onClick={() => setZoom(i.image_url)}
+              style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 8, flexShrink: 0, cursor: 'zoom-in',
+                       border: i.is_current ? '2px solid var(--accent)' : '1px solid var(--line)' }} />
+          ))}
+        </div>
+      )}
+      {zoom && (
+        <div onClick={() => setZoom(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9999,
+                   display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
+          <img src={zoom} alt="" style={{ maxWidth: '92%', maxHeight: '92%', objectFit: 'contain', borderRadius: 8 }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TwoCardDrawer({ open, character, persona, onClose, onSavePersona,
                                 inline = false, systemPrompt = '', onSaveSystemPrompt,
                                 immersive = false, onToggleImmersive }) {
@@ -561,7 +606,7 @@ export function TwoCardDrawer({ open, character, persona, onClose, onSavePersona
             </div>
           )}
           {character
-            ? <CardSheet card={character} kind="user" />
+            ? <><PersonaHero cardId={character.id} /><CardSheet card={character} kind="user" /></>
             : <div className="muted-2" style={{ padding: 24, textAlign: 'center' }}>{t('tavern_app.drawer.char_not_found')}</div>}
         </>
       )}

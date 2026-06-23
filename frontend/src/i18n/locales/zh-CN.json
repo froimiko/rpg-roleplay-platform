@@ -3838,7 +3838,7 @@
     "header": {
       "chat_list": "对话列表",
       "expand_rail": "展开列表",
-      "view_edit_char": "查看 / 编辑角色 · persona",
+      "view_edit_char": "查看 / 编辑角色 · 我的角色",
       "export_jsonl": "导出 JSONL",
       "char_persona": "角色卡 / persona"
     },
@@ -3861,9 +3861,10 @@
       "jump_btn": "回到最新"
     },
     "drawer": {
-      "persona_fallback": "你的 persona",
+      "persona_fallback": "你的角色",
       "tab_character": "AI 角色",
-      "tab_persona": "我的 persona",
+      "tab_persona": "我的角色",
+      "persona_image": "人设图",
       "tab_system": "系统提示",
       "collapse": "折叠",
       "char_not_found": "未找到该对话的角色卡。",
@@ -4529,7 +4530,7 @@
         "pw_confirm": "确认新密码",
         "pw_desc_change": "建议每 90 天更换，至少 12 位 + 大小写 + 数字。",
         "pw_desc_set": "当前通过邮箱链接登录，尚未设置密码。",
-        "personas_title": "人格 Persona",
+        "personas_title": "我的角色(Persona)",
         "persona_new": "新建",
         "persona_edit": "编辑人格",
         "persona_name": "名称",
@@ -4582,7 +4583,7 @@
         "view_sessions": "查看会话",
         "login_history_label": "登录历史",
         "view_history": "查看日志",
-        "personas_section": "人格 Persona",
+        "personas_section": "我的角色(Persona)",
         "my_persona": "我的人格",
         "my_persona_desc": "在游戏中使用的玩家人格设定，可创建多个切换。",
         "manage_persona": "管理人格",

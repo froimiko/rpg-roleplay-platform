@@ -92,6 +92,38 @@ def activate_node(user_id: int, node_id: int) -> dict[str, Any]:
     return result
 
 
+def _refresh_tavern_cards_from_library(db, user_id: int, save: dict, snap: dict) -> None:
+    """酒馆激活时:用统一卡库(character_cards)最新值覆盖快照里陈旧的 character/persona。
+    合并(update)而非整体替换,保留快照里卡字段以外的运行时键。修复:编辑设定后侧栏不更新、
+    换人设图后头像不更新(avatar_path 随之刷新)。"""
+    tav = snap.get("tavern")
+    if not isinstance(tav, dict):
+        return
+    try:
+        from platform_app.api._card_dto import card_to_dto
+    except Exception:
+        return
+    for fk_col, key in (("tavern_character_card_id", "character"), ("tavern_persona_card_id", "persona")):
+        cid = save.get(fk_col)
+        if not cid:
+            continue
+        row = db.execute(
+            "select * from character_cards where id = %s and user_id = %s",
+            (int(cid), user_id),
+        ).fetchone()
+        if not row:
+            continue
+        try:
+            fresh = card_to_dto(row)
+        except Exception:
+            continue
+        cur = tav.get(key)
+        if isinstance(cur, dict):
+            cur.update(fresh)
+        else:
+            tav[key] = fresh
+
+
 def activate_save(user_id: int, save_id: int) -> dict[str, Any]:
     """task 30：切到目标 save 的当前激活分支（或没有就 root），并真的切换 user_runtime。"""
     init_db()
@@ -129,6 +161,11 @@ def activate_save(user_id: int, save_id: int) -> dict[str, Any]:
         _write_checkout(db, user_id, save_id, ref["id"], commit_row["id"])
         state_snapshot = commit_state(commit_row)
         state_path = commit_row.get("state_path") or save.get("state_path") or ""
+        # tavern:快照里的 character/persona 是建档时的【denormalized 副本】,用户之后在统一
+        # 角色卡库(character_cards)里编辑/换人设图后,快照会陈旧 → 侧栏「编辑后不显示 / 人设图不显示」。
+        # 激活时按 FK 从 character_cards 重读最新值覆盖,使快照=统一卡库的镜像(web + iOS 同源 /api/state,一并修复)。
+        if save.get("save_kind") == "tavern" and isinstance(state_snapshot, dict):
+            _refresh_tavern_cards_from_library(db, user_id, save, state_snapshot)
         active_ref_id = ref["id"]
         active_commit_id = commit_row["id"]
     # [hotfix] runtime 写移出 with 块,避免锁内嵌套连接 update 同一 game_saves 行的自死锁(见 continue_from)。
