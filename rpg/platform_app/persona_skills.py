@@ -199,6 +199,74 @@ def _concat_for_distill(files: list[tuple[str, str]]) -> str:
     return "\n".join(chunks).strip()
 
 
+# ── 确定性文件→字段映射(skill 直接用,不调 LLM、不有损、零成本)──────────
+# 已知文件名 → 角色卡字段;多个文件映射到同字段则拼接。未知文件名进 background 兜底。
+_FILE_FIELD_MAP = {
+    "personality.md": "personality",
+    "profile.md": "identity",
+    "appearance.md": "appearance",
+    "background_story.md": "background",
+    "background.md": "background",
+    "story.md": "background",
+    "lore.md": "background",
+    "memory.md": "background",
+    "relations.md": "background",
+    "relationships.md": "background",
+    "interaction.md": "speech_style",
+    "dialogue.md": "speech_style",
+    "speech.md": "speech_style",
+    "conflicts.md": "secrets",
+    "secrets.md": "secrets",
+}
+# 这些是元信息/测试报告,不进角色卡正文。
+_SKIP_FILES = {"manifest.json", "quality-report.md", "roleplay-test-report.md", "readme.md", "license", "license.md"}
+_FIELD_CAP = 15000   # 略低于 upsert_user_card 的 16KB 上限,避免被拒
+
+
+def _strip_md(text: str) -> str:
+    """去掉 YAML frontmatter + 起始一级标题,留正文。"""
+    t = re.sub(r"^---\s*\n.*?\n---\s*\n", "", text or "", count=1, flags=re.DOTALL)
+    t = re.sub(r"^#\s+.+?\n", "", t, count=1)
+    return t.strip()
+
+
+def _frontmatter_description(text: str) -> str:
+    m = re.search(r'^\s*description\s*:\s*["\']?(.+?)["\']?\s*$', text or "", re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+def map_skill_to_card_fields(files: list[tuple[str, str]], name: str) -> dict[str, str]:
+    """把 skill 各 .md 原文确定性映射进角色卡字段(逐字进卡,扮演时模型直接读 skill 本身)。"""
+    by = {n: t for n, t in files}
+    buckets: dict[str, list[str]] = {}
+    for fn, text in files:
+        if fn in _SKIP_FILES:
+            continue
+        if fn == "skill.md":
+            continue  # 单独处理(扮演规则)
+        tgt = _FILE_FIELD_MAP.get(fn)
+        body = _strip_md(text)
+        if not body:
+            continue
+        if tgt:
+            buckets.setdefault(tgt, []).append(body)
+        else:
+            buckets.setdefault("background", []).append(f"【{fn}】\n{body}")
+    fields = {k: ("\n\n".join(v))[:_FIELD_CAP] for k, v in buckets.items()}
+
+    # SKILL.md = 扮演规则/行为核心,放进 personality 最前(确保被模型读到);其 frontmatter description 兜底 identity。
+    skill_body = _strip_md(by.get("skill.md", ""))
+    if skill_body:
+        prev = fields.get("personality", "")
+        fields["personality"] = (skill_body + ("\n\n" + prev if prev else ""))[:_FIELD_CAP]
+    if not fields.get("identity"):
+        fields["identity"] = (_frontmatter_description(by.get("skill.md", "")) or name)[:_FIELD_CAP]
+    # 完全无结构(只有 SKILL.md)→ 正文也放进 background 兜底,保证内容可见可用。
+    if not fields.get("background") and skill_body:
+        fields["background"] = skill_body[:_FIELD_CAP]
+    return fields
+
+
 # ── 主流程 ──────────────────────────────────────────────────────────────
 def import_persona_skill(
     user_id: int,
@@ -209,10 +277,12 @@ def import_persona_skill(
     model_api_id: str | None = None,
     model: str | None = None,
     generate_image: bool = True,
+    use_llm: bool = False,
 ) -> dict[str, Any]:
-    """导入一个人格 skill → 蒸馏成 character_cards(pc) + (可选)入队人设图 + 登记 user_persona_skills。
+    """导入一个人格 skill → 直接映射成 character_cards(pc) + (可选)入队人设图 + 登记 user_persona_skills。
 
-    返回 {ok, skill_id, card_id, card, image_status}。
+    默认**确定性直接映射**(skill 原文逐字进卡,扮演时模型直接读 skill 本身,不调 LLM、不有损、零成本)。
+    use_llm=True 时再在映射结果上叠一层 LLM 归类整理(可选、要 BYOK)。返回 {ok, skill_id, card_id, card, image_status}。
     """
     if not user_id:
         raise ValueError("需要登录")
@@ -227,16 +297,21 @@ def import_persona_skill(
         if files:
             source_ref = str((files[0] or {}).get("name") or "")[:200]
 
-    # 2) 取名 + 合并 + LLM 蒸馏(纯归类,不新增设定)
+    # 2) 取名 + 确定性映射(skill 直接用)。可选 LLM 整理叠加。
     name = _derive_name(md_files, fallback=source_ref or repo_url)
-    raw = _concat_for_distill(md_files)
-    from platform_app.tavern_cards import llm_structure_description
-    fields = llm_structure_description(
-        raw, user_id, api_id_override=model_api_id or None, model_override=model or None,
-    )
-    # 蒸馏失败兜底:把合并原文塞进 background,至少建出一张可见卡(不丢内容)。
-    if not fields:
-        fields = {"background": raw[:8000]}
+    fields = map_skill_to_card_fields(md_files, name)
+    if use_llm:
+        try:
+            from platform_app.tavern_cards import llm_structure_description
+            refined = llm_structure_description(
+                _concat_for_distill(md_files), user_id,
+                api_id_override=model_api_id or None, model_override=model or None,
+            )
+            for k, v in (refined or {}).items():
+                if v:
+                    fields[k] = v[:_FIELD_CAP]   # 非空才覆盖,失败/无 key 保留确定性映射
+        except Exception as exc:
+            log.warning("[persona-skill] optional LLM refine failed (keeping deterministic map): %s", exc)
 
     # 3) 落卡(card_type='pc';字段长度上限由 upsert_user_card 把关)
     payload: dict[str, Any] = {
