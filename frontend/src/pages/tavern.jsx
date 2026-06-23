@@ -701,6 +701,18 @@ export default function TavernPage() {
     }
   }, [applyState]);
 
+  /* ── 角色卡切换:AI 角色 / 我的角色 都可从卡库挑一张绑定本对话(图1)── */
+  const onBindCard = useCallback(async (role, cardId) => {
+    if (activeId == null) return;
+    try {
+      await window.api.tavern.bindCard(activeId, role, cardId);
+      window.__apiToast?.(t('tavern_app.toast.card_bound') || '已更换角色卡', { kind: 'ok', duration: 1500 });
+      try { const d = await window.api.game.state(); applyState(d); } catch (_) {}
+    } catch (e) {
+      window.__apiToast?.(t('tavern_page.toast.save_failed'), { kind: 'danger', detail: e?.message });
+    }
+  }, [activeId, applyState, t]);
+
   /* ── 沉浸式拟人模式开关 ── */
   const onToggleImmersive = useCallback(async (enabled) => {
     if (!activeId) return;
@@ -1090,6 +1102,7 @@ export default function TavernPage() {
         inline
         open={drawerOpen} character={character} persona={persona}
         systemPrompt={systemPrompt}
+        chatId={activeId} onBindCard={onBindCard}
         onClose={() => setDrawerOpen(false)}
         onSavePersona={onSavePersona}
         onSaveSystemPrompt={onSaveSystemPrompt}
