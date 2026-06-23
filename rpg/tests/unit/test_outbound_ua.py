@@ -94,5 +94,63 @@ class SdkActuallyOverridesBuiltinUa(unittest.TestCase):
         self.assertNotIn("OpenAI/Python", c.default_headers.get("User-Agent", ""))
 
 
+class SafeUrlopenInjectsUa(unittest.TestCase):
+    """回归(2026-06-23):urllib 出站(_harness 子代理 / extractor / embedding / 生图下载)
+    走 safe_urlopen,此前漏覆盖 UA → 默认 Python-urllib 被 opencode.ai/zen 等网关 WAF 403,
+    而 GM 走 httpx(已覆盖 UA)200 → 「同 key 同模型 GM 通子代理挂」。safe_urlopen 现统一注入
+    outbound_user_agent();调用方显式设的 UA 不动。"""
+
+    def _capture_opened_req(self, req):
+        import urllib.request as _u
+
+        from core import outbound as ob
+        captured = {}
+
+        class _FakeOpener:
+            def open(self, r, timeout=None):
+                captured["req"] = r
+
+                class _Resp:
+                    def __enter__(self_inner):
+                        return self_inner
+
+                    def __exit__(self_inner, *a):
+                        return False
+
+                return _Resp()
+
+        orig_enforced = ob._ssrf_enforced
+        orig_build = _u.build_opener
+        try:
+            ob._ssrf_enforced = lambda: False  # 跳过 DNS 解析 / IP pin,纯测 UA 注入
+            _u.build_opener = lambda *a, **k: _FakeOpener()
+            with ob.safe_urlopen(req, timeout=5):
+                pass
+        finally:
+            ob._ssrf_enforced = orig_enforced
+            _u.build_opener = orig_build
+        return captured["req"]
+
+    def test_injects_default_ua_when_absent(self):
+        import urllib.request as _u
+        req = _u.Request(
+            "https://example.com/v1/chat/completions",
+            data=b"{}", method="POST",
+            headers={"Authorization": "Bearer x"},
+        )
+        out = self._capture_opened_req(req)
+        self.assertEqual(out.get_header("User-agent"), outbound_user_agent())
+        self.assertNotIn("urllib", (out.get_header("User-agent") or "").lower())
+
+    def test_respects_explicit_ua(self):
+        import urllib.request as _u
+        req = _u.Request(
+            "https://example.com/v1/chat/completions",
+            headers={"User-Agent": "custom/1.0"},
+        )
+        out = self._capture_opened_req(req)
+        self.assertEqual(out.get_header("User-agent"), "custom/1.0")
+
+
 if __name__ == "__main__":
     unittest.main()

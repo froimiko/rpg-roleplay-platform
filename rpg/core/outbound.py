@@ -161,6 +161,15 @@ def safe_urlopen(req, *, timeout=socket._GLOBAL_DEFAULT_TIMEOUT):
         raise OutboundBlocked("出站目标缺少 host")
     port = parsed.port or (443 if scheme == "https" else 80)
 
+    # urllib 默认 UA(Python-urllib/x.y)会被部分 provider 网关 WAF 直接 403(实测 opencode.ai/zen
+    # 对 Python-urllib 403、对常规 UA 200;某些挂 Cloudflare 的自建中转站亦然 —— 见 core.outbound_ua)。
+    # 本仓 httpx 出站(GM/SDK)早已统一覆盖 UA 故能通,但 urllib 出站(_harness 子代理 / extractor /
+    # embedding / 生图下载)此前漏了 → 出现「同一 key 同一模型,GM 200 / 子代理 harness 403」。
+    # 这里收口到同一 UA 真源 outbound_user_agent();调用方已显式设 UA 的尊重不动。
+    if isinstance(req, urllib.request.Request) and not req.has_header("User-agent"):
+        from core.outbound_ua import outbound_user_agent
+        req.add_header("User-Agent", outbound_user_agent())
+
     # 服务器模式:重解析 + IP pin(抗 rebinding);本地/自部署模式:不做 IP 拦截/pin
     # (允许本机大模型 / 梯子 fake-ip),但仍保留不跟随重定向。
     if _ssrf_enforced():
