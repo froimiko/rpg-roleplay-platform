@@ -487,6 +487,77 @@ def _normalize_judge_result(raw: Any) -> tuple[list[dict[str, Any]], int | None]
     return [], None
 
 
+def _motion_from_raw(raw: Any) -> int | None:
+    """从判定器返回里取 progress_motion(0/1/2;缺省/非法 → None=本回合无信号)。
+    与 _normalize_judge_result 分开取,避免改其 2 元组返回签名破坏既有调用点/测试。"""
+    if not isinstance(raw, dict):
+        return None
+    v = raw.get("progress_motion")
+    if v is None:
+        return None
+    try:
+        iv = int(v)
+    except (TypeError, ValueError):
+        return None
+    return 0 if iv <= 0 else (2 if iv >= 2 else 1)
+
+
+_FALSY_ENV = ("0", "false", "no", "off", "")
+# 叙事节奏兜底:累计多少「推进点」=+1 章(motion 1=+1 点,2=+2 点)。3 ≈ 正常推进每 3 回合 +1 章;
+# 重大跨越(motion 2)更快。保守取值治「发散play卡死」又不致跳章(再叠加 _PACE_CAP 每回合上限)。
+_PACE_FALLBACK_POINTS_PER_CHAPTER = 3
+
+
+def _pace_fallback_enabled() -> bool:
+    """env RPG_PACE_FALLBACK 默认 '1';设 '0'/'false' 关。"""
+    return os.environ.get("RPG_PACE_FALLBACK", "1").strip().lower() not in _FALSY_ENV
+
+
+def _apply_pace_fallback(db: Any, save_id: int, motion: int | None) -> int:
+    """估章对不上原著(发散/无限流副本)、进度卡住时的【确定性兜底】推进。
+
+    机制:recorder 的 progress_motion(纯 LLM 语义信号:本回合叙事推进度)累计成「推进点」,
+    够一章(_PACE_FALLBACK_POINTS_PER_CHAPTER)就 +1 章,限速 _PACE_CAP/回合、单调只增。
+    判定「有没有前进」是 LLM 的活;累计/落库是确定性代码 —— 既不靠 LLM 自己记着推进度,也不靠
+    硬编码回合计数凭空推进(motion None/0 → 不累计不推进)。
+
+    只在 _do 里「本回合估章未推进进度」时调用(估章正常推进=贴原著play,不重复兜底)。
+    返回新进度(未推进返 0)。
+    """
+    if motion is None or motion <= 0:
+        return 0
+    row = db.execute(
+        "select coalesce((worldline->>'progress_chapter')::int, 1) as pc, "
+        "coalesce((worldline->>'progress_pace_accum')::int, 0) as ac "
+        "from game_sessions where save_id = %s",
+        (save_id,),
+    ).fetchone()
+    if not row:
+        return 0
+    prev = max(1, int(row.get("pc") or 1))
+    accum = int(row.get("ac") or 0) + int(motion)
+    chapters = accum // _PACE_FALLBACK_POINTS_PER_CHAPTER
+    new_progress = 0
+    if chapters >= 1:
+        chapters = min(chapters, _PACE_CAP)
+        accum -= chapters * _PACE_FALLBACK_POINTS_PER_CHAPTER
+        new_progress = prev + chapters
+        from gm_serving.settings import advance_progress
+        advance_progress(db, save_id, new_progress)  # max-only,单调
+    # 持久化累计器(无论是否推进,点数都要留住)。
+    db.execute(
+        "update game_sessions set worldline = jsonb_set(coalesce(worldline, '{}'::jsonb), "
+        "'{progress_pace_accum}', to_jsonb(%s::int), true) where save_id = %s",
+        (int(accum), save_id),
+    )
+    if new_progress:
+        log.info(
+            "[anchor_reconcile] 叙事节奏兜底推进进度 save=%s %s→%s (motion=%s, 余点=%s)",
+            save_id, prev, new_progress, motion, accum,
+        )
+    return new_progress
+
+
 def _load_estimate_context(save_id: int) -> dict[str, Any] | None:
     """一次连接备齐有界叙事章估计所需上下文(自连接,与 get_progress_window 同模式):
       · prev   = 当前 progress_chapter(权威进度)
@@ -652,6 +723,7 @@ def _reconcile_impl(
     #    注入式 _judge 保持旧签名契约(老测试不破);默认判定器才接 window_chapters。
     reached: list[dict[str, Any]] = []
     estimated_chapter: int | None = None
+    progress_motion: int | None = None
     if pending or will_estimate:
         window_chapters = est_ctx.get("window_chapters") if est_ctx else None
         if _judge is not None:
@@ -659,6 +731,7 @@ def _reconcile_impl(
         else:
             raw = _default_judge(user_id, text, pending, save_id=save_id, window_chapters=window_chapters)
         reached, estimated_chapter = _normalize_judge_result(raw)
+        progress_motion = _motion_from_raw(raw)
 
     # 只保留窗口内、合法 anchor_key 的命中(防判定器越界到远未来/编造 key)。去重。
     seen: set[str] = set()
@@ -695,13 +768,16 @@ def _reconcile_impl(
 
     # 估章是否落库:本回合会估章 + 估章值有效。无锚点命中、不估章、不查死亡 → 无事可做。
     do_estimate = bool(will_estimate and estimated_chapter)
-    if not valid_hits and not do_estimate and not do_death:
+    # 叙事节奏兜底:估章对不上原著(发散play)时,靠 recorder 的 progress_motion 确定性推进进度。
+    do_pace = bool(est_on and _pace_fallback_enabled() and progress_motion and progress_motion >= 1)
+    if not valid_hits and not do_estimate and not do_death and not do_pace:
         return 0
 
     # 5. 确定性落库:锚点标记 + 有界估章推进 + 死亡失效,同一 (user,save) scope lock + 单连接内。
     est_prev_ctx = int(est_ctx.get("prev")) if est_ctx else None
     def _do(conn: Any) -> int:
         marked = _apply_hits(conn, save_id, user_id, valid_hits) if valid_hits else 0
+        estimate_advanced = 0
         if do_estimate:
             # [round-4-P2] est_ctx 不可用(recorder_bridge 注入 _judge 路径里 _load_estimate_context
             #   失败)时,est_prev 原硬编码 1 → ceiling=1+CAP 把已在更后章节玩家的进度天花板压回、卡住
@@ -717,7 +793,11 @@ def _reconcile_impl(
                 except Exception:
                     _ep = 1
             # 锚点标记后 floor 可能已升,_apply_estimate 内重查 floor 算 ceiling。
-            _apply_estimate(conn, save_id, _ep, int(estimated_chapter))
+            estimate_advanced = _apply_estimate(conn, save_id, _ep, int(estimated_chapter))
+        # 估章未推进(对不上原著章号/发散play)→ 用 progress_motion 确定性兜底推进。
+        # 估章已推进=贴原著play,不再叠加兜底(避免双推进)。
+        if do_pace and not estimate_advanced:
+            _apply_pace_fallback(conn, save_id, progress_motion)
         if do_death:
             _invalidate_dead_entity_anchors(conn, save_id, text)
         return marked

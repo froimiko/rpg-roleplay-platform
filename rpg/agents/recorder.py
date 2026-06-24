@@ -135,6 +135,7 @@ def _build_system_prompt(tasks: frozenset[str]) -> str:
     if "anchors" in tasks:
         schema_fields.append('"reached": [{"anchor_key":"<来自列表>","drift_score":0.0}]')
         schema_fields.append('"current_chapter": <章号整数 或 null>')
+        schema_fields.append('"progress_motion": <0|1|2>')
     if "acceptance" in tasks:
         schema_fields.append('"unmet": ["条款原文 1", ...]')
 
@@ -198,6 +199,16 @@ def _build_user_prompt(
                     summ = summ[:160]
                 head = f"第{ch}章" + (f"「{label}」" if label else "")
                 lines.append(f"- chapter={ch} {head}:{summ}")
+
+        # 叙事推进度(ANCHORS-B 续):无论能否对上原著章节都要答 —— 发散/无限流副本里剧情
+        # 已离开原著轨道时 current_chapter 往往只能给 null/低章,但故事仍在前进。progress_motion
+        # 独立于「对不对得上原著」,只看本回合相对上一回合有没有实质推进:
+        lines.append("")
+        lines.append("## 本回合叙事推进度(任务 ANCHORS-B,必答整数 progress_motion)")
+        lines.append("- 0 = 原地踏步:仍在同一场景/对话,未发生实质推进(如纯对话试探、环境描写、反复纠结)")
+        lines.append("- 1 = 正常推进:场景、目标、冲突或关系向前走了一步")
+        lines.append("- 2 = 重大跨越:时间跳转、进入新副本/新地点、达成或失败关键目标、重大转折")
+        lines.append("只按本回合 GM 正文判断,与能否对上原著章节无关。")
 
     # GM 正文
     lines.append("")
@@ -341,6 +352,21 @@ def _safe_current_chapter(raw: Any) -> int | None:
         return None
 
 
+def _safe_progress_motion(raw: Any) -> int | None:
+    """本回合叙事推进度,由 LLM 判定(发散/无限流副本对不上原著章节时也能答):
+      0=原地踏步(同一场景、未实质推进) / 1=正常推进 / 2=重大跨越(时间跳转·进新副本·重大事件)。
+    专治「current_chapter 被钳在原著章号窗口里、发散play永远估不出更高章 → 进度冻死」。
+    **纯 LLM 信号**:字段缺省/非法 → None(本回合无判定,不累计、不推进),绝不用「默认前进」
+    这种硬编码假设凭空推进度(那就退化成被否决的回合计数器了)。"""
+    if raw is None:
+        return None
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return 0 if v <= 0 else (2 if v >= 2 else 1)
+
+
 def _safe_unmet(raw: Any, acceptance_clauses: list[str] | None) -> list[str]:
     """从 LLM 输出里抠出 unmet 列表，做 fuzzy 回填保证原文对齐（与 acceptance_verifier 一致）。"""
     items: list[Any] = []
@@ -405,6 +431,7 @@ def _parse_recorder_output(
             "ops": [op for op in parsed if isinstance(op, dict)],
             "reached": [],
             "current_chapter": None,
+            "progress_motion": None,
             "unmet": [],
         }
 
@@ -416,9 +443,11 @@ def _parse_recorder_output(
     if "anchors" in tasks:
         result["reached"] = _safe_reached(parsed.get("reached", []))
         result["current_chapter"] = _safe_current_chapter(parsed.get("current_chapter"))
+        result["progress_motion"] = _safe_progress_motion(parsed.get("progress_motion"))
     else:
         result["reached"] = []
         result["current_chapter"] = None
+        result["progress_motion"] = None
     result["unmet"] = (
         _safe_unmet(parsed.get("unmet", []), acceptance_clauses)
         if "acceptance" in tasks else []
@@ -427,7 +456,7 @@ def _parse_recorder_output(
 
 
 def _empty_result() -> dict:
-    return {"ops": [], "reached": [], "current_chapter": None, "unmet": []}
+    return {"ops": [], "reached": [], "current_chapter": None, "progress_motion": None, "unmet": []}
 
 
 # ── 模型解析 ──────────────────────────────────────────────────────────

@@ -42,7 +42,7 @@ class FakeDB:
     - update save_anchor_states ... returning → 命中 set 里的 key 才返 row,否则 None
     """
     def __init__(self, *, max_turn=42, pending_keys=None, src_chapter=12, occurred_max=0,
-                 progress_pc=None, script_id_val=None, chapter_rows=None):
+                 progress_pc=None, script_id_val=None, chapter_rows=None, pace_accum=0):
         self.max_turn = max_turn
         # 仍 pending(可被本兜底 UPDATE 命中)的 anchor_key 集合
         self.pending_keys = set(pending_keys if pending_keys is not None else [])
@@ -53,6 +53,9 @@ class FakeDB:
         self.progress_pc = progress_pc
         self.script_id_val = script_id_val
         self.chapter_rows = chapter_rows or []
+        # 叙事节奏兜底累计器(progress_pace_accum)。可变,跨调用累积。
+        self.pace_accum = pace_accum
+        self.accum_writes = []  # 每次 accum 落库的新值
         self.updates = []  # (anchor_key, new_status, drift)
         self.calls = []    # 原始 (sql, params)
 
@@ -68,6 +71,15 @@ class FakeDB:
         s = " ".join(sql.split())
         if "max(turn_index)" in s:
             return _FakeResult(row={"t": self.max_turn})
+        # 叙事节奏兜底:先于 progress_chapter 分支(该 SQL 同时含 progress_chapter + progress_pace_accum)
+        if "progress_pace_accum" in s:
+            if s.lower().startswith("update"):
+                # params: (new_accum, save_id)
+                self.pace_accum = int(params[0])
+                self.accum_writes.append(self.pace_accum)
+                return _FakeResult(row=None)
+            pc = self.progress_pc if self.progress_pc is not None else 1
+            return _FakeResult(row={"pc": int(pc), "ac": int(self.pace_accum)})
         if "progress_chapter" in s and "game_sessions" in s:
             return _FakeResult(row={"pc": self.progress_pc})
         if "script_id" in s and "game_saves" in s:
@@ -113,6 +125,13 @@ def _judge_dict(reached=(), estimated=None):
     """新式判定器:返回 {reached, estimated_chapter}(测有界叙事章估计)。"""
     def _judge(user_id, turn_text, pending, **kw):
         return {"reached": list(reached), "estimated_chapter": estimated}
+    return _judge
+
+
+def _judge_dict_motion(reached=(), estimated=None, motion=None):
+    """带 progress_motion 的判定器(测叙事节奏兜底)。"""
+    def _judge(user_id, turn_text, pending, **kw):
+        return {"reached": list(reached), "estimated_chapter": estimated, "progress_motion": motion}
     return _judge
 
 
@@ -447,6 +466,88 @@ class ReconcileTest(unittest.TestCase):
         with mock.patch("platform_app.db.connect", return_value=fake), \
              mock.patch("platform_app.db.init_db"):
             self.assertIsNone(ar._load_estimate_context(99))
+
+    # ══ 叙事节奏兜底(progress_motion):发散play对不上原著章号时仍确定性推进 ══
+
+    # ── _apply_pace_fallback 直测:累计够 1 章才推进,单调,限速,motion 0/None 不动 ──
+    def test_pace_fallback_unit(self):
+        PTS = ar._PACE_FALLBACK_POINTS_PER_CHAPTER  # 默认 3
+        # motion=None / 0 → 立即返 0,不读不写
+        self.adv_calls.clear()
+        self.assertEqual(ar._apply_pace_fallback(FakeDB(progress_pc="1", pace_accum=0), 1, None), 0)
+        self.assertEqual(ar._apply_pace_fallback(FakeDB(progress_pc="1", pace_accum=0), 1, 0), 0)
+        self.assertEqual(self.adv_calls, [])
+        # accum 不足一章 → 只累计不推进
+        self.adv_calls.clear()
+        db = FakeDB(progress_pc="1", pace_accum=0)
+        out = ar._apply_pace_fallback(db, 1, 1)
+        self.assertEqual(out, 0, "1<PTS → 不推进")
+        self.assertEqual(db.accum_writes, [1])
+        self.assertEqual(self.adv_calls, [])
+        # accum 够一章 → 推进 +1、扣点
+        self.adv_calls.clear()
+        db = FakeDB(progress_pc="1", pace_accum=PTS - 1)  # 再 +1 motion 即满
+        out = ar._apply_pace_fallback(db, 1, 1)
+        self.assertEqual(out, 2, "prev=1 +1 章 → 2")
+        self.assertEqual(self.adv_calls, [(1, 2)])
+        self.assertEqual(db.accum_writes, [0], "扣掉一章的点数")
+        # 限速:大 accum + motion=2 → 最多 +_PACE_CAP 章
+        self.adv_calls.clear()
+        db = FakeDB(progress_pc="5", pace_accum=PTS * 5)  # 够 5 章
+        out = ar._apply_pace_fallback(db, 5, 2)
+        self.assertEqual(out, 5 + ar._PACE_CAP, "限速每回合最多 +_PACE_CAP 章")
+        self.assertEqual(self.adv_calls, [(5, 5 + ar._PACE_CAP)])
+
+    # ── 集成:估章给 None(对不上原著)但 motion≥1 → 靠兜底推进 ──
+    def test_reconcile_pace_fallback_advances_when_estimate_null(self):
+        # 估章 None(发散对不上),motion=1,accum 预置到差 1 点即满 → 本回合推进
+        db = FakeDB(pending_keys=set(), occurred_max=0, progress_pc="1",
+                    pace_accum=ar._PACE_FALLBACK_POINTS_PER_CHAPTER - 1)
+        judge = _judge_dict_motion(reached=[], estimated=None, motion=1)
+        n = self._run(pending=_pending("chapter:9:event:0"), judge=judge, db=db)
+        self.assertEqual(n, 0, "无锚点命中 → 标记 0")
+        self.assertEqual(self.adv_calls, [(1, 2)], "估章 None 但 motion 兜底把进度推到 2")
+
+    # ── 集成:估章已推进(贴原著play)→ 不再叠加兜底(防双推进)──
+    def test_reconcile_pace_fallback_skipped_when_estimate_advances(self):
+        db = FakeDB(pending_keys=set(), occurred_max=0, progress_pc="1",
+                    pace_accum=ar._PACE_FALLBACK_POINTS_PER_CHAPTER - 1)
+        judge = _judge_dict_motion(reached=[], estimated=6, motion=2)
+        n = self._run(pending=_pending("chapter:9:event:0"), judge=judge, db=db)
+        self.assertEqual(n, 0)
+        # 估章推进到 6;兜底被跳过(accum 不应被写)
+        self.assertEqual(self.adv_calls, [(1, 6)], "只有估章推进,无兜底叠加")
+        self.assertEqual(db.accum_writes, [], "估章推进时兜底不触发,accum 不变")
+
+    # ── 集成:motion=0(原地踏步)→ 不推进 ──
+    def test_reconcile_pace_fallback_no_motion_no_advance(self):
+        db = FakeDB(pending_keys=set(), occurred_max=0, progress_pc="1", pace_accum=2)
+        judge = _judge_dict_motion(reached=[], estimated=None, motion=0)
+        n = self._run(pending=_pending("chapter:9:event:0"), judge=judge, db=db)
+        self.assertEqual(n, 0)
+        self.assertEqual(self.adv_calls, [], "原地踏步 → 进度不动")
+
+    # ── kill switch:RPG_PACE_FALLBACK=0 → 完全不兜底 ──
+    def test_pace_fallback_env_off(self):
+        os.environ["RPG_PACE_FALLBACK"] = "0"
+        try:
+            db = FakeDB(pending_keys=set(), occurred_max=0, progress_pc="1",
+                        pace_accum=ar._PACE_FALLBACK_POINTS_PER_CHAPTER - 1)
+            judge = _judge_dict_motion(reached=[], estimated=None, motion=2)
+            n = self._run(pending=_pending("chapter:9:event:0"), judge=judge, db=db)
+            self.assertEqual(self.adv_calls, [], "kill switch 关 → 不兜底推进")
+        finally:
+            os.environ.pop("RPG_PACE_FALLBACK", None)
+
+    # ── _motion_from_raw 解析 ──
+    def test_motion_from_raw(self):
+        self.assertIsNone(ar._motion_from_raw({"x": 1}))          # 无字段
+        self.assertIsNone(ar._motion_from_raw({"progress_motion": None}))
+        self.assertIsNone(ar._motion_from_raw({"progress_motion": "x"}))
+        self.assertIsNone(ar._motion_from_raw([1, 2]))            # 非 dict
+        self.assertEqual(ar._motion_from_raw({"progress_motion": 0}), 0)
+        self.assertEqual(ar._motion_from_raw({"progress_motion": 1}), 1)
+        self.assertEqual(ar._motion_from_raw({"progress_motion": 5}), 2)  # 钳到 2
 
 
 if __name__ == "__main__":

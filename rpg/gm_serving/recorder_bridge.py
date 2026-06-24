@@ -101,6 +101,7 @@ def run_unified_recorder(
         "unmet": rec.get("unmet") or [],
         "anchors_marked": anchors_marked,
         "chapter": rec.get("current_chapter"),
+        "progress_motion": rec.get("progress_motion"),
     }
 
 
@@ -196,12 +197,15 @@ def _persist_anchors(
     # 预计算结果:recorder 用的是 "current_chapter"；_normalize_judge_result 读 "estimated_chapter"
     precomputed_reached: list[dict] = rec.get("reached") or []
     precomputed_chapter: int | None = rec.get("current_chapter")
+    # progress_motion(0/1/2 或 None):发散play对不上原著章节时,靠它确定性兜底推进进度。
+    precomputed_motion = rec.get("progress_motion")
 
     def _precomputed_judge(*_args: Any, **_kwargs: Any) -> dict:
         """忽略 reconcile_anchors_for_turn 传来的参数，直接返回 recorder 预计算结果。"""
         return {
             "reached": precomputed_reached,
             "estimated_chapter": precomputed_chapter,
+            "progress_motion": precomputed_motion,
         }
 
     return reconcile_anchors_for_turn(
