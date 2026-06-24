@@ -1419,7 +1419,7 @@ function ViewUsage({ nav }) {
                   <span className="pl-row-tx">
                     <strong className="mono" style={{ fontSize: 12 }}>{m.model_id || m.api_id || '—'}</strong>
                     <span className="mono" style={{ fontSize: 11 }}>
-                      {fmtN(Number(m.turns || 0))} 次 · {fmtN(Number(m.input_tokens || 0))}↑ {fmtN(Number(m.output_tokens || 0))}↓ · ${Number(m.cost_usd || 0).toFixed(3)}
+                      {fmtN(Number(m.turns || 0))} {t('m_me_extra.usage_times_unit')} · {fmtN(Number(m.input_tokens || 0))}↑ {fmtN(Number(m.output_tokens || 0))}↓ · ${Number(m.cost_usd || 0).toFixed(3)}
                     </span>
                   </span>
                 </div>

@@ -841,7 +841,7 @@ function Composer({
     const rels = (gameState && gameState.relationships) || {};
     for (const [name, info] of Object.entries(rels)) {
       const tone = typeof info === "string" ? info : (info?.tone || "");
-      push(name, tone ? `${t('game.characters.relationships')}：${tone}` : "");
+      push(name, tone ? t('game_composer_extra.relationship_role', { tone }) : "");
     }
     return out;
   })();

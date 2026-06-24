@@ -11,6 +11,7 @@
  *  `rpg-data-ready` DOM event before rendering — the included
  *  HTML uses it to delay initial paint when the API is reachable.
  * ============================================================ */
+import i18n from './i18n/index.js';
 // Capture the designer baseline so we can fall back / extend it.
 const BASELINE = {
   novel: deepCopy(window.MOCK_NOVEL),
@@ -84,10 +85,10 @@ function fmtAgo(ts) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts;
   const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 60) return "刚刚";
-  if (diff < 3600) return Math.floor(diff / 60) + " 分钟前";
-  if (diff < 86400) return Math.floor(diff / 3600) + " 小时前";
-  if (diff < 86400 * 7) return Math.floor(diff / 86400) + " 天前";
+  if (diff < 60) return i18n.t("relative_time.just_now");
+  if (diff < 3600) return i18n.t("relative_time.minutes_ago", { n: Math.floor(diff / 60) });
+  if (diff < 86400) return i18n.t("relative_time.hours_ago", { n: Math.floor(diff / 3600) });
+  if (diff < 86400 * 7) return i18n.t("relative_time.days_ago", { n: Math.floor(diff / 86400) });
   return d.toLocaleDateString();
 }
 // zh-CN 24 小时制完整时间戳(各页 fmtTime 共用,坏值原样返回)

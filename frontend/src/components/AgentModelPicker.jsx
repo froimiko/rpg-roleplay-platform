@@ -107,8 +107,8 @@ export default function AgentModelPicker({
   platformVertexAllowed = false,  // embedder:是否允许平台 vertex embedding 兜底(admin/vip)
 }) {
   const { t } = useTranslation();
-  const effectiveHeader = header ?? t('components.agent_model_picker.default_header');
-  const effectiveInheritLabel = inheritLabel ?? t('components.agent_model_picker.inherit_label');
+  const effectiveHeader = header ?? t('agent_picker.default_header');
+  const effectiveInheritLabel = inheritLabel ?? t('agent_picker.inherit_label');
   const { useState, useEffect } = React;
   const [apis, setApis] = useState([]);
   const [credApiIds, setCredApiIds] = useState(new Set());
@@ -345,7 +345,7 @@ export default function AgentModelPicker({
   });
   const modelOptions = filteredModels.map((m) => ({
     value: m.real_name || m.id,
-    label: `${m.display_name || m.real_name || m.id}${m.enabled === false ? ` ${t('components.agent_model_picker.model_disabled_suffix')}` : ''}`,
+    label: `${m.display_name || m.real_name || m.id}${m.enabled === false ? ` ${t('agent_picker.model_disabled_suffix')}` : ''}`,
     disabled: m.enabled === false,
   }));
 
@@ -362,12 +362,12 @@ export default function AgentModelPicker({
   const modelSelectOptions = [
     ...(allowInherit ? [{ value: INHERIT, label: effectiveInheritLabel }] : []),
     ...modelOptions,
-    { value: CUSTOM_MODEL, label: t('components.agent_model_picker.custom_model_option') },
+    { value: CUSTOM_MODEL, label: t('agent_picker.custom_model_option') },
   ];
   const modelSelectSelected = inherit
     ? { value: INHERIT, label: effectiveInheritLabel }
     : isCustomModel
-      ? { value: CUSTOM_MODEL, label: t('components.agent_model_picker.custom_model_short') }
+      ? { value: CUSTOM_MODEL, label: t('agent_picker.custom_model_short') }
       : (() => {
           const m = modelsOf(apiId).find((x) => (x.real_name || x.id) === model);
           return m ? { value: model, label: m.display_name || m.real_name || m.id }
@@ -377,22 +377,22 @@ export default function AgentModelPicker({
   const body = (
     <>
       {showNoKeyAlert && (
-        <CSAlert type="warning" header={t('components.agent_model_picker.no_key_alert_header')} action={
-          <CSButton iconName="settings" onClick={() => { window.location.hash = configHash; }}>{t('components.agent_model_picker.go_config_key')}</CSButton>
+        <CSAlert type="warning" header={t('agent_picker.no_key_alert_header')} action={
+          <CSButton iconName="settings" onClick={() => { window.location.hash = configHash; }}>{t('agent_picker.go_config_key')}</CSButton>
         }>
-          {t('components.agent_model_picker.no_key_alert_body')}
+          {t('agent_picker.no_key_alert_body')}
         </CSAlert>
       )}
       <CSColumnLayout columns={2}>
-        <CSFormField label={t('components.agent_model_picker.provider_label')}>
+        <CSFormField label={t('agent_picker.provider_label')}>
           <CSSelect
             selectedOption={inherit ? null : (() => {
               const a = apiOf(apiId);
               return a ? { value: apiId, label: a.display_name || a.name || apiId }
-                : (apiId ? { value: apiId, label: `${apiId} ${t('components.agent_model_picker.provider_no_key_suffix')}` } : null);
+                : (apiId ? { value: apiId, label: `${apiId} ${t('agent_picker.provider_no_key_suffix')}` } : null);
             })()}
             options={providerOptions}
-            placeholder={noProviders ? t('components.agent_model_picker.provider_placeholder_no_key') : (inherit ? effectiveInheritLabel : t('components.agent_model_picker.provider_placeholder'))}
+            placeholder={noProviders ? t('agent_picker.provider_placeholder_no_key') : (inherit ? effectiveInheritLabel : t('agent_picker.provider_placeholder'))}
             onChange={({ detail }) => {
               const aid = detail.selectedOption.value;
               setApiId(aid);
@@ -406,16 +406,16 @@ export default function AgentModelPicker({
               else { setModel(''); }
             }}
             disabled={saving || noProviders}
-            empty={t('components.agent_model_picker.provider_empty')}
+            empty={t('agent_picker.provider_empty')}
           />
         </CSFormField>
-        <CSFormField label={t('components.agent_model_picker.model_label')} description={t('components.agent_model_picker.model_field_description')}>
+        <CSFormField label={t('agent_picker.model_label')} description={t('agent_picker.model_field_description')}>
           <div style={{ display: 'grid', gap: 8 }}>
             {(modelOptions.length > 0 || allowInherit) && (
               <CSSelect
                 selectedOption={modelSelectSelected}
                 options={modelSelectOptions}
-                placeholder={t('components.agent_model_picker.model_placeholder')}
+                placeholder={t('agent_picker.model_placeholder')}
                 onChange={({ detail }) => {
                   const mid = detail.selectedOption.value;
                   if (mid === INHERIT) { persistInherit(); }
@@ -429,7 +429,7 @@ export default function AgentModelPicker({
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
                 <CSInput
                   value={model}
-                  placeholder={t('components.agent_model_picker.model_name_placeholder')}
+                  placeholder={t('agent_picker.model_name_placeholder')}
                   onChange={({ detail }) => setModel(detail.value)}
                   onBlur={() => { const m = (model || '').trim(); if (apiId && m) persist(apiId, m); }}
                   disabled={saving || !apiId}
@@ -504,7 +504,7 @@ export default function AgentModelPicker({
       : ((window.__fmt && window.__fmt.compact) ? window.__fmt.compact(n)
         : (n >= 1000000 ? `${Math.round(n / 1000000)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n)));
     const fmtPrice = (m) => (m.price_in != null && m.price_out != null)
-      ? (m.price_in === 0 && m.price_out === 0 ? t('components.agent_model_picker.price_free') : `$${m.price_in.toFixed(2)} / $${m.price_out.toFixed(2)} per M`) : null;
+      ? (m.price_in === 0 && m.price_out === 0 ? t('agent_picker.price_free') : `$${m.price_in.toFixed(2)} / $${m.price_out.toFixed(2)} per M`) : null;
 
     return (
       <div ref={popRef} className="amp-pop">
@@ -513,7 +513,7 @@ export default function AgentModelPicker({
             className="amp-pop-search"
             type="text"
             value={popQuery}
-            placeholder={t('components.agent_model_picker.popover_search_placeholder')}
+            placeholder={t('agent_picker.popover_search_placeholder')}
             onChange={(e) => setPopQuery(e.target.value)}
             autoFocus
           />
@@ -521,9 +521,9 @@ export default function AgentModelPicker({
         <ul className="amp-pop-list">
           {filtered.length === 0 && (
             <li className="amp-pop-empty">{
-              !loaded ? t('components.agent_model_picker.popover_loading')
-                : q ? t('components.agent_model_picker.popover_no_match', { query: popQuery })
-                : t('components.agent_model_picker.popover_no_models')
+              !loaded ? t('agent_picker.popover_loading')
+                : q ? t('agent_picker.popover_no_match', { query: popQuery })
+                : t('agent_picker.popover_no_models')
             }</li>
           )}
           {filtered.map((m) => {

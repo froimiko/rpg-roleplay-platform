@@ -162,11 +162,11 @@ function CardEditFields({ form, u, kind = 'user' }) {
                       border: '1px solid color-mix(in srgb, var(--accent, #c96442) 35%, transparent)' }}>
           <Icon name="spark" size={20} style={{ color: 'var(--accent, #c96442)', flexShrink: 0, marginTop: 2 }} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600, color: 'var(--text, #ebe7df)', marginBottom: 4 }}>人格 skill 角色卡</div>
+            <div style={{ fontWeight: 600, color: 'var(--text, #ebe7df)', marginBottom: 4 }}>{t('cards_page.skill_card_title')}</div>
             <div style={{ fontSize: 12.5, color: 'var(--muted, #968f85)', lineHeight: 1.6 }}>
-              这张卡的角色定义来自导入的整包 skill 原文(扮演时逐字注入)。这里只需维护
-              <b style={{ color: 'var(--text-quiet, #c8c2b7)' }}>名称 / 标签</b>;完整 skill 在角色卡详情里查看,
-              要更新设定请<b style={{ color: 'var(--text-quiet, #c8c2b7)' }}>重新导入 skill</b>。下方「原始字段」一般无需改。
+              {t('cards_page.skill_card_desc_prefix')}
+              <b style={{ color: 'var(--text-quiet, #c8c2b7)' }}>{t('cards_page.skill_card_desc_highlight')}</b>{t('cards_page.skill_card_desc_mid')}
+              <b style={{ color: 'var(--text-quiet, #c8c2b7)' }}>{t('cards_page.skill_card_desc_reimport')}</b>{t('cards_page.skill_card_desc_suffix')}
             </div>
           </div>
         </div>
@@ -196,7 +196,7 @@ function CardEditFields({ form, u, kind = 'user' }) {
       </CSExpandableSection>
 
       <CSExpandableSection variant="container" defaultExpanded={!isSkill}
-        headerText={isSkill ? (t('cards.editor.section_profile') + '(原始字段)') : t('cards.editor.section_profile')}
+        headerText={isSkill ? (t('cards.editor.section_profile') + t('cards_page.raw_fields_suffix')) : t('cards.editor.section_profile')}
         headerDescription={t('cards.editor.section_profile_desc')}>
         <CSSpaceBetween size="l">
           <CSFormField label={t('cards.editor.background')} description={t('cards.editor.background_desc')}><CSTextarea rows={3} value={form.background} onChange={({ detail }) => u('background', detail.value)} /></CSFormField>
@@ -208,7 +208,7 @@ function CardEditFields({ form, u, kind = 'user' }) {
       </CSExpandableSection>
 
       <CSExpandableSection variant="container" defaultExpanded={!isSkill}
-        headerText={isSkill ? (t('cards.editor.section_story') + '(原始字段)') : t('cards.editor.section_story')}
+        headerText={isSkill ? (t('cards.editor.section_story') + t('cards_page.raw_fields_suffix')) : t('cards.editor.section_story')}
         headerDescription={t('cards.editor.section_story_desc')}>
         <CSSpaceBetween size="l">
           <CSFormField label={t('cards.editor.secrets')} description={t('cards.editor.secrets_desc')}><CSTextarea rows={3} value={form.secrets} onChange={({ detail }) => u('secrets', detail.value)} /></CSFormField>
@@ -260,6 +260,7 @@ function cardSnippet(c, n = 160) {
 // 人格 skill 完整定义:折叠 + 按需拉取(GET 单卡)+ 高度封顶滚动 + 渲染长度封顶。
 // 关键:不把 30k 原文常驻 DOM(默认折叠)、不随 /api/state 下发(按需拉),避免长 skill 内存爆。
 function SkillContentSection({ cardId }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useStatePL(false);
   const [text, setText] = useStatePL('');
   const [loading, setLoading] = useStatePL(false);
@@ -272,20 +273,20 @@ function SkillContentSection({ cardId }) {
       const r = await window.api.cards.myGet(cardId);
       const c = (r && (r.card || r)) || {};
       const sc = (c.metadata && c.metadata.skill_content) || c.background || '';
-      setText(sc || '（无内容）'); setOpen(true);
-    } catch (e) { setErr(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [cardId, text, loading]);
+      setText(sc || t('cards_page.skill_empty')); setOpen(true);
+    } catch (e) { setErr(e?.message || t('cards_page.skill_load_fail')); } finally { setLoading(false); }
+  }, [cardId, text, loading, t]);
   const MAX = 60000;
-  const shown = text.length > MAX ? (text.slice(0, MAX) + '\n…（过长已截断，完整内容服务端使用）') : text;
+  const shown = text.length > MAX ? (text.slice(0, MAX) + '\n' + t('cards_page.skill_truncated')) : text;
   return (
     <div style={{ background: 'var(--panel-2, #282623)', border: '1px solid var(--line-soft, #2a2724)', borderRadius: 10, padding: '12px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ fontSize: 11, letterSpacing: '.08em', color: 'var(--accent, #c96442)', fontWeight: 600, textTransform: 'uppercase' }}>人格 skill 定义</div>
+        <div style={{ fontSize: 11, letterSpacing: '.08em', color: 'var(--accent, #c96442)', fontWeight: 600, textTransform: 'uppercase' }}>{t('cards_page.skill_section_label')}</div>
         <button
           onClick={toggle}
           style={{ fontSize: 12, color: 'var(--accent, #c96442)', background: 'transparent', border: '1px solid var(--line, #3a352f)', borderRadius: 8, padding: '4px 12px', cursor: 'pointer' }}
         >
-          {loading ? '加载中…' : (open ? '收起' : '查看完整 skill')}
+          {loading ? t('cards_page.skill_loading') : (open ? t('cards_page.skill_collapse') : t('cards_page.skill_view_full'))}
         </button>
       </div>
       {err && <div style={{ color: 'var(--danger, #c8675d)', fontSize: 12, marginTop: 6 }}>{err}</div>}
@@ -294,7 +295,7 @@ function SkillContentSection({ cardId }) {
           {shown}
         </div>
       )}
-      {!open && <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted-2, #8a847b)' }}>整包 skill 原文作为角色定义,扮演时服务端逐字注入;点上方查看。</div>}
+      {!open && <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted-2, #8a847b)' }}>{t('cards_page.skill_hint')}</div>}
     </div>
   );
 }

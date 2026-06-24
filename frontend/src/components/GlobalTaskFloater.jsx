@@ -1,5 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 
 /* GlobalTaskFloater — 右下角全局「后台任务」浮窗(纯自定义,无 Cloudscape 汇总条)。
    数据源:GET /api/me/tasks/active(导入 / 各模块重建 / 生图 统一聚合)。
@@ -67,6 +68,7 @@ function fmtElapsed(sec) {
 
 export default function GlobalTaskFloater() {
   const { useState, useEffect, useRef } = React;
+  const { t: i18n } = useTranslation();
   const [tasks, setTasks] = useState([]);
   const [fetchedAt, setFetchedAt] = useState(0);
   const [hovering, setHovering] = useState(false);
@@ -102,10 +104,10 @@ export default function GlobalTaskFloater() {
           const toast = (typeof window !== 'undefined' && window.__apiToast) || null;
           if (!toast) return;
           toasted.current.add(id);
-          if (t.status === 'done') toast(t.title + ' 已完成', { kind: 'ok', duration: 3500 });
-          else if (t.status === 'done_with_errors') toast(t.title + ' 完成(有警告)', { kind: 'warn', duration: 5000 });
-          else if (t.status === 'failed') toast(t.title + ' 失败' + (t.error ? '：' + t.error : ''), { kind: 'danger', duration: 7000 });
-          else if (t.status === 'cancelled') toast(t.title + ' 已取消', { kind: 'info', duration: 3000 });
+          if (t.status === 'done') toast(t.title + ' ' + i18n('task_floater.toast_done'), { kind: 'ok', duration: 3500 });
+          else if (t.status === 'done_with_errors') toast(t.title + ' ' + i18n('task_floater.toast_done_with_errors'), { kind: 'warn', duration: 5000 });
+          else if (t.status === 'failed') toast(t.title + ' ' + i18n('task_floater.toast_failed') + (t.error ? i18n('task_floater.toast_failed_sep') + t.error : ''), { kind: 'danger', duration: 7000 });
+          else if (t.status === 'cancelled') toast(t.title + ' ' + i18n('task_floater.toast_cancelled'), { kind: 'info', duration: 3000 });
         });
         prevActive.current = curActive;
         if (toasted.current.size > 80) toasted.current = new Set([...toasted.current].filter((id) => byId[id]));
@@ -172,10 +174,10 @@ export default function GlobalTaskFloater() {
     try {
       if (t.source === 'import') await api?.scripts?.jobCancel(String(t.id).slice('import:'.length));
       else if (t.source === 'image') await api?.images?.cancel(String(t.id).slice('image:'.length));
-      if (toast) toast('已请求取消', { kind: 'info', duration: 2500 });
+      if (toast) toast(i18n('task_floater.cancel_requested'), { kind: 'info', duration: 2500 });
       window.dispatchEvent(new Event('rpg-task-refresh'));
     } catch (e) {
-      if (toast) toast('取消失败', { kind: 'danger', detail: e && e.message });
+      if (toast) toast(i18n('task_floater.cancel_failed'), { kind: 'danger', detail: e && e.message });
     }
   };
 
@@ -189,9 +191,9 @@ export default function GlobalTaskFloater() {
     const hasProg = t.progress != null && t.progress_total;
     const pct = hasProg ? Math.max(0, Math.min(100, Math.round((t.progress / t.progress_total) * 100))) : 0;
     const canceling = !!t.canceling;
-    const statusText = (canceling ? '取消中…' : (t.status === 'queued' ? '排队中' : '进行中'))
+    const statusText = (canceling ? i18n('task_floater.status_canceling') : (t.status === 'queued' ? i18n('task_floater.status_queued') : i18n('task_floater.status_running')))
       + (t.phase ? ' · ' + t.phase : '')
-      + ' · 已用 ' + elapsed;
+      + ' · ' + i18n('task_floater.status_elapsed', { elapsed });
     return (
       <div
         key={t.id}
@@ -199,13 +201,13 @@ export default function GlobalTaskFloater() {
         onMouseEnter={() => setHoveredCardId(t.id)}
         onMouseLeave={() => setHoveredCardId((id) => (id === t.id ? null : id))}
         onClick={(e) => { e.stopPropagation(); setPinnedId((p) => (p === t.id ? null : t.id)); }}
-        title={pinned ? '已固定，单击取消固定' : '单击固定'}
+        title={pinned ? i18n('task_floater.card_title_pinned') : i18n('task_floater.card_title_unpin')}
       >
         <div className="rpg-tf-row">
           <span className="rpg-tf-spin" aria-hidden="true" />
           <span className="rpg-tf-name" title={t.title}>{t.title}</span>
           {open && t.cancelable && !canceling && (
-            <button className="rpg-tf-cancel" onClick={(e) => { e.stopPropagation(); cancelTask(t); }}>取消</button>
+            <button className="rpg-tf-cancel" onClick={(e) => { e.stopPropagation(); cancelTask(t); }}>{i18n('common.cancel')}</button>
           )}
         </div>
         <div className="rpg-tf-detail">
@@ -234,8 +236,8 @@ export default function GlobalTaskFloater() {
         <button
           type="button"
           className="rpg-tf-dot"
-          aria-label={active.length + ' 个后台任务'}
-          title={active.length + ' 个后台任务进行中'}
+          aria-label={i18n('task_floater.dot_aria_label', { count: active.length })}
+          title={i18n('task_floater.dot_title', { count: active.length })}
           onClick={() => setPinnedId(active[0] ? active[0].id : null)}
         >⋯</button>
       )}

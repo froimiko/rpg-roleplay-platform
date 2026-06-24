@@ -117,7 +117,7 @@ export default function ImageLightbox({ open, src, alt = '', onClose, onCrop, cr
       if (blob) await onCrop(blob);
       setMode('view'); setBox(null);
     } catch (err) {
-      try { window.__apiToast && window.__apiToast('裁剪失败', { kind: 'danger' }); } catch (_) {}
+      try { window.__apiToast && window.__apiToast(t('lightbox.crop_failed'), { kind: 'danger' }); } catch (_) {}
     } finally { setBusy(false); }
   }, [box, onCrop, imgDims]);
 
@@ -143,14 +143,14 @@ export default function ImageLightbox({ open, src, alt = '', onClose, onCrop, cr
         <div className="ilb__bar">
           {mode === 'view' ? (
             <>
-              {onCrop && <button className="ilb__btn" onClick={enterCrop}>✂ 裁剪</button>}
-              <button className="ilb__btn ilb__btn--ghost" onClick={() => onClose && onClose()}>关闭</button>
+              {onCrop && <button className="ilb__btn" onClick={enterCrop}>✂ {t('lightbox.crop')}</button>}
+              <button className="ilb__btn ilb__btn--ghost" onClick={() => onClose && onClose()}>{t('common.close')}</button>
             </>
           ) : (
             <>
-              <span className="ilb__hint">{cropHint || '拖动调整裁剪区域，应用后保存'}</span>
-              <button className="ilb__btn ilb__btn--ghost" disabled={busy} onClick={() => { setMode('view'); setBox(null); }}>取消</button>
-              <button className="ilb__btn" disabled={busy} onClick={applyCrop}>{busy ? '处理中…' : '应用裁剪'}</button>
+              <span className="ilb__hint">{cropHint || t('lightbox.crop_hint')}</span>
+              <button className="ilb__btn ilb__btn--ghost" disabled={busy} onClick={() => { setMode('view'); setBox(null); }}>{t('common.cancel')}</button>
+              <button className="ilb__btn" disabled={busy} onClick={applyCrop}>{busy ? t('lightbox.applying') : t('lightbox.apply_crop')}</button>
             </>
           )}
         </div>

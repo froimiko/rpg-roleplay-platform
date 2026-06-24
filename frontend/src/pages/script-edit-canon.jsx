@@ -496,7 +496,7 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
           </CSFormField>
           <CSFormField label={t('scripts.edit.canon.field_subtype')}>
             <CSInput
-              placeholder="国家/军队/宗门"
+              placeholder={t('script_canon.subtype_ph')}
               value={newForm.entity_subtype}
               onChange={({ detail }) => setNewForm((f) => ({ ...f, entity_subtype: detail.value }))}
             />

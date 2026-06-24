@@ -22,11 +22,13 @@ function shouldShowBanner(job) {
   return false;
 }
 
-const KIND_FALLBACK_LABEL = {
-  full_pipeline:   '导入流水线',
-  llm_extract:     'LLM 二次提取',
-  knowledge_sync:  '知识库索引同步',
-};
+function getKindFallbackLabel(t) {
+  return {
+    full_pipeline:  t('rebuild_banner.kind_full_pipeline'),
+    llm_extract:    t('rebuild_banner.kind_llm_extract'),
+    knowledge_sync: t('rebuild_banner.kind_knowledge_sync'),
+  };
+}
 
 /* Character progress bar helper (20 blocks for the banner — wider context) */
 const B_FULL  = '▰';
@@ -98,13 +100,14 @@ export function RebuildJobBanner({ scriptId, activeJob, onChange, onDone }) {
   const pct          = overallTotal ? Math.round((overall / overallTotal) * 100) : 0;
 
   const kindStr = String(job.kind || '');
+  const KIND_FALLBACK_LABEL = getKindFallbackLabel(t);
   let moduleName;
   if (kindStr.startsWith('rebuild_') || job.module) {
     moduleName = moduleLabel(t, job.module || kindStr.replace(/^rebuild_/, ''));
   } else if (KIND_FALLBACK_LABEL[kindStr]) {
     moduleName = KIND_FALLBACK_LABEL[kindStr];
   } else {
-    moduleName = job.title || kindStr || '后台任务';
+    moduleName = job.title || kindStr || t('rebuild_banner.kind_background_task');
   }
 
   const before = job.before_count;

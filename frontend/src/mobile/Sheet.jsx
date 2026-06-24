@@ -13,6 +13,7 @@
  * 圆角/无滑入动画)若强迁会改变视觉,按语义统一铁律保留原样,不在此收口。
  */
 import React, { useRef, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 /* ── 通用底抽屉 ──────────────────────────────────────────────────────
  * open      是否显示(false → 不渲染)
@@ -99,21 +100,24 @@ export function Sheet({ open, title, hint, onClose, maxHeight, zIndex, children 
  */
 export function ConfirmSheet({
   open, title, body, danger,
-  confirmLabel = '确认', cancelLabel = '取消',
+  confirmLabel, cancelLabel,
   loading, onConfirm, onCancel,
 }) {
+  const { t } = useTranslation();
+  const resolvedConfirmLabel = confirmLabel ?? t('common.confirm');
+  const resolvedCancelLabel = cancelLabel ?? t('common.cancel');
   if (!open) return null;
   return (
     <Sheet open title={title} onClose={onCancel}>
       {body && <div className="confirm-note">{body}</div>}
       <div className="sheet-actions" style={{ marginTop: 8 }}>
-        <button className="sheet-btn" onClick={onCancel}>{cancelLabel}</button>
+        <button className="sheet-btn" onClick={onCancel}>{resolvedCancelLabel}</button>
         <button
           className={'sheet-btn ' + (danger ? 'danger' : 'primary')}
           onClick={onConfirm}
           disabled={loading}
         >
-          {loading ? '处理中…' : confirmLabel}
+          {loading ? t('m_sheet.processing') : resolvedConfirmLabel}
         </button>
       </div>
     </Sheet>

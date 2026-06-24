@@ -1109,7 +1109,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
         } catch (settingsErr) {
           // 设置写失败不阻断进入游戏,但给用户非阻塞提示。
           window.__apiToast?.(
-            `游戏设置未能保存(${settingsErr?.message || '写入失败'}),进入游戏后可在设置中手动调整。`,
+            t('m_newgame_extra.settings_save_failed', { error: settingsErr?.message || t('m_newgame_extra.settings_write_error') }),
             { kind: 'warn', duration: 5000 }
           );
         }

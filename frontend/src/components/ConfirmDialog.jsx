@@ -41,12 +41,12 @@ export default function ConfirmDialog({
   if (!open) return null;
   const eb = eyebrow != null
     ? eyebrow
-    : (danger ? '高危操作' : '确认');
+    : (danger ? t('confirm_dialog.eyebrow_danger') : t('confirm_dialog.eyebrow_default'));
   const ebStyle = dangerEyebrow
     ? { color: danger ? 'var(--danger)' : 'var(--muted-2)' }
     : undefined;
-  const cLabel = confirmLabel != null ? confirmLabel : '确认';
-  const xLabel = cancelLabel != null ? cancelLabel : '取消';
+  const cLabel = confirmLabel != null ? confirmLabel : t('common.confirm');
+  const xLabel = cancelLabel != null ? cancelLabel : t('common.cancel');
 
   const header = (
     <div>

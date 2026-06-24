@@ -352,7 +352,7 @@ export default function TavernPage() {
       const r = await window.api.personaSkills.import(body);
       if (!r || !r.ok) throw new Error((r && r.error) || t('tavern_page.toast.import_failed'));
       const nm = (r.card && r.card.name) || label || t('tavern_page.char_fallback');
-      window.__apiToast?.(`已生成角色卡「${nm}」`, { kind: 'ok', duration: 2600 });
+      window.__apiToast?.(t('tavern_page.toast.skill_imported', { name: nm }), { kind: 'ok', duration: 2600 });
       setSkillRepoUrl('');
       setView('select');   // 去角色库挑这张新卡开聊
     } catch (e) {
@@ -706,7 +706,7 @@ export default function TavernPage() {
     if (activeId == null) return;
     try {
       await window.api.tavern.bindCard(activeId, role, cardId);
-      window.__apiToast?.(t('tavern_app.toast.card_bound') || '已更换角色卡', { kind: 'ok', duration: 1500 });
+      window.__apiToast?.(t('tavern_app.toast.card_bound'), { kind: 'ok', duration: 1500 });
       try { const d = await window.api.game.state(); applyState(d); } catch (_) {}
     } catch (e) {
       window.__apiToast?.(t('tavern_page.toast.save_failed'), { kind: 'danger', detail: e?.message });
@@ -933,7 +933,7 @@ export default function TavernPage() {
             <div className="tvp-hero-inner">
               <div className="tvp-hero-mark" aria-hidden="true">✻</div>
               <h1 className="tvp-hero-title serif">{t('tavern_page.hero.heading')}</h1>
-              <p className="tvp-hero-sub muted">新建一段对话、从角色卡里挑一位,或导入一个人格 skill。</p>
+              <p className="tvp-hero-sub muted">{t('tavern_page.hero.sub')}</p>
               <div className="tvp-hero-actions">
                 <CSButton variant="primary" iconName="add-plus" onClick={newChat}>{t('tavern_page.sidebar.new_chat')}</CSButton>
                 <CSButton iconName="user-profile" onClick={() => setView('select')}>{t('tavern_page.sidebar.select_char')}</CSButton>
@@ -945,17 +945,17 @@ export default function TavernPage() {
                   <input
                     type="url" inputMode="url"
                     className="tvp-hero-skill-input"
-                    placeholder="GitHub 链接,如 https://github.com/owner/repo"
+                    placeholder={t('tavern_page.hero.skill_placeholder')}
                     value={skillRepoUrl}
                     onChange={(e) => setSkillRepoUrl(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') importSkillGithub(); }}
                     disabled={skillBusy}
                   />
                   <CSButton onClick={importSkillGithub} disabled={skillBusy || !skillRepoUrl.trim()}>
-                    {skillBusy ? '导入中…' : '导入 skill'}
+                    {skillBusy ? t('tavern_page.hero.skill_importing') : t('tavern_page.hero.skill_import_btn')}
                   </CSButton>
                 </div>
-                <div className="tvp-hero-skill-hint muted-2">导入人格 skill(角色扮演 skill.md / GitHub 仓库),自动生成角色卡</div>
+                <div className="tvp-hero-skill-hint muted-2">{t('tavern_page.hero.skill_hint')}</div>
               </div>
 
               {/* 统一拖入/选择:.md=人格 skill,.png/.json/.webp=SillyTavern 角色卡 */}
@@ -968,7 +968,7 @@ export default function TavernPage() {
                 role="button" tabIndex={0}
               >
                 <Icon name="upload" size={22} style={{ color: 'var(--accent)' }} />
-                <div className="tvp-hero-drop-sub muted-2">拖入文件 / 点击选择 —— 角色卡 .png / .json / .webp · 人格 skill .md</div>
+                <div className="tvp-hero-drop-sub muted-2">{t('tavern_page.hero.drop_hint')}</div>
               </div>
               <input
                 ref={heroFileRef} type="file" accept=".png,.json,.webp,.md" style={{ display: 'none' }}

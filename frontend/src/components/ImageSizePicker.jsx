@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { lsGet, lsSet } from '../lib/storage.js';
 
 /* ImageSizePicker — 生图分辨率/比例选择器。
@@ -30,6 +31,7 @@ export function recommendedSize(kind) {
 
 export default function ImageSizePicker({ kind, value, onChange, storeKey }) {
   const { useEffect, useRef } = React;
+  const { t } = useTranslation();
   const key = 'rpg.imgsize.' + (storeKey || kind || 'default');
   const inited = useRef(false);
 
@@ -49,12 +51,12 @@ export default function ImageSizePicker({ kind, value, onChange, storeKey }) {
   };
 
   return (
-    <div className="isz" role="group" aria-label="生图尺寸">
+    <div className="isz" role="group" aria-label={t('image_size.aria_group')}>
       {SIZE_PRESETS.map((p) => (
         <button key={p.id} type="button"
           className={`isz__btn${value === p.value ? ' is-active' : ''}`}
           onClick={() => pick(p.value)} title={p.value}>
-          {p.label}
+          {t(`image_size.preset_${p.id}`)}
         </button>
       ))}
     </div>

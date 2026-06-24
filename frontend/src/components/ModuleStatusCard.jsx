@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import s from './editorial.module.css';
 
 /* ── Source tag text (小型 dotted label) ── */
-const SOURCE_LABEL = { llm: 'LLM', zero_llm: '零 LLM', mixed: '可选 LLM' };
+const SOURCE_LABEL_KEY = { llm: 'LLM', zero_llm: 'module_status.source_zero_llm', mixed: 'module_status.source_mixed_llm' };
 const SOURCE_CSS   = { llm: s.sourceTagLlm, zero_llm: s.sourceTagZero, mixed: s.sourceTagMixed };
 
 const MODULE_META = {
@@ -72,24 +72,24 @@ function charProgressBar(done, total) {
 }
 
 /* ── Time-since helper ── */
-function fmtCountdown(iso) {
+function fmtCountdown(iso, t) {
   if (!iso) return null;
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return null;
     const m = Math.floor((Date.now() - d.getTime()) / 60000);
-    if (m < 1)  return '刚刚';
-    if (m < 60) return `${m} 分钟前`;
+    if (m < 1)  return t('module_status.time_just_now');
+    if (m < 60) return t('module_status.time_minutes_ago', { count: m });
     const h = Math.floor(m / 60);
-    if (h < 24) return `${h} 小时前`;
-    return `${Math.floor(h / 24)} 天前`;
+    if (h < 24) return t('module_status.time_hours_ago', { count: h });
+    return t('module_status.time_days_ago', { count: Math.floor(h / 24) });
   } catch (_) { return null; }
 }
 
 /* ── Zhuyin (朱印) protagonist badge ── */
-function ZhuyinBadge() {
+function ZhuyinBadge({ t }) {
   return (
-    <div className={s.zhuyinBadge} title="主角">
+    <div className={s.zhuyinBadge} title={t('module_status.protagonist_badge_title')}>
       <span className={s.zhuyinChar}>主</span>
     </div>
   );
@@ -123,7 +123,7 @@ export function ModuleStatusCard({
   const displayDesc  = description
     || t(`modules.${module}.desc`, { defaultValue: '' });
 
-  const sinceStr       = fmtCountdown(lastRebuiltAt);
+  const sinceStr       = fmtCountdown(lastRebuiltAt, t);
   const rebuildDisabled = !!activeJobId || status === 'running';
   const isProtagonist  = metadata && metadata.is_protagonist;
 
@@ -147,7 +147,7 @@ export function ModuleStatusCard({
   return (
     <div className={cardCls}>
       {/* 朱印 — rendered absolutely inside card */}
-      {isProtagonist && <ZhuyinBadge />}
+      {isProtagonist && <ZhuyinBadge t={t} />}
 
       {/* ── Head row: title + source tag + actions ── */}
       <div className={s.cardHead}>
@@ -155,7 +155,7 @@ export function ModuleStatusCard({
           <span className={s.cardTitle}>{displayTitle}</span>
           {source !== 'unknown' && (
             <span className={`${s.sourceTag} ${SOURCE_CSS[source] || ''}`}>
-              {SOURCE_LABEL[source] || source}
+              {source === 'llm' ? 'LLM' : SOURCE_LABEL_KEY[source] ? t(SOURCE_LABEL_KEY[source]) : source}
             </span>
           )}
         </div>
@@ -166,7 +166,7 @@ export function ModuleStatusCard({
               onClick={() => onViewDetail({ module, scriptId, lastJobId })}
               type="button"
             >
-              明细 ↗
+              {t('module_status.action_detail')} ↗
             </button>
           )}
           {onRebuild && (
@@ -197,12 +197,12 @@ export function ModuleStatusCard({
               <span className={s.countNum}>{doneCount}</span>
               <span className={s.countSep}>/</span>
               <span className={s.countTotal}>{totalCount}</span>
-              <span className={s.countUnit}>条</span>
+              <span className={s.countUnit}>{t('module_status.count_unit')}</span>
             </>
           ) : hasDone ? (
             <>
               <span className={s.countNum}>{doneCount}</span>
-              <span className={s.countUnit}>条</span>
+              <span className={s.countUnit}>{t('module_status.count_unit')}</span>
             </>
           ) : (
             <span className={s.countDash}>—</span>

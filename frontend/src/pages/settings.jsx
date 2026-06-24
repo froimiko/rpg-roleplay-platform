@@ -1897,7 +1897,7 @@ function ProviderConfigSection() {
           const kind = providerId === "AgentPlatform" ? "vertex_ai" : providerId === "anthropic" ? "anthropic" : "openai_compat";
           await window.api.models.upsertApi({ api_id: catalogApiIdForCredential(providerId), base_url: baseUrl, kind, display_name: cfg?.name || providerId });
         } else {
-          window.__apiToast?.(t('settings.providers.admin_base_url_only') || '仅管理员可修改 provider base URL', { kind: "warn", duration: 3000 });
+          window.__apiToast?.(t('settings_extra.admin_base_url_only'), { kind: "warn", duration: 3000 });
         }
       }
       window.__apiToast?.(t('settings.providers.save_ok'), { kind: "ok", duration: 1800 });

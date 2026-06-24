@@ -13,6 +13,7 @@
  *   <PolicyNoticeBanner />
  */
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { lsGetJSON, lsSetJSON } from '../lib/storage.js';
 
 const LANDING_BASE = 'https://play.stellatrix.icu/legal';
@@ -61,33 +62,16 @@ function isDismissed(notice) {
   return map[notice.id] === notice.new_version;
 }
 
-function formatCountdown(effectiveAt, lang) {
+function formatCountdown(effectiveAt, t) {
   const now = Date.now();
   const target = new Date(effectiveAt).getTime();
   const diffMs = target - now;
   if (diffMs <= 0) {
-    return lang === 'zh-CN' ? '即将生效' : 'Effective soon';
+    return t('policy_banner.effective_soon');
   }
   const days = Math.ceil(diffMs / 86400000);
-  return lang === 'zh-CN' ? `${days} 天后生效` : `${days} day(s) until effective`;
+  return t('policy_banner.days_until_effective', { count: days });
 }
-
-const I18N = {
-  'zh-CN': {
-    prefix: '政策更新通知：',
-    suffix: '将更新至',
-    countdown: (at) => formatCountdown(at, 'zh-CN'),
-    details: '阅读详情',
-    dismiss: '不再提示',
-  },
-  en: {
-    prefix: 'Policy update: ',
-    suffix: 'will be updated to',
-    countdown: (at) => formatCountdown(at, 'en'),
-    details: 'Read details',
-    dismiss: 'Dismiss',
-  },
-};
 
 const styles = {
   container: {
@@ -132,10 +116,10 @@ const styles = {
 };
 
 export default function PolicyNoticeBanner() {
+  const { t } = useTranslation();
   const [notices, setNotices] = useState([]);
   const [dismissed, setDismissedState] = useState(getDismissed());
   const lang = getLang();
-  const t = I18N[lang] || I18N['zh-CN'];
 
   useEffect(() => {
     let cancelled = false;
@@ -167,14 +151,14 @@ export default function PolicyNoticeBanner() {
         return (
           <div key={notice.id} style={styles.banner} role="alert">
             <span>
-              {t.prefix}
+              {t('policy_banner.prefix')}
               <strong>{name}</strong>
               {' '}
-              {t.suffix}
+              {t('policy_banner.suffix')}
               {' '}
               <strong>{notice.new_version}</strong>
               {' — '}
-              {t.countdown(notice.effective_at)}
+              {formatCountdown(notice.effective_at, t)}
             </span>
             <a
               href={url}
@@ -182,14 +166,14 @@ export default function PolicyNoticeBanner() {
               rel="noopener noreferrer"
               style={styles.link}
             >
-              {t.details}
+              {t('policy_banner.read_details')}
             </a>
             <button
               style={styles.dismiss}
               onClick={() => handleDismiss(notice)}
               aria-label={`Dismiss notice for ${name}`}
             >
-              {t.dismiss}
+              {t('policy_banner.dismiss')}
             </button>
           </div>
         );

@@ -3,6 +3,7 @@
 // 未登录时由平台 auth gate 引导登录再回跳本页(/device)。
 import React from 'react';
 import { useState as useStatePL, useEffect as useEffectPL } from 'react';
+import { useTranslation } from 'react-i18next';
 import CSContainer from '@cloudscape-design/components/container';
 import CSHeader from '@cloudscape-design/components/header';
 import CSSpaceBetween from '@cloudscape-design/components/space-between';
@@ -12,9 +13,8 @@ import CSInput from '@cloudscape-design/components/input';
 import CSAlert from '@cloudscape-design/components/alert';
 import CSBadge from '@cloudscape-design/components/badge';
 
-const SCOPE_LABEL = { 'library:read': '浏览并导入在线剧本库', 'library:publish': '把剧本发布到在线库' };
-
 export function DeviceAuthorizePage() {
+  const { t } = useTranslation();
   const initialCode = (() => {
     try { return (new URLSearchParams(location.search).get('code') || '').toUpperCase(); } catch { return ''; }
   })();
@@ -39,7 +39,7 @@ export function DeviceAuthorizePage() {
       const r = await window.api.federation.deviceLookup(uc);
       setInfo(r.device); setPhase('confirm');
     } catch (e) {
-      setErr(e?.payload?.error || '配对码不存在或已过期'); setPhase('error');
+      setErr(e?.payload?.error || t('device_page.err_code_not_found')); setPhase('error');
     } finally { setBusy(false); }
   };
 
@@ -51,24 +51,23 @@ export function DeviceAuthorizePage() {
       await window.api.federation.deviceApprove(code.trim().toUpperCase(), deny);
       setPhase(deny ? 'denied' : 'done');
     } catch (e) {
-      setErr(e?.payload?.error || '操作失败'); setPhase('error');
+      setErr(e?.payload?.error || t('device_page.err_action_failed')); setPhase('error');
     } finally { setBusy(false); }
   };
 
   return (
     <div style={{ maxWidth: 520, margin: '48px auto', padding: '0 16px' }}>
-      <CSContainer header={<CSHeader variant="h1">授权设备接入</CSHeader>}>
+      <CSContainer header={<CSHeader variant="h1">{t('device_page.page_title')}</CSHeader>}>
         <CSSpaceBetween size="l">
           {provider === false && (
-            <CSAlert type="info" header="此实例不是在线剧本库提供方">
-              本实例是本地/自部署节点,不签发设备授权。设备配对码只能在你要连接的「在线服务」上输入。
-              若你是想连接官方在线库,请在「设置 → 在线剧本库」里发起连接。
+            <CSAlert type="info" header={t('device_page.not_provider_header')}>
+              {t('device_page.not_provider_body')}
             </CSAlert>
           )}
           {provider !== false && phase === 'input' && (
             <CSSpaceBetween size="s">
               <CSBox color="text-body-secondary">
-                在你的设备/本地部署上发起连接后会显示一个配对码,请在此输入以授权。
+                {t('device_page.input_hint')}
               </CSBox>
               <div style={{ display: 'flex', gap: 8 }}>
                 <div style={{ flex: 1 }}>
@@ -76,51 +75,50 @@ export function DeviceAuthorizePage() {
                     onChange={({ detail }) => setCode(detail.value.toUpperCase())}
                     onKeyDown={(e) => { if (e.detail.key === 'Enter') lookup(); }} />
                 </div>
-                <CSButton variant="primary" loading={busy} disabled={!code.trim()} onClick={() => lookup()}>下一步</CSButton>
+                <CSButton variant="primary" loading={busy} disabled={!code.trim()} onClick={() => lookup()}>{t('device_page.next_step')}</CSButton>
               </div>
             </CSSpaceBetween>
           )}
 
           {phase === 'confirm' && info && (
             <CSSpaceBetween size="m">
-              <CSBox variant="awsui-key-label">配对码</CSBox>
+              <CSBox variant="awsui-key-label">{t('device_page.label_code')}</CSBox>
               <CSBox fontSize="display-l" fontWeight="bold" padding="n" style={{ letterSpacing: 3 }}>{code.toUpperCase()}</CSBox>
 
               <div>
-                <CSBox variant="awsui-key-label">请求方</CSBox>
-                <CSBox>{info.client_name || '未命名客户端'}</CSBox>
+                <CSBox variant="awsui-key-label">{t('device_page.label_requester')}</CSBox>
+                <CSBox>{info.client_name || t('device_page.unnamed_client')}</CSBox>
               </div>
               <div>
-                <CSBox variant="awsui-key-label">申请权限</CSBox>
+                <CSBox variant="awsui-key-label">{t('device_page.label_scopes')}</CSBox>
                 <CSSpaceBetween direction="horizontal" size="xs">
-                  {(info.scopes || []).map((s) => <CSBadge key={s} color="blue">{SCOPE_LABEL[s] || s}</CSBadge>)}
+                  {(info.scopes || []).map((s) => <CSBadge key={s} color="blue">{t(`device_page.scope_${s.replace(':', '_')}`, s)}</CSBadge>)}
                 </CSSpaceBetween>
               </div>
 
-              <CSAlert type="warning" header="确认这是你本人发起的连接">
-                只有当你正在自己的设备/本地部署上主动连接时才批准。如果你没有发起此请求,
-                或配对码来自他人发来的链接/消息,请点「拒绝」—— 批准会把以上权限授予对方。
+              <CSAlert type="warning" header={t('device_page.confirm_warning_header')}>
+                {t('device_page.confirm_warning_body')}
               </CSAlert>
 
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="primary" loading={busy} onClick={() => decide(false)}>批准授权</CSButton>
-                <CSButton loading={busy} onClick={() => decide(true)}>拒绝</CSButton>
+                <CSButton variant="primary" loading={busy} onClick={() => decide(false)}>{t('device_page.btn_approve')}</CSButton>
+                <CSButton loading={busy} onClick={() => decide(true)}>{t('device_page.btn_deny')}</CSButton>
               </CSSpaceBetween>
             </CSSpaceBetween>
           )}
 
           {phase === 'done' && (
-            <CSAlert type="success" header="已授权">
-              你的设备会在几秒内自动完成连接,可以回到它继续操作了。本页可关闭。
+            <CSAlert type="success" header={t('device_page.done_header')}>
+              {t('device_page.done_body')}
             </CSAlert>
           )}
           {phase === 'denied' && (
-            <CSAlert type="info" header="已拒绝">该连接请求已被拒绝,未授予任何权限。</CSAlert>
+            <CSAlert type="info" header={t('device_page.denied_header')}>{t('device_page.denied_body')}</CSAlert>
           )}
           {phase === 'error' && (
             <CSSpaceBetween size="s">
-              <CSAlert type="error" header="无法继续">{err}</CSAlert>
-              <CSButton onClick={() => { setPhase('input'); setInfo(null); setErr(''); }}>重新输入配对码</CSButton>
+              <CSAlert type="error" header={t('device_page.error_header')}>{err}</CSAlert>
+              <CSButton onClick={() => { setPhase('input'); setInfo(null); setErr(''); }}>{t('device_page.btn_retry')}</CSButton>
             </CSSpaceBetween>
           )}
         </CSSpaceBetween>

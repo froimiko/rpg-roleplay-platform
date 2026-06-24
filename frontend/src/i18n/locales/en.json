@@ -3753,8 +3753,12 @@
     },
     "hero": {
       "heading": "Who do you want to chat with?",
-      "sub": "Start a new chat or pick a character card.",
-      "drop_hint": "Or drag a character card (.png / .json / .webp) here"
+      "sub": "Start a new conversation, pick a character card, or import a persona skill.",
+      "drop_hint": "Drag a file here or click to select — character card .png / .json / .webp · persona skill .md",
+      "skill_hint": "Import a persona skill (roleplay skill.md or GitHub repo) to auto-generate a character card",
+      "skill_import_btn": "Import skill",
+      "skill_importing": "Importing…",
+      "skill_placeholder": "GitHub URL, e.g. https://github.com/owner/repo"
     },
     "header": {
       "char_persona_tip": "Character / Persona",
@@ -3811,7 +3815,11 @@
       "save_prefs_failed": "Failed to save preferences",
       "gen_cancelled": "Generation cancelled",
       "new_chat_failed": "Failed to create new chat",
-      "start_chat_failed": "Failed to start chat"
+      "start_chat_failed": "Failed to start chat",
+      "skill_imported": "Character card \"{{name}}\" has been created",
+      "still_generating": "Still generating — please wait",
+      "regenerating": "Regenerating…",
+      "retry_failed": "Retry failed"
     }
   },
   "tavern_app": {
@@ -6652,5 +6660,209 @@
         }
       }
     }
+  },
+  "adult_splash": {
+    "body": "This service is intended for users aged 18 and above. The platform contains adult-themed literary content. You must confirm your age to continue.",
+    "confirm": "I am 18 or older — Continue",
+    "leave": "I am under 18 — Leave",
+    "legal_link": "Read the full adult content disclaimer",
+    "loading": "Confirming…",
+    "network_error": "Network error, please try again",
+    "title": "Adult Content Disclaimer"
+  },
+  "agent_picker": {
+    "custom_model_option": "Custom… (enter model name manually)",
+    "custom_model_short": "Custom…",
+    "default_header": "Model",
+    "go_config_key": "Set up API key",
+    "inherit_label": "Follow main GM",
+    "model_disabled_suffix": "(Disabled)",
+    "model_field_description": "If your model isn't in the list, choose \"Custom…\" to enter the provider's model name manually.",
+    "model_label": "Model",
+    "model_name_placeholder": "Enter model name, e.g. gpt-4o-mini",
+    "model_placeholder": "Select model",
+    "no_key_alert_body": "Go to Settings → Model Management to add a key for at least one provider.",
+    "no_key_alert_header": "No API key configured",
+    "popover_loading": "Loading models…",
+    "popover_no_match": "No models matching \"{{query}}\"",
+    "popover_no_models": "No models available (configure an API key first)",
+    "popover_search_placeholder": "Search models…",
+    "price_free": "Free",
+    "provider_empty": "No API key configured",
+    "provider_label": "Provider",
+    "provider_no_key_suffix": "(no key)",
+    "provider_placeholder": "Select provider",
+    "provider_placeholder_no_key": "Configure an API key first"
+  },
+  "card_hero": {
+    "change_avatar": "Change Image",
+    "crop_hint": "Drag to adjust the crop area — applying will update this character's image",
+    "empty_hint_editable": "Drop an image · Paste · or click to generate / upload / browse library",
+    "empty_hint_readonly": "No image set",
+    "unnamed_character": "Unnamed Character",
+    "upload_failed": "Upload failed",
+    "uploading": "Uploading…"
+  },
+  "cards_page": {
+    "raw_fields_suffix": " (raw fields)",
+    "skill_card_desc_highlight": "Name / Tags",
+    "skill_card_desc_mid": "; the full skill is viewable in the card details. To update the definition, ",
+    "skill_card_desc_prefix": "This card's character definition comes from the imported skill source (injected verbatim during roleplay). You only need to maintain the ",
+    "skill_card_desc_reimport": "re-import the skill",
+    "skill_card_desc_suffix": ". The fields below generally don't need editing.",
+    "skill_card_title": "Persona Skill Card",
+    "skill_collapse": "Collapse",
+    "skill_empty": "(no content)",
+    "skill_hint": "The full skill source is used as the character definition and injected verbatim server-side during roleplay. Click above to view.",
+    "skill_load_fail": "Failed to load",
+    "skill_loading": "Loading…",
+    "skill_section_label": "Persona Skill Definition",
+    "skill_truncated": "…(content truncated — full text is used server-side)",
+    "skill_view_full": "View full skill"
+  },
+  "confirm_dialog": {
+    "eyebrow_danger": "High-risk action",
+    "eyebrow_default": "Confirm"
+  },
+  "device_page": {
+    "btn_approve": "Approve",
+    "btn_deny": "Deny",
+    "btn_retry": "Enter a new pairing code",
+    "confirm_warning_body": "Only approve if you are actively connecting from your own device or local deployment. If you did not initiate this request, or the pairing code came from a link or message someone sent you, click Deny — approving will grant the permissions listed above to that party.",
+    "confirm_warning_header": "Confirm you initiated this connection",
+    "denied_body": "The connection request has been denied. No permissions were granted.",
+    "denied_header": "Denied",
+    "done_body": "Your device will complete the connection automatically within a few seconds. You can return to it and close this page.",
+    "done_header": "Authorized",
+    "err_action_failed": "Action failed",
+    "err_code_not_found": "Pairing code not found or expired",
+    "error_header": "Unable to continue",
+    "input_hint": "After initiating a connection from your device or local deployment, you'll see a pairing code. Enter it here to authorize.",
+    "label_code": "Pairing Code",
+    "label_requester": "Requester",
+    "label_scopes": "Requested Permissions",
+    "next_step": "Next",
+    "not_provider_body": "This is a local or self-hosted node and does not issue device authorizations. Device pairing codes can only be entered on the online service you want to connect to. To connect to the official online library, go to Settings → Online Library.",
+    "not_provider_header": "This instance is not an online library provider",
+    "page_title": "Authorize Device",
+    "scope_library_publish": "Publish scripts to the online library",
+    "scope_library_read": "Browse and import from the online library",
+    "unnamed_client": "Unnamed client"
+  },
+  "game_composer_extra": {
+    "relationship_role": "Relationships: {{tone}}"
+  },
+  "help_drawer": {
+    "help": "Help",
+    "no_slug": "Please specify a help topic.",
+    "not_found": "No help article found for: {{slug}}"
+  },
+  "image_size": {
+    "aria_group": "Image size",
+    "preset_landscape": "Landscape 3:2",
+    "preset_portrait": "Portrait 2:3",
+    "preset_square": "Square 1:1",
+    "preset_tall": "Tall 9:16",
+    "preset_wide": "Widescreen 16:9"
+  },
+  "lightbox": {
+    "apply_crop": "Apply Crop",
+    "applying": "Processing…",
+    "crop": "Crop",
+    "crop_failed": "Crop failed",
+    "crop_hint": "Drag to adjust the crop area, then apply to save"
+  },
+  "m_caps_extra": {
+    "github_url_desc": "Public repository URL, e.g. https://github.com/owner/repo — fetches skill.md / character files and distills them into a character card + portrait",
+    "github_url_label": "GitHub URL",
+    "import_btn": "Import",
+    "import_failed": "Import failed",
+    "import_skill_sheet_hint": "Persona skills are distilled into character cards",
+    "import_skill_sheet_title": "Import Skill",
+    "local_file_desc": ".md character file (persona skill) → character card; .zip/.tar.gz → executable skill package (admin only)",
+    "local_file_label": "Local File",
+    "my_persona_skills": "My Persona Skills",
+    "or_separator": "or",
+    "persona_card_created": "Character card \"{{name}}\" created {{img}}",
+    "persona_card_default_name": "Character Card",
+    "persona_card_generated": "Character card generated",
+    "persona_delete_failed": "Failed to delete",
+    "persona_image_queued": "(portrait generating)",
+    "persona_source_upload": "Upload",
+    "skills_import_fill_required": "Please enter a GitHub URL or select a file"
+  },
+  "m_me_extra": {
+    "usage_times_unit": "req"
+  },
+  "m_newgame_extra": {
+    "settings_save_failed": "Game settings could not be saved ({{error}}). You can adjust them manually in settings after entering the game.",
+    "settings_write_error": "write failed"
+  },
+  "m_placeholder": {
+    "migrating": "Mobile version in progress"
+  },
+  "m_sheet": {
+    "processing": "Processing…"
+  },
+  "m_tavern_extra": {
+    "ai_speaker_fallback": "AI",
+    "tab_persona": "Persona"
+  },
+  "module_status": {
+    "action_detail": "Details",
+    "count_unit": "entries",
+    "protagonist_badge_title": "Protagonist",
+    "source_mixed_llm": "Optional LLM",
+    "source_zero_llm": "No LLM",
+    "time_days_ago": "{{count}} day ago",
+    "time_hours_ago": "{{count}} hr ago",
+    "time_just_now": "just now",
+    "time_minutes_ago": "{{count}} min ago"
+  },
+  "policy_banner": {
+    "days_until_effective": "{{count}} day(s) until effective",
+    "dismiss": "Dismiss",
+    "effective_soon": "Effective soon",
+    "prefix": "Policy update: ",
+    "read_details": "Read details",
+    "suffix": "will be updated to"
+  },
+  "rebuild_banner": {
+    "kind_background_task": "Background Task",
+    "kind_full_pipeline": "Import Pipeline",
+    "kind_knowledge_sync": "Knowledge Base Index Sync",
+    "kind_llm_extract": "LLM Re-extraction"
+  },
+  "script_canon": {
+    "subtype_ph": "e.g. nation / army / sect"
+  },
+  "settings_extra": {
+    "admin_base_url_only": "Only admins can change the provider base URL"
+  },
+  "task_floater": {
+    "cancel_failed": "Failed to cancel",
+    "cancel_requested": "Cancel requested",
+    "card_title_pinned": "Pinned — click to unpin",
+    "card_title_unpin": "Click to pin",
+    "dot_aria_label": "{{count}} background task",
+    "dot_title": "{{count}} background task running",
+    "status_canceling": "Cancelling…",
+    "status_elapsed": "Elapsed {{elapsed}}",
+    "status_queued": "Queued",
+    "status_running": "In progress",
+    "toast_cancelled": "cancelled",
+    "toast_done": "completed",
+    "toast_done_with_errors": "completed with warnings",
+    "toast_failed": "failed",
+    "toast_failed_sep": ": "
+  },
+  "tavern_app_extra": {
+    "card_unnamed": "Unnamed"
+  },
+  "relative_time": {
+    "just_now": "just now",
+    "minutes_ago": "{{n}} min ago",
+    "hours_ago": "{{n}}h ago",
+    "days_ago": "{{n}}d ago"
   }
 }

@@ -494,7 +494,7 @@ function PersonaHero({ cardId, avatar }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.2, color: 'var(--accent)', marginBottom: 8 }}>
-        {t('tavern_app.drawer.persona_image') || '人设图'}
+        {t('tavern_app.drawer.persona_image')}
       </div>
       {cur && cur.image_url && (
         <img src={cur.image_url} alt="" onClick={() => setZoom(cur.image_url)}
@@ -539,8 +539,8 @@ function CardPickerSheet({ role, onPick, onClose }) {
     return () => { alive = false; };
   }, []);
   const title = role === 'character'
-    ? (t('tavern_app.drawer.choose_character') || '选择 / 更换角色卡')
-    : (t('tavern_app.drawer.choose_persona') || '从角色卡库选择我的角色');
+    ? t('tavern_app.drawer.choose_character')
+    : t('tavern_app.drawer.choose_persona');
   return (
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9998,
@@ -552,7 +552,7 @@ function CardPickerSheet({ role, onPick, onClose }) {
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)',
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong style={{ fontSize: 14 }}>{title}</strong>
-          <button className="iconbtn" onClick={onClose} aria-label={t('common.close') || '关闭'}>
+          <button className="iconbtn" onClick={onClose} aria-label={t('common.close')}>
             <Icon name="close" size={15} />
           </button>
         </div>
@@ -561,7 +561,7 @@ function CardPickerSheet({ role, onPick, onClose }) {
             <div className="muted-2" style={{ padding: 24, textAlign: 'center' }}>…</div>
           ) : cards.length === 0 ? (
             <div className="muted-2" style={{ padding: 24, textAlign: 'center' }}>
-              {t('tavern_app.drawer.no_cards') || '还没有角色卡,先在「角色」里创建或导入。'}
+              {t('tavern_app.drawer.no_cards')}
             </div>
           ) : (
             cards.map((c) => (
@@ -580,7 +580,7 @@ function CardPickerSheet({ role, onPick, onClose }) {
                   </div>
                 )}
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{c.name || '未命名'}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{c.name || t('tavern_app_extra.card_unnamed')}</div>
                   {(c.identity || c.summary) && (
                     <div className="muted-2" style={{ fontSize: 12, overflow: 'hidden',
                          textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.identity || c.summary}</div>
@@ -684,7 +684,7 @@ export function TwoCardDrawer({ open, character, persona, onClose, onSavePersona
           )}
           {onBindCard && chatId != null && (
             <button className="btn ghost" style={{ width: '100%', marginBottom: 12 }} onClick={() => setPickRole('character')}>
-              <Icon name="cards" size={12} /> {t('tavern_app.drawer.choose_character') || '选择 / 更换角色卡'}
+              <Icon name="cards" size={12} /> {t('tavern_app.drawer.choose_character')}
             </button>
           )}
           {character
@@ -697,7 +697,7 @@ export function TwoCardDrawer({ open, character, persona, onClose, onSavePersona
           <>
             {onBindCard && chatId != null && (
               <button className="btn ghost" style={{ width: '100%', marginBottom: 12 }} onClick={() => setPickRole('persona')}>
-                <Icon name="cards" size={12} /> {t('tavern_app.drawer.choose_persona') || '从角色卡库选择我的角色'}
+                <Icon name="cards" size={12} /> {t('tavern_app.drawer.choose_persona')}
               </button>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -1000,7 +1000,7 @@ export default function TavernApp() {
     if (activeId == null) return;
     try {
       await window.api.tavern.bindCard(activeId, role, cardId);
-      window.__apiToast?.(t('tavern_app.toast.card_bound') || '已更换角色卡', { kind: 'ok', duration: 1500 });
+      window.__apiToast?.(t('tavern_app.toast.card_bound'), { kind: 'ok', duration: 1500 });
       try { const d = await window.api.game.state(); applyState(d); } catch (_) {}
     } catch (e) {
       window.__apiToast?.(t('tavern_app.toast.save_failed'), { kind: 'danger', detail: e?.message });

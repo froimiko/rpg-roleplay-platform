@@ -3753,8 +3753,12 @@
     },
     "hero": {
       "heading": "想和谁聊聊？",
-      "sub": "新建一段对话,或从角色卡里挑一位。",
-      "drop_hint": "或把角色卡(.png / .json / .webp)拖到这里"
+      "sub": "新建一段对话、从角色卡里挑一位,或导入一个人格 skill。",
+      "drop_hint": "拖入文件 / 点击选择 —— 角色卡 .png / .json / .webp · 人格 skill .md",
+      "skill_hint": "导入人格 skill(角色扮演 skill.md / GitHub 仓库),自动生成角色卡",
+      "skill_import_btn": "导入 skill",
+      "skill_importing": "导入中…",
+      "skill_placeholder": "GitHub 链接,如 https://github.com/owner/repo"
     },
     "header": {
       "char_persona_tip": "角色 / persona",
@@ -3798,9 +3802,9 @@
       "gen_failed": "生成失败",
       "retry_hint": "请重试",
       "no_retry_input": "没有可重试的输入",
-      "still_generating": "正在生成中，请等待",
+      "still_generating": "正在生成中，请稍候",
       "regenerating": "正在重新生成…",
-      "retry_failed": "重新生成失败",
+      "retry_failed": "重试失败",
       "renamed": "已重命名",
       "rename_failed": "重命名失败",
       "archived": "已归档",
@@ -3814,7 +3818,8 @@
       "save_prefs_failed": "保存偏好失败",
       "gen_cancelled": "已取消生成",
       "new_chat_failed": "新建对话失败",
-      "start_chat_failed": "开始对话失败"
+      "start_chat_failed": "开始对话失败",
+      "skill_imported": "已生成角色卡「{{name}}」"
     }
   },
   "tavern_app": {
@@ -6652,5 +6657,209 @@
         }
       }
     }
+  },
+  "adult_splash": {
+    "body": "本服务面向 18 周岁及以上用户。平台包含成人主题文学创作内容，需确认年龄方可继续使用。",
+    "confirm": "我已年满 18 周岁，继续",
+    "leave": "未满 18 周岁，离开",
+    "legal_link": "查阅完整成人内容免责声明",
+    "loading": "正在确认…",
+    "network_error": "网络错误，请重试",
+    "title": "成人内容声明 / Adult Content Disclaimer"
+  },
+  "agent_picker": {
+    "custom_model_option": "自定义…（手动填写模型名）",
+    "custom_model_short": "自定义…",
+    "default_header": "模型",
+    "go_config_key": "去配 key",
+    "inherit_label": "跟随主 GM",
+    "model_disabled_suffix": "(禁用)",
+    "model_field_description": "列表里没有你的模型时，选「自定义…」手动填写服务商实际 model 名称。",
+    "model_label": "模型",
+    "model_name_placeholder": "填写模型名，例如 gpt-4o-mini",
+    "model_placeholder": "选择模型",
+    "no_key_alert_body": "请先去 设置 → 模型管理 给至少一家 provider 配 key。",
+    "no_key_alert_header": "尚未配置任何 API key",
+    "popover_loading": "加载模型中…",
+    "popover_no_match": "没有匹配「{{query}}」的模型",
+    "popover_no_models": "没有可用模型（先配 API key）",
+    "popover_search_placeholder": "搜索模型…",
+    "price_free": "免费",
+    "provider_empty": "还没配 API key",
+    "provider_label": "供应商",
+    "provider_no_key_suffix": "(未配 key)",
+    "provider_placeholder": "选择 provider",
+    "provider_placeholder_no_key": "请先配 API key"
+  },
+  "card_hero": {
+    "change_avatar": "更换形象",
+    "crop_hint": "拖动调整裁剪区域，应用后将更新该角色形象",
+    "empty_hint_editable": "拖入图片 · 粘贴 · 或点击：生成 / 上传 / 选图库",
+    "empty_hint_readonly": "暂无形象",
+    "unnamed_character": "未命名角色",
+    "upload_failed": "上传失败",
+    "uploading": "上传中…"
+  },
+  "cards_page": {
+    "raw_fields_suffix": "（原始字段）",
+    "skill_card_desc_highlight": "名称 / 标签",
+    "skill_card_desc_mid": "；完整 skill 在角色卡详情里查看，要更新设定请",
+    "skill_card_desc_prefix": "这张卡的角色定义来自导入的整包 skill 原文（扮演时逐字注入）。这里只需维护",
+    "skill_card_desc_reimport": "重新导入 skill",
+    "skill_card_desc_suffix": "。下方「原始字段」一般无需改。",
+    "skill_card_title": "人格 skill 角色卡",
+    "skill_collapse": "收起",
+    "skill_empty": "（无内容）",
+    "skill_hint": "整包 skill 原文作为角色定义，扮演时服务端逐字注入；点上方查看。",
+    "skill_load_fail": "加载失败",
+    "skill_loading": "加载中…",
+    "skill_section_label": "人格 skill 定义",
+    "skill_truncated": "…（过长已截断，完整内容服务端使用）",
+    "skill_view_full": "查看完整 skill"
+  },
+  "confirm_dialog": {
+    "eyebrow_danger": "高危操作",
+    "eyebrow_default": "确认"
+  },
+  "device_page": {
+    "btn_approve": "批准授权",
+    "btn_deny": "拒绝",
+    "btn_retry": "重新输入配对码",
+    "confirm_warning_body": "只有当你正在自己的设备/本地部署上主动连接时才批准。如果你没有发起此请求,或配对码来自他人发来的链接/消息,请点「拒绝」—— 批准会把以上权限授予对方。",
+    "confirm_warning_header": "确认这是你本人发起的连接",
+    "denied_body": "该连接请求已被拒绝,未授予任何权限。",
+    "denied_header": "已拒绝",
+    "done_body": "你的设备会在几秒内自动完成连接,可以回到它继续操作了。本页可关闭。",
+    "done_header": "已授权",
+    "err_action_failed": "操作失败",
+    "err_code_not_found": "配对码不存在或已过期",
+    "error_header": "无法继续",
+    "input_hint": "在你的设备/本地部署上发起连接后会显示一个配对码,请在此输入以授权。",
+    "label_code": "配对码",
+    "label_requester": "请求方",
+    "label_scopes": "申请权限",
+    "next_step": "下一步",
+    "not_provider_body": "本实例是本地/自部署节点,不签发设备授权。设备配对码只能在你要连接的「在线服务」上输入。若你是想连接官方在线库,请在「设置 → 在线剧本库」里发起连接。",
+    "not_provider_header": "此实例不是在线剧本库提供方",
+    "page_title": "授权设备接入",
+    "scope_library_publish": "把剧本发布到在线库",
+    "scope_library_read": "浏览并导入在线剧本库",
+    "unnamed_client": "未命名客户端"
+  },
+  "game_composer_extra": {
+    "relationship_role": "关系：{{tone}}"
+  },
+  "help_drawer": {
+    "help": "帮助",
+    "no_slug": "请指定帮助主题。",
+    "not_found": "未找到帮助文档: {{slug}}"
+  },
+  "image_size": {
+    "aria_group": "生图尺寸",
+    "preset_landscape": "横版 3:2",
+    "preset_portrait": "竖版 2:3",
+    "preset_square": "方形 1:1",
+    "preset_tall": "长竖 9:16",
+    "preset_wide": "宽屏 16:9"
+  },
+  "lightbox": {
+    "apply_crop": "应用裁剪",
+    "applying": "处理中…",
+    "crop": "裁剪",
+    "crop_failed": "裁剪失败",
+    "crop_hint": "拖动调整裁剪区域，应用后保存"
+  },
+  "m_caps_extra": {
+    "github_url_desc": "公开仓库地址,如 https://github.com/owner/repo —— 拉取其中的 skill.md/角色档案蒸馏成角色卡 + 人设图",
+    "github_url_label": "GitHub 链接",
+    "import_btn": "导入",
+    "import_failed": "导入失败",
+    "import_skill_sheet_hint": "人格 skill 蒸馏成角色卡",
+    "import_skill_sheet_title": "导入 skill",
+    "local_file_desc": ".md 角色档案(人格 skill)→ 角色卡;.zip/.tar.gz → 可执行 skill 包(管理员)",
+    "local_file_label": "本地文件",
+    "my_persona_skills": "我的人格 skill",
+    "or_separator": "或",
+    "persona_card_created": "已生成角色卡「{{name}}」{{img}}",
+    "persona_card_default_name": "角色卡",
+    "persona_card_generated": "已生成角色卡",
+    "persona_delete_failed": "删除失败",
+    "persona_image_queued": "(人设图生成中)",
+    "persona_source_upload": "上传",
+    "skills_import_fill_required": "请填 GitHub 链接或选择文件"
+  },
+  "m_me_extra": {
+    "usage_times_unit": "次"
+  },
+  "m_newgame_extra": {
+    "settings_save_failed": "游戏设置未能保存({{error}}),进入游戏后可在设置中手动调整。",
+    "settings_write_error": "写入失败"
+  },
+  "m_placeholder": {
+    "migrating": "移动版迭代中"
+  },
+  "m_sheet": {
+    "processing": "处理中…"
+  },
+  "m_tavern_extra": {
+    "ai_speaker_fallback": "AI",
+    "tab_persona": "Persona"
+  },
+  "module_status": {
+    "action_detail": "明细",
+    "count_unit": "条",
+    "protagonist_badge_title": "主角",
+    "source_mixed_llm": "可选 LLM",
+    "source_zero_llm": "零 LLM",
+    "time_days_ago": "{{count}} 天前",
+    "time_hours_ago": "{{count}} 小时前",
+    "time_just_now": "刚刚",
+    "time_minutes_ago": "{{count}} 分钟前"
+  },
+  "policy_banner": {
+    "days_until_effective": "{{count}} 天后生效",
+    "dismiss": "不再提示",
+    "effective_soon": "即将生效",
+    "prefix": "政策更新通知：",
+    "read_details": "阅读详情",
+    "suffix": "将更新至"
+  },
+  "rebuild_banner": {
+    "kind_background_task": "后台任务",
+    "kind_full_pipeline": "导入流水线",
+    "kind_knowledge_sync": "知识库索引同步",
+    "kind_llm_extract": "LLM 二次提取"
+  },
+  "script_canon": {
+    "subtype_ph": "国家/军队/宗门"
+  },
+  "settings_extra": {
+    "admin_base_url_only": "仅管理员可修改 provider base URL"
+  },
+  "task_floater": {
+    "cancel_failed": "取消失败",
+    "cancel_requested": "已请求取消",
+    "card_title_pinned": "已固定，单击取消固定",
+    "card_title_unpin": "单击固定",
+    "dot_aria_label": "{{count}} 个后台任务",
+    "dot_title": "{{count}} 个后台任务进行中",
+    "status_canceling": "取消中…",
+    "status_elapsed": "已用 {{elapsed}}",
+    "status_queued": "排队中",
+    "status_running": "进行中",
+    "toast_cancelled": "已取消",
+    "toast_done": "已完成",
+    "toast_done_with_errors": "完成(有警告)",
+    "toast_failed": "失败",
+    "toast_failed_sep": "："
+  },
+  "tavern_app_extra": {
+    "card_unnamed": "未命名"
+  },
+  "relative_time": {
+    "just_now": "刚刚",
+    "minutes_ago": "{{n}} 分钟前",
+    "hours_ago": "{{n}} 小时前",
+    "days_ago": "{{n}} 天前"
   }
 }

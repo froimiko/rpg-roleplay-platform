@@ -6,6 +6,7 @@
  *   onAcked        () => void  ack 成功后的回调，父组件撤销覆盖层
  */
 import React, { useState, useEffect, useRef, useId } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const LEGAL_BASE = 'https://play.stellatrix.icu/legal/adult-content-disclaimer';
 
@@ -14,28 +15,9 @@ function getLang() {
   return lang.startsWith('zh') ? 'zh-CN' : 'en';
 }
 
-const I18N = {
-  'zh-CN': {
-    title: '成人内容声明 / Adult Content Disclaimer',
-    body: '本服务面向 18 周岁及以上用户。平台包含成人主题文学创作内容，需确认年龄方可继续使用。',
-    legalLink: '查阅完整成人内容免责声明',
-    confirm: '我已年满 18 周岁，继续',
-    leave: '未满 18 周岁，离开',
-    loading: '正在确认…',
-  },
-  'en': {
-    title: 'Adult Content Disclaimer',
-    body: 'This service is intended for users aged 18 and above. The platform contains adult-themed literary content. You must confirm your age to continue.',
-    legalLink: 'Read the full adult content disclaimer',
-    confirm: 'I am 18 or older — Continue',
-    leave: 'I am under 18 — Leave',
-    loading: 'Confirming…',
-  },
-};
-
 export default function AdultSplash({ splashVersion, onAcked }) {
+  const { t } = useTranslation();
   const lang = getLang();
-  const t = I18N[lang] || I18N['zh-CN'];
   const legalUrl = `${LEGAL_BASE}.${lang}.html`;
 
   const [loading, setLoading] = useState(false);
@@ -64,7 +46,7 @@ export default function AdultSplash({ splashVersion, onAcked }) {
       }
       onAcked && onAcked();
     } catch (e) {
-      setError(e.message || '网络错误，请重试');
+      setError(e.message || t('adult_splash.network_error'));
       setLoading(false);
     }
   };
@@ -112,12 +94,12 @@ export default function AdultSplash({ splashVersion, onAcked }) {
             letterSpacing: '0.02em',
           }}
         >
-          {t.title}
+          {t('adult_splash.title')}
         </h2>
 
         {/* Body */}
         <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-quiet, #b0a89e)', marginBottom: 16 }}>
-          {t.body}
+          {t('adult_splash.body')}
         </p>
 
         {/* Legal link */}
@@ -128,7 +110,7 @@ export default function AdultSplash({ splashVersion, onAcked }) {
             rel="noopener noreferrer"
             style={{ fontSize: 13, color: 'var(--accent, #d4a45e)', textDecoration: 'underline' }}
           >
-            {t.legalLink}
+            {t('adult_splash.legal_link')}
           </a>
         </p>
 
@@ -158,7 +140,7 @@ export default function AdultSplash({ splashVersion, onAcked }) {
               transition: 'opacity 0.15s',
             }}
           >
-            {loading ? t.loading : t.confirm}
+            {loading ? t('adult_splash.loading') : t('adult_splash.confirm')}
           </button>
           <button
             onClick={handleLeave}
@@ -173,7 +155,7 @@ export default function AdultSplash({ splashVersion, onAcked }) {
               cursor: 'pointer',
             }}
           >
-            {t.leave}
+            {t('adult_splash.leave')}
           </button>
         </div>
       </div>

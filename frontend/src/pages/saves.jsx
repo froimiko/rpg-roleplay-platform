@@ -12,7 +12,6 @@ import Modal from '../components/Modal.jsx';
 import { plNavigate } from '../router.js';
 import { ConfirmModal, useShellChrome, ResizableSplit } from '../platform-app.jsx';
 import { BranchGraph } from '../branch-graph.jsx';
-import { NewGameWizard } from './new-game-wizard.jsx';
 import { CardSheet, CardEditFields, cardFormInit, cardFormPayload } from './cards.jsx';
 import { lsGet, lsSet, lsGetJSON, lsSetJSON, lsRemove } from '../lib/storage.js';
 import {

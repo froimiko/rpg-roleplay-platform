@@ -437,7 +437,7 @@ function TwoCardDrawer({ open, character, persona, systemPrompt, immersive, onTo
             className={`tv-m-drawer-tab${tab === 'persona' ? ' active' : ''}`}
             onClick={() => setTab('persona')}
           >
-            <Icon name="user" size={13} /> Persona
+            <Icon name="user" size={13} /> {t('m_tavern_extra.tab_persona')}
           </button>
           <button
             className={`tv-m-drawer-tab${tab === 'system' ? ' active' : ''}`}
@@ -842,7 +842,7 @@ function ChatView({
                 >
                   <div className="msg-meta">
                     <span className="msg-tag">
-                      {(character && character.name) || activeChat?.character_name || 'AI'}
+                      {(character && character.name) || activeChat?.character_name || t('m_tavern_extra.ai_speaker_fallback')}
                     </span>
                     {m.ts && <span className="msg-gts">{m.ts}</span>}
                   </div>
