@@ -58,6 +58,19 @@ const REWRITE_PRESETS = [
   { key: 'vivid', labelKey: 'components.md_editor_agent.rewrite.vivid', instruction: '把选中这段改写得更具画面感:多用具体可感的描写、少用空泛的概括与解释,show-don\'t-tell,保持原意与语气。' },
 ];
 
+// 写作技能(发给写作 agent 的精心 prompt;agent 会用读取工具读正文/设定再诊断,只给清单不擅自改库)。
+// 章节场景下最有用 —— 通读 + 对照设定 + 给可执行建议。
+const WRITING_SKILLS = [
+  { key: 'review', label: '审稿', tipKey: 'review',
+    prompt: '请审阅【当前打开的章节】。先用 get_chapter_text 读这章正文,再用 list_worldbook_entries / list_canon_entities / list_script_npcs / list_anchors 对照既有设定与时间线。找出:① 与世界书/正史/时间线/角色卡的设定矛盾;② 前后文连贯性断裂、人物行为不符设定;③ 明显重复的用词或句式;④ 视角(POV)或时态跳脱;⑤ 节奏拖沓或过快的段落。逐条列清单【位置(引一句原文)→ 问题 → 修改建议】。只诊断,先不要改库,等我决定。' },
+  { key: 'outline', label: '梳理大纲',
+    prompt: '请用 get_chapter_text 读【当前章节】,梳理它的分场/节拍大纲——每个节拍写清:发生了什么 + 推进了什么(信息/关系/张力),并指出结构上可加强或冗余的地方。只输出大纲与建议,不改库。' },
+  { key: 'voice', label: '角色嗓音',
+    prompt: '请用 get_chapter_text 读【当前章节】,挑出有台词的角色,逐个用 get_script_character_card 取其设定,评估台词是否贴合该角色的说话风格/性格/身份,指出跳脱之处并给修改方向。只诊断,不改库。' },
+  { key: 'foreshadow', label: '伏笔线索',
+    prompt: '请用 get_chapter_text 读【当前章节】(必要时 get_script_chapters 跨章回看),梳理本章埋下或呼应的伏笔/线索:哪些已回收、哪些悬而未决、哪些可能与既有设定冲突。只输出清单与建议,不改库。' },
+];
+
 const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, onWriteComplete, onContinue, selLen = 0, getSelectionContext }, ref) {
   const { t } = useTranslation();
   const [messages, setMessages] = useState([]);   // [{role, text, tools:[{call_id,tool,args,status,result}]}]
@@ -306,6 +319,20 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
           </div>
         ))}
       </div>
+      {scriptId && activeTab && activeTab.kind === 'chapter' && (
+        <div className="mde-agent-skills" role="group" aria-label={t('components.md_editor_agent.skills.group', { defaultValue: '写作技能' })}>
+          <span className="mde-agent-skills-label">{t('components.md_editor_agent.skills.group', { defaultValue: '写作技能' })}</span>
+          {WRITING_SKILLS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className="mde-agent-skill"
+              disabled={busy}
+              onClick={() => send(s.prompt)}
+            >{t('components.md_editor_agent.skills.' + s.key, { defaultValue: s.label })}</button>
+          ))}
+        </div>
+      )}
       {onContinue && activeTab && (
         <div className="mde-agent-toolbar">
           <button

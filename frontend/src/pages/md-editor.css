@@ -181,6 +181,14 @@
 .mde-agent-selcard-actions button:disabled { opacity: 0.45; cursor: default; }
 .mde-agent-selcard-actions .mde-agent-selcard-custom { background: rgba(181,101,74,0.12); border-color: rgba(181,101,74,0.5); color: var(--accent, #b5654a); font-weight: 600; }
 
+/* 写作技能行:章节场景下常驻,一键让写作 agent 审稿/梳理大纲/查角色嗓音/追伏笔 */
+.mde-agent-skills { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line-soft, #2a2724); }
+.mde-agent-skills-label { font-size: 10.5px; color: var(--muted-2, #6f685f); margin-right: 2px; }
+.mde-agent-skill { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line, #36322d); background: var(--panel, #1c1a18); color: var(--muted, #968f85); cursor: pointer; transition: all .15s; }
+.mde-agent-skill:hover:not(:disabled) { border-color: var(--accent, #b5654a); color: var(--accent, #b5654a); transform: translateY(-1px); }
+.mde-agent-skill:active:not(:disabled) { transform: translateY(0) scale(.98); }
+.mde-agent-skill:disabled { opacity: 0.45; cursor: default; }
+
 /* 右栏复用游戏聊天框 Composer:等比缩小适配窄栏 */
 .mde-agent-composer { flex: 0 0 auto; border-top: 1px solid var(--line-soft, #2a2724); padding: 6px; }
 .mde-agent-composer .gc-composer-wrap { padding: 0; }
