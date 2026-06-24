@@ -69,7 +69,7 @@ function frontMatterGuard() {
   });
 }
 
-function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapterIndex) {
+function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapterIndex, getOnSel) {
   return [
     frontMatterGuard(),
     aiContinueExtension(),
@@ -89,11 +89,18 @@ function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapter
     warmTheme,
     EditorState.readOnly.of(!!readOnly),
     EditorView.editable.of(!readOnly),
-    EditorView.updateListener.of((u) => { if (u.docChanged) onChange?.(u.state.doc.toString()); }),
+    EditorView.updateListener.of((u) => {
+      if (u.docChanged) onChange?.(u.state.doc.toString());
+      // 选区变化 → 上报选中字数(右栏「选区改写」+ 选区上下文芯片)。
+      if (u.selectionSet || u.docChanged) {
+        const s = u.state.selection.main;
+        getOnSel?.()?.(s.empty ? 0 : (s.to - s.from));
+      }
+    }),
   ];
 }
 
-export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = false, scriptId, onViewReady, onContinueAccept, chapterIndex }) {
+export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = false, scriptId, onViewReady, onContinueAccept, chapterIndex, onSelectionChange }) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const onChangeRef = useRef(onChange);
@@ -106,6 +113,8 @@ export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = f
   onContinueAcceptRef.current = onContinueAccept;
   const chapterIndexRef = useRef(chapterIndex);
   chapterIndexRef.current = chapterIndex;
+  const onSelChangeRef = useRef(onSelectionChange);
+  onSelChangeRef.current = onSelectionChange;
   const lastKeyRef = useRef(docKey);
 
   // 建一次。
@@ -113,7 +122,7 @@ export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = f
     const view = new EditorView({
       state: EditorState.create({
         doc: value || '',
-        extensions: baseExtensions((v) => onChangeRef.current?.(v), readOnly, () => scriptIdRef.current, () => onContinueAcceptRef.current, () => chapterIndexRef.current),
+        extensions: baseExtensions((v) => onChangeRef.current?.(v), readOnly, () => scriptIdRef.current, () => onContinueAcceptRef.current, () => chapterIndexRef.current, () => onSelChangeRef.current),
       }),
       parent: hostRef.current,
     });

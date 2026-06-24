@@ -50,11 +50,23 @@ async function consumeSSE(res, onEvent) {
   }
 }
 
-const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, onWriteComplete, onContinue }, ref) {
+// 选区改写预设(写作引擎 rewrite 模式;onContinue 会对当前选区跑 runContinue)。
+const REWRITE_PRESETS = [
+  { key: 'tighten', labelKey: 'components.md_editor_agent.rewrite.tighten', instruction: '把选中这段改写得更紧凑有力:删去冗余与重复,保留全部信息、人称、时态与语气,不要扩写。' },
+  { key: 'expand', labelKey: 'components.md_editor_agent.rewrite.expand', instruction: '把选中这段适度扩写:补充与上下文一致的感官细节、动作或内心,保持原有节奏、视角与语气,不引入新设定。' },
+  { key: 'polish', labelKey: 'components.md_editor_agent.rewrite.polish', instruction: '润色选中这段:优化措辞与句子节奏、修正生硬或重复的表达,严格保持原意、人称、视角、语气与内容尺度不变。' },
+  { key: 'vivid', labelKey: 'components.md_editor_agent.rewrite.vivid', instruction: '把选中这段改写得更具画面感:多用具体可感的描写、少用空泛的概括与解释,show-don\'t-tell,保持原意与语气。' },
+];
+
+const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, onWriteComplete, onContinue, selLen = 0, getSelectionContext }, ref) {
   const { t } = useTranslation();
   const [messages, setMessages] = useState([]);   // [{role, text, tools:[{call_id,tool,args,status,result}]}]
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [selCtxOff, setSelCtxOff] = useState(false);   // 用户手动关掉了「把选中正文作为聊天上下文」
+  // 选区从无到有时,默认重新开启「含选中正文」(每次新选区都给一次默认包含)。
+  const prevSelRef = useRef(0);
+  useEffect(() => { if (selLen > 0 && prevSelRef.current === 0) setSelCtxOff(false); prevSelRef.current = selLen; }, [selLen]);
   const convIdRef = useRef(null);
   const scrollRef = useRef(null);
   const abortRef = useRef(null);
@@ -156,13 +168,22 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
   tryRefreshRef.current = tryRefresh;
 
   const send = useCallback(async (text) => {
-    const msg = (text ?? input).trim();
-    if (!msg || busy) return;
+    const raw = (text ?? input).trim();
+    if (!raw || busy) return;
+    // 选区上下文:有选中且未关闭 → 把选中正文前置进【发送内容】(librarian 即知「这段/选中」指什么);
+    // 界面气泡仍只显示用户原话,不让长正文淹没对话。
+    let sentMsg = raw;
+    if (selLen > 0 && !selCtxOff) {
+      const sc = getSelectionContext?.();
+      if (sc && sc.selection && sc.selection.trim()) {
+        sentMsg = `[我在正文里选中的片段 —— 下文若说「这段 / 选中 / 这一段」即指它]\n"""\n${sc.selection.slice(0, 4000)}\n"""\n\n${raw}`;
+      }
+    }
     setInput('');
     setBusy(true);
     let assistantIdx = -1;
     setMessages((m) => {
-      const next = [...m, { role: 'user', text: msg }, { role: 'assistant', text: '', tools: [] }];
+      const next = [...m, { role: 'user', text: raw }, { role: 'assistant', text: '', tools: [] }];
       assistantIdx = next.length - 1;
       return next;
     });
@@ -171,13 +192,13 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
       const res = await fetch('/api/console_assistant/chat', {
         method: 'POST', credentials: 'include', signal: abortRef.current.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, conversation_id: convIdRef.current || undefined, page_context: pageContext() }),
+        body: JSON.stringify({ message: sentMsg, conversation_id: convIdRef.current || undefined, page_context: pageContext() }),
       });
       await consumeSSE(res, makeHandler(assistantIdx));
     } catch (e) {
       setMessages((m) => m.map((msg2, i) => i === assistantIdx ? { ...msg2, error: e?.message || String(e) } : msg2));
     } finally { setBusy(false); abortRef.current = null; }
-  }, [input, busy, pageContext, makeHandler]);
+  }, [input, busy, pageContext, makeHandler, selLen, selCtxOff, getSelectionContext]);
 
   const resolveConfirm = useCallback(async (msgIdx, decision) => {
     const pc = messages[msgIdx]?.pendingConfirm;
@@ -221,6 +242,39 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
         <span className="mde-agent-head-icon">AI</span>
         <span className="mde-agent-head-title">{t('components.md_editor_agent.title')}{activeTab ? ` · ${activeTab.label}` : ''}</span>
       </div>
+      {selLen > 0 && (
+        <div className="mde-agent-selcard">
+          <div className="mde-agent-selcard-head">
+            <span className="mde-agent-selcard-title">{t('components.md_editor_agent.rewrite.selected', { n: selLen, defaultValue: '已选中 {{n}} 字' })}</span>
+            <button
+              type="button"
+              className={'mde-agent-selcard-ctx' + (selCtxOff ? '' : ' on')}
+              title={t('components.md_editor_agent.rewrite.ctx_tip', { defaultValue: '把选中正文作为下方聊天的上下文(助手即知「这段」指什么)' })}
+              onClick={() => setSelCtxOff((v) => !v)}
+            >
+              {selCtxOff
+                ? t('components.md_editor_agent.rewrite.ctx_off', { defaultValue: '○ 不带选中正文' })
+                : t('components.md_editor_agent.rewrite.ctx_on', { defaultValue: '● 已带选中正文' })}
+            </button>
+          </div>
+          {onContinue && (
+            <div className="mde-agent-selcard-actions">
+              {REWRITE_PRESETS.map((p) => (
+                <button key={p.key} type="button" disabled={busy} onClick={() => onContinue(p.instruction)}>
+                  {t(p.labelKey, { defaultValue: ({ tighten: '精简', expand: '扩写', polish: '润色', vivid: '画面感' })[p.key] })}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="mde-agent-selcard-custom"
+                disabled={busy || !input.trim()}
+                title={t('components.md_editor_agent.rewrite.by_instruction_tip', { defaultValue: '用下方输入框里的要求改写选中正文' })}
+                onClick={() => { onContinue(input.trim()); setInput(''); }}
+              >{t('components.md_editor_agent.rewrite.by_instruction', { defaultValue: '按指令改写 →' })}</button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="mde-agent-msgs" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="mde-agent-hint">

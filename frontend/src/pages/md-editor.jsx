@@ -503,7 +503,7 @@ async function fetchGroupList(kind, sid) {
 }
 
 // ── 标签编辑器(P0:textarea;P3 替换为 CodeMirror)──────────────────────
-function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, chapterIndex }) {
+function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, chapterIndex, onSelectionChange }) {
   const { t } = useTranslation();
   if (!tab) {
     return <div className="mde-empty">{t('md_editor.editor.empty_hint')}<br /><span className="muted">{t('md_editor.editor.empty_kinds')}</span></div>;
@@ -519,6 +519,7 @@ function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, ch
       onViewReady={onViewReady}
       onContinueAccept={onContinueAccept}
       chapterIndex={chapterIndex}
+      onSelectionChange={onSelectionChange}
     />
   );
 }
@@ -536,6 +537,20 @@ export default function MdEditorPage() {
   const agentRef = useRef(null);                           // MdEditorAgent 命令句柄(续写后同步桥接)
   const activeRef = useRef(null);                          // 当前标签(在接受续写的回调里读最新 label)
   const [syncNudge, setSyncNudge] = useState(null);        // 接受续写后提示同步:{text, label, rewrite} | null
+  const [selLen, setSelLen] = useState(0);                 // 正文当前选中字数(右栏「选区改写」+ 选区上下文芯片)
+  // 读当前编辑器选区 + 上下文(供右栏 agent 把选中正文作为上下文)。在发送时实时读,保证拿到最新选区。
+  const getSelectionContext = useCallback(() => {
+    const v = activeViewRef.current;
+    if (!v) return null;
+    const sel = v.state.selection.main;
+    if (sel.empty) return null;
+    const doc = v.state.doc;
+    return {
+      selection: doc.sliceString(sel.from, sel.to),
+      before: doc.sliceString(Math.max(0, sel.from - 1200), sel.from),
+      after: doc.sliceString(sel.to, Math.min(doc.length, sel.to + 600)),
+    };
+  }, []);
 
   // 拉剧本列表(仅自己拥有的可编辑)。
   useEffect(() => {
@@ -921,7 +936,7 @@ export default function MdEditorPage() {
             ))}
           </div>
           <div className="mde-editorwrap" onContextMenu={(e) => { if (!active) return; e.preventDefault(); setEditorCtx({ x: e.clientX, y: e.clientY }); }}>
-            <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} onContinueAccept={onProseAccepted} chapterIndex={active && active.kind === 'chapter' ? active.id : null} />
+            <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} onContinueAccept={onProseAccepted} chapterIndex={active && active.kind === 'chapter' ? active.id : null} onSelectionChange={setSelLen} />
           </div>
           {tabCtx && (() => {
             const idx = tabs.findIndex((t) => t.key === tabCtx.key);
@@ -966,7 +981,7 @@ export default function MdEditorPage() {
         {/* 右:agent 直写面板(console_assistant SSE)+ 续写到正文 */}
         <aside className="mde-right">
           {scriptId
-            ? <MdEditorAgent ref={agentRef} scriptId={scriptId} activeTab={active} onWriteComplete={refreshTab} onContinue={onContinue} />
+            ? <MdEditorAgent ref={agentRef} scriptId={scriptId} activeTab={active} onWriteComplete={refreshTab} onContinue={onContinue} selLen={selLen} getSelectionContext={getSelectionContext} />
             : <div className="mde-tree-hint">{t('md_editor.ws.select_first')}</div>}
         </aside>
       </div>
