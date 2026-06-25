@@ -4046,6 +4046,14 @@
     "quickopen": {
       "placeholder": "Quick open: chapters / cards / worldbook / timeline / canon…",
       "none": "No matches"
+    },
+    "search": {
+      "placeholder": "Search the manuscript (Enter)",
+      "regex": "Regex",
+      "go": "Search",
+      "hint": "Type a keyword, Enter to search the whole manuscript",
+      "none": "0 matches",
+      "count": "{{total}} matches · {{n}} chapters"
     }
   },
   "tavern_page": {

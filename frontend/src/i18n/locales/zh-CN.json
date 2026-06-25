@@ -4046,6 +4046,14 @@
     "quickopen": {
       "placeholder": "快速打开:章节 / 角色卡 / 世界书 / 时间线 / 设定…",
       "none": "无匹配"
+    },
+    "search": {
+      "placeholder": "全书检索(回车搜)",
+      "regex": "正则",
+      "go": "搜索",
+      "hint": "输入关键词,回车搜全书",
+      "none": "0 命中",
+      "count": "{{total}} 处命中 · {{n}} 章"
     }
   },
   "tavern_page": {

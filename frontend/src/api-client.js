@@ -474,6 +474,8 @@
       chapterUndoable: (sid, idx) => GET(`${API_PREFIX}/scripts/${sid}/chapters/${idx}/undoable`),
       // 通用撤销:世界书条目 / NPC 角色卡 恢复到上次 AI 改动之前。
       undoEdit: (sid, table, entityId) => POST(`${API_PREFIX}/scripts/${sid}/undo-edit`, { table, entity_id: entityId }),
+      // 全书检索(用户面板 Cmd/Ctrl+Shift+F):结构化命中(章号/标题/偏移/片段)。
+      search: (sid, q, opts) => GET(`${API_PREFIX}/scripts/${sid}/search`, Object.assign({ q }, opts || {})),
       mergeChapter: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/merge`, body),
       // 批量删除章节(一次删整批再重排,避免逐章删 index 漂移)。indexes:number[]。
       deleteChapters: (sid, indexes) => POST(`${API_PREFIX}/scripts/${sid}/chapters/delete`, { indexes }),
