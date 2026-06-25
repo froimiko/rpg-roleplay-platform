@@ -39,11 +39,16 @@ class PlayerNameProtection(unittest.TestCase):
         self.assertIn("拒绝", res)
         self.assertEqual(s.data["player"]["name"], "林有德")
 
-    def test_first_time_set_allowed_when_empty(self):
-        """空姓名(尚未建档)→ 允许首次设定(不是覆盖)。"""
+    def test_empty_name_gm_fill_blocked(self):
+        """空姓名时 GM/史官 也不能填 —— 防把『无名角色』命名成原著男主(群反馈的实际情形:
+        玩家角色没设名,史官从正文抓『郑吒』填进去)。玩家本人才能设。"""
         s = _state("")
-        s.apply_state_write_typed("player.name", "初设之名", source="gm")
-        self.assertEqual(s.data["player"]["name"], "初设之名")
+        res = s.apply_state_write_typed("player.name", "郑吒", source="gm")
+        self.assertIn("拒绝", res)
+        self.assertEqual(s.data["player"]["name"], "")
+        # 玩家本人给空姓名设值 → 允许
+        s.apply_state_write_typed("player.name", "我自己的名字", source="player_set")
+        self.assertEqual(s.data["player"]["name"], "我自己的名字")
 
     def test_same_value_noop_not_rejected(self):
         """GM 写回相同姓名(no-op)不算改写,不报拒绝。"""
