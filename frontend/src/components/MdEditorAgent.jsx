@@ -50,6 +50,53 @@ async function consumeSSE(res, onEvent) {
   }
 }
 
+// 落库前「改动预览」:章节正文给当前→改为对照(供作者落库前看清改了什么),结构化写给「将写入」。
+// 后端 console_assistant.write_preview 算好 before/after 经 confirmation_required.preview 下发。
+function MdeWritePreview({ pv, t }) {
+  const [open, setOpen] = useState(true);
+  if (!pv) return null;
+  const isChapter = pv.before !== undefined;
+  const head = (pv.is_new
+    ? t('components.md_editor_agent.preview.new', { defaultValue: '新建' })
+    : t('components.md_editor_agent.preview.change', { defaultValue: '改动预览' }))
+    + (pv.label ? ` · ${pv.label}` : '');
+  return (
+    <div className="mde-agent-preview">
+      <button type="button" className="mde-agent-preview-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span className="mde-agent-preview-title">{head}</span>
+        <span className="mde-agent-preview-toggle">{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <div className="mde-agent-preview-body">
+          {isChapter && !pv.is_new && (
+            <div className="mde-agent-preview-col">
+              <div className="mde-agent-preview-col-label">
+                {t('components.md_editor_agent.preview.before', { defaultValue: '当前' })}
+                {typeof pv.before_chars === 'number' ? ` · ${pv.before_chars} 字` : ''}
+              </div>
+              <pre className="mde-agent-preview-text before">{pv.before}</pre>
+            </div>
+          )}
+          <div className="mde-agent-preview-col">
+            <div className="mde-agent-preview-col-label">
+              {isChapter
+                ? t('components.md_editor_agent.preview.after', { defaultValue: '改为' })
+                : t('components.md_editor_agent.preview.will_write', { defaultValue: '将写入' })}
+              {typeof pv.after_chars === 'number' ? ` · ${pv.after_chars} 字` : ''}
+            </div>
+            <pre className="mde-agent-preview-text after">{pv.after}</pre>
+          </div>
+          {pv.truncated && (
+            <div className="mde-agent-preview-trunc">
+              {t('components.md_editor_agent.preview.truncated', { defaultValue: '(预览已截断,落库为完整内容)' })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 选区改写预设(写作引擎 rewrite 模式;onContinue 会对当前选区跑 runContinue)。
 const REWRITE_PRESETS = [
   { key: 'tighten', labelKey: 'components.md_editor_agent.rewrite.tighten', instruction: '把选中这段改写得更紧凑有力:删去冗余与重复,保留全部信息、人称、时态与语气,不要扩写。' },
@@ -150,7 +197,7 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
     }
     if (event === 'confirmation_required') {
       setMessages((m) => m.map((msg, i) => i === assistantIdx
-        ? { ...msg, pendingConfirm: { call_id: data.call_id, tool: data.tool, args: data.args, description: data.description } }
+        ? { ...msg, pendingConfirm: { call_id: data.call_id, tool: data.tool, args: data.args, description: data.description, preview: data.preview } }
         : msg));
       return;
     }
@@ -309,6 +356,7 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
                 <div className="mde-agent-confirm-q">
                   {t('components.md_editor_agent.confirm_prompt', { tool: m.pendingConfirm.tool })}{m.pendingConfirm.description ? `:${m.pendingConfirm.description}` : ''}
                 </div>
+                {m.pendingConfirm.preview && <MdeWritePreview pv={m.pendingConfirm.preview} t={t} />}
                 <div className="mde-agent-confirm-btns">
                   <button className="ok" disabled={busy} onClick={() => resolveConfirm(i, 'approve')}>{t('components.md_editor_agent.confirm_approve')}</button>
                   <button className="no" disabled={busy} onClick={() => resolveConfirm(i, 'reject')}>{t('common.cancel')}</button>

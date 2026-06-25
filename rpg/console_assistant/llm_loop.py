@@ -258,6 +258,16 @@ def _run_llm_loop(
                 "script_id": page_script_id,
                 "description": spec.description,
             }
+            # 写库工具:算一份 before→after 改动预览,让作者落库前看清「到底改了什么」
+            # (章节给真·前后全文供前端 diff;结构化写给将写入的字段)。失败不阻断确认。
+            if tool_name in _SCRIPT_WRITE_TOOLS:
+                try:
+                    from console_assistant.write_preview import build_write_preview
+                    _pv = build_write_preview(tool_name, args_for_pending, user_id, page_script_id)
+                    if _pv:
+                        pending["preview"] = _pv
+                except Exception:
+                    pass
             conv["pending_confirmations"][call_id] = pending
             pending_for_this_turn.append(pending)
             return {
@@ -318,6 +328,7 @@ def _run_llm_loop(
                             "args": pend["args"],
                             "description": pend["description"],
                             "destructive": True,
+                            "preview": pend.get("preview"),
                         })
                     break
                 result_str = ev.get("result") or ""

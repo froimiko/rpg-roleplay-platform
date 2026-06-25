@@ -6896,6 +6896,14 @@
       },
       "confirm_prompt": "AI 想执行 {{tool}}(覆盖写入)",
       "confirm_approve": "确认执行",
+      "preview": {
+        "change": "改动预览",
+        "new": "新建",
+        "before": "当前",
+        "after": "改为",
+        "will_write": "将写入",
+        "truncated": "(预览已截断,落库为完整内容)"
+      },
       "continue_btn": "续写到正文(光标处)",
       "continue_btn_title": "把输入框作为指令(可空),让 AI 在当前正文光标处续写 / 选中段改写。也可在编辑器里按 ⌘K。",
       "continue_hint": "或在正文按 ⌘K",

@@ -6899,6 +6899,14 @@
       },
       "confirm_prompt": "The AI wants to run {{tool}} (overwrites saved data)",
       "confirm_approve": "Run",
+      "preview": {
+        "change": "Change preview",
+        "new": "New",
+        "before": "Current",
+        "after": "After",
+        "will_write": "Will write",
+        "truncated": "(preview truncated; full content will be saved)"
+      },
       "continue_btn": "Continue writing (at cursor)",
       "continue_btn_title": "Use the input box as an instruction (optional) and let the AI continue writing at the current cursor position, or rewrite the selected passage. You can also press ⌘K in the editor.",
       "continue_hint": "or press ⌘K in the editor",

@@ -213,6 +213,17 @@
 .mde-agent-confirm-btns button { border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .mde-agent-confirm-btns .ok { background: var(--accent, #b5654a); color: #fff; }
 .mde-agent-confirm-btns .no { background: var(--panel-2, #282623); color: var(--text, #ebe7df); border: 1px solid var(--line, #36322d); }
+/* 落库前改动预览(当前→改为对照 / 将写入字段) */
+.mde-agent-preview { margin: 0 0 8px; border: 1px solid var(--line, #36322d); border-radius: 7px; background: var(--bg-deep, #131211); overflow: hidden; }
+.mde-agent-preview-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; background: var(--panel-2, #282623); border: none; cursor: pointer; font-family: inherit; color: var(--text, #ebe7df); }
+.mde-agent-preview-title { font-size: 11.5px; font-weight: 600; text-align: left; }
+.mde-agent-preview-toggle { font-size: 13px; color: var(--muted-2, #6b655e); font-family: var(--font-mono, monospace); }
+.mde-agent-preview-body { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+.mde-agent-preview-col-label { font-size: 10.5px; color: var(--muted-2, #6b655e); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+.mde-agent-preview-text { margin: 0; max-height: 200px; overflow: auto; padding: 7px 9px; font-family: var(--font-mono, monospace); font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; border-radius: 5px; }
+.mde-agent-preview-text.before { background: rgba(176,80,74,0.10); border: 1px solid rgba(176,80,74,0.30); color: var(--text, #ebe7df); }
+.mde-agent-preview-text.after { background: rgba(94,150,110,0.12); border: 1px solid rgba(94,150,110,0.32); color: var(--text, #ebe7df); }
+.mde-agent-preview-trunc { font-size: 10.5px; color: var(--muted-2, #6b655e); font-style: italic; }
 .mde-agent-input { flex: 0 0 auto; display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--line-soft, #2a2724); }
 .mde-agent-input textarea { flex: 1 1 auto; resize: none; height: 52px; background: rgba(255,255,255,0.04); border: 1px solid var(--line-soft, #2a2724); border-radius: 6px; color: var(--text, #ebe7df); padding: 6px 9px; font-size: 12.5px; outline: none; font-family: inherit; }
 .mde-agent-input button { flex: 0 0 auto; align-self: stretch; background: var(--accent, #b5654a); color: #fff; border: none; border-radius: 6px; padding: 0 14px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
