@@ -277,15 +277,17 @@ def _embed_via_vertex(model: str, texts: list[str], task_type: str = "RETRIEVAL_
         return None
     try:
         from google.genai import types
-        resp = client.models.embed_content(
-            model=model or DEFAULT_EMBED_MODEL,
-            contents=texts,
-            config=types.EmbedContentConfig(
-                task_type=task_type,
-                output_dimensionality=EMBED_DIM,
-            ),
-        )
-        return [list(e.values) for e in resp.embeddings]
+        cfg = types.EmbedContentConfig(task_type=task_type, output_dimensionality=EMBED_DIM)
+        # 关键修复:把整个 list 作为 contents 一次性传(批量),genai SDK 实测会对所有文本返回
+        # **同一个向量**(语义检索全废:任何查询都等距命中,永恒记忆/原著 RAG 都失效)。
+        # 改为逐条 embed_content(与原生 gemini 路径一致、可靠),保证每条文本拿到自己的向量。
+        out: list[list[float]] = []
+        for text in texts:
+            resp = client.models.embed_content(
+                model=model or DEFAULT_EMBED_MODEL, contents=text, config=cfg,
+            )
+            out.append(list(resp.embeddings[0].values))
+        return out
     except Exception as e:
         log.warning("[embedding] vertex embed failed (%d items): %s", len(texts), e)
         return None
