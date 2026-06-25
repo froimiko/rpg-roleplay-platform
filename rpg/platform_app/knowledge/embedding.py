@@ -272,22 +272,27 @@ def _get_vertex_client(user_id: int | None = None):
 
 def _embed_via_vertex(model: str, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT", user_id: int | None = None) -> list[list[float]] | None:
     """调 Vertex genai SDK。model 为空时回退 DEFAULT_EMBED_MODEL。user_id 用于 BYOK SA 优先链。"""
+    # 关键修复:genai SDK 的 embed_content 实测对【任何】不同文本返回**完全相同**的向量
+    # (768/768 维全等,与 contents 无关)→ 语义检索彻底失效(任何查询等距命中,永恒记忆 / 原著
+    # RAG 都形同虚设)。而原生 REST embedContent(_embed_via_gemini)正常。允许平台兜底的场景
+    # (admin/vip / 系统任务 user_id=None)且有平台 gemini key 时,优先改走原生 REST;
+    # 否则退回 genai SDK(用户自己的 BYOK Vertex SA,无平台 key 可用,与原行为一致)。
+    _plat_key = os.environ.get("EMBED_API_KEY", "")
+    if _plat_key and ((user_id is None) or _is_admin(user_id)):
+        _native = _embed_via_gemini(model, _plat_key, texts, task_type=task_type)
+        if _native:
+            return _native
     client = _get_vertex_client(user_id=user_id)
     if client is None:
         return None
     try:
         from google.genai import types
-        cfg = types.EmbedContentConfig(task_type=task_type, output_dimensionality=EMBED_DIM)
-        # 关键修复:把整个 list 作为 contents 一次性传(批量),genai SDK 实测会对所有文本返回
-        # **同一个向量**(语义检索全废:任何查询都等距命中,永恒记忆/原著 RAG 都失效)。
-        # 改为逐条 embed_content(与原生 gemini 路径一致、可靠),保证每条文本拿到自己的向量。
-        out: list[list[float]] = []
-        for text in texts:
-            resp = client.models.embed_content(
-                model=model or DEFAULT_EMBED_MODEL, contents=text, config=cfg,
-            )
-            out.append(list(resp.embeddings[0].values))
-        return out
+        resp = client.models.embed_content(
+            model=model or DEFAULT_EMBED_MODEL,
+            contents=texts,
+            config=types.EmbedContentConfig(task_type=task_type, output_dimensionality=EMBED_DIM),
+        )
+        return [list(e.values) for e in resp.embeddings]
     except Exception as e:
         log.warning("[embedding] vertex embed failed (%d items): %s", len(texts), e)
         return None
