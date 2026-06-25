@@ -2085,6 +2085,19 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # (NotNullViolation)。character_cards.book_id 早已是 nullable,这里对齐 → 去约束、删散落的拦截。
         "alter table worldbook_entries alter column book_id drop not null",
     ]),
+    (86, "agent_doc_uploads", [
+        # 编辑器写作搭档:用户拖入 txt/md 文档 → 服务端暂存原文(不进 LLM 上下文),agent 凭 doc_id
+        # 调【确定性】拆分器拆章 / 读片段。低开销(不让 LLM 啃几 MB)+ 安全(owner 闸 + 体积限 + TTL 清)。
+        "create table if not exists agent_doc_uploads ("
+        " doc_id text primary key,"
+        " user_id bigint not null references users(id) on delete cascade,"
+        " script_id bigint references scripts(id) on delete cascade,"
+        " filename text not null default '',"
+        " content text not null default '',"
+        " chars integer not null default 0,"
+        " created_at timestamptz not null default now())",
+        "create index if not exists idx_agent_doc_user on agent_doc_uploads(user_id, created_at desc)",
+    ]),
 ]
 
 

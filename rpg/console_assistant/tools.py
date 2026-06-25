@@ -70,6 +70,8 @@ def list_assistant_tools() -> list[dict[str, Any]]:
         "update_anchor", "create_anchor", "upsert_canon_entity",
         # 增删缺口补齐:新建章节 / 新建 NPC 卡 / 删除世界书·锚点
         "create_script_chapter", "create_npc_card", "delete_worldbook_entry", "delete_anchor",
+        # 拖入文档 → 确定性拆章 / 读片段(原文不进上下文)
+        "read_uploaded_document", "preview_document_split", "import_document_as_chapters",
         # 设置
         "select_model", "set_preference", "list_available_models",
         # 游戏状态查询 (task 48: console_assistant 读当前 save 状态)

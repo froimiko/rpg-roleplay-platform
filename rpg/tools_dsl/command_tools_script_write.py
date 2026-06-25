@@ -1229,6 +1229,138 @@ def _t_delete_anchor(user_id: int, script_id: int | None, args: dict, state: Any
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# 7) 拖入文档(txt/md)→ 确定性拆章 / 读片段。原文存服务端,LLM 只凭 doc_id 编排,不啃正文。
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _t_read_uploaded_document(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    """读取用户拖入的暂存文档的一段(offset/limit 分片读)。用于「按文档某段改写/建角色」等指令。"""
+    doc_id = str(args.get("doc_id") or "").strip()
+    if not doc_id:
+        return "失败: doc_id 必填(用户拖入文档后会给到)"
+    from platform_app.agent_docs import load_doc
+    doc = load_doc(user_id, doc_id)
+    if not doc:
+        return f"失败: 文档 {doc_id} 不存在或已过期(请用户重新拖入)"
+    try:
+        offset = max(0, int(args.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        limit = min(20000, max(1, int(args.get("limit") or 6000)))
+    except (TypeError, ValueError):
+        limit = 6000
+    text = doc["content"] or ""
+    seg = text[offset:offset + limit]
+    nxt = offset + len(seg)
+    tail = f"\n…(还有 {len(text) - nxt} 字,继续 offset={nxt})" if nxt < len(text) else ""
+    return f"文档「{doc.get('filename') or 'doc'}」[{offset}:{nxt}]/共{len(text)}字:\n{seg}{tail}"
+
+
+def _split_doc_or_err(user_id: int, args: dict):
+    """共用:取暂存文档 + 跑确定性拆分器。返回 (chapters, report, doc) 或 (None, 错误串, None)。"""
+    doc_id = str(args.get("doc_id") or "").strip()
+    if not doc_id:
+        return None, "失败: doc_id 必填", None
+    from platform_app.agent_docs import load_doc
+    doc = load_doc(user_id, doc_id)
+    if not doc:
+        return None, f"失败: 文档 {doc_id} 不存在或已过期(请用户重新拖入)", None
+    rule = str(args.get("split_rule") or "auto").strip() or "auto"
+    custom = str(args.get("custom_pattern") or "")
+    if rule == "custom" and not custom.strip():
+        return None, "失败: split_rule=custom 时必须给 custom_pattern", None
+    try:
+        from chapter_splitter import chapter_splitter as _splitter
+        chapters, report = _splitter.split_chapters_with_report(
+            doc["content"], split_rule=rule, custom_pattern=custom,
+            source_name=doc.get("filename") or "doc.txt", title="",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, f"失败: 拆分出错: {type(exc).__name__}: {exc}", None
+    return chapters, report, doc
+
+
+def _t_preview_document_split(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    """预览:把拖入文档按规则拆成几章、章节标题是什么(只读,不落库)。确认后再 import_document_as_chapters。"""
+    chapters, report, doc = _split_doc_or_err(user_id, args)
+    if chapters is None:
+        return report  # 错误串
+    if not chapters:
+        return "拆不出任何章节 —— 文档可能没有章节标记。可换 split_rule(chapter_cn/chapter_en/number_dot/custom)再试。"
+    titles = [str((c.get("title") or f"第{i + 1}章"))[:50] for i, c in enumerate(chapters)]
+    head = "、".join(f"#{i + 1}「{t}」" for i, t in enumerate(titles[:30]))
+    more = f" …(共 {len(titles)} 章)" if len(titles) > 30 else ""
+    mode = (report or {}).get("split_mode") or (report or {}).get("split_rule") or "auto"
+    words = sum(len(c.get("content") or "") for c in chapters)
+    return (f"文档「{doc.get('filename') or 'doc'}」按[{mode}]可拆成 {len(chapters)} 章、共 {words} 字。"
+            f"章节:{head}{more}。确认后用 import_document_as_chapters(doc_id, split_rule, "
+            f"mode=append|replace) 落库。")
+
+
+def _t_import_document_as_chapters(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    """把拖入文档【确定性】拆章并写入剧本。mode=append(默认,末尾追加)/replace(清空现有章再导入)。"""
+    sid = _resolve_sid(script_id, args)
+    if sid is None:
+        return "失败: script_id 必填"
+    chapters, report, doc = _split_doc_or_err(user_id, args)
+    if chapters is None:
+        return report
+    if not chapters:
+        return "失败: 拆不出任何章节(换个 split_rule 试,或文档无章节标记)"
+    mode = str(args.get("mode") or "append").strip().lower()
+    if mode not in ("append", "replace"):
+        mode = "append"
+    try:
+        from platform_app.db import connect, init_db
+        from platform_app.perms import script_owned
+        init_db()
+        with connect() as db:
+            if not script_owned(db, sid, user_id):
+                return "失败(权限): 剧本不属于当前用户"
+            if mode == "replace":
+                db.execute("delete from script_chapters where script_id=%s", (sid,))
+                start = 1
+            else:
+                mx = db.execute(
+                    "select coalesce(max(chapter_index),0) m from script_chapters where script_id=%s",
+                    (sid,),
+                ).fetchone()
+                start = int(mx["m"]) + 1
+            n = 0
+            for i, c in enumerate(chapters):
+                ci = start + i
+                title = str((c.get("title") or f"第{ci}章"))[:200]
+                content = str(c.get("content") or "")
+                db.execute(
+                    "insert into script_chapters(script_id, chapter_index, title, content, word_count,"
+                    " volume_title, source_marker, confidence) values (%s,%s,%s,%s,%s,%s,'doc_import',%s)",
+                    (sid, ci, title, content, len(content),
+                     str(c.get("volume_title") or ""), float(c.get("confidence") or 0.8)),
+                )
+                n += 1
+            db.execute(
+                "update scripts set chapter_count=(select count(*) from script_chapters where script_id=%s),"
+                " word_count=(select coalesce(sum(word_count),0) from script_chapters where script_id=%s),"
+                " updated_at=now() where id=%s", (sid, sid, sid),
+            )
+            try:
+                from platform_app.api.script_edit import _write_commit
+                _write_commit(db, script_id=sid, user_id=user_id, kind="doc_import_chapters",
+                              message=f"文档「{doc.get('filename') or 'doc'}」导入 {n} 章({mode})",
+                              payload={"table": "script_chapters", "op": "import",
+                                       "count": n, "mode": mode})
+            except Exception:
+                pass
+            db.commit()
+        rng = f"第{start}–{start + n - 1}章" if n > 1 else f"第{start}章"
+        label = "替换为" if mode == "replace" else "追加"
+        return f"已把文档「{doc.get('filename') or 'doc'}」拆成 {n} 章{label}剧本 #{sid}({rng})。"
+    except Exception as exc:  # noqa: BLE001
+        return f"失败: {type(exc).__name__}: {exc}"
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # 注册
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -1497,6 +1629,69 @@ def register_script_write_tools() -> None:
                 "required": ["anchor_id"],
             },
             executor=_t_delete_anchor,
+            scope="script",
+            origins=_SCRIPT_WRITE_ORIGINS,
+            destructive=True,
+        ),
+        ToolSpec(
+            name="read_uploaded_document",
+            description=(
+                "读取用户【拖入】的暂存文档的一段(分片 offset/limit)。用户拖入 txt/md 后会给到 doc_id。"
+                "用于按文档内容执行指令(如「据这段建角色/改写」)。原文不在上下文里,要看就用本工具读。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "doc_id": {"type": "string"},
+                    "offset": {"type": "integer", "description": "起始字符偏移(默认0)"},
+                    "limit": {"type": "integer", "description": "读取字符数(默认6000,上限20000)"},
+                },
+                "required": ["doc_id"],
+            },
+            executor=_t_read_uploaded_document,
+            scope="script",
+            origins=_SCRIPT_WRITE_ORIGINS,
+            destructive=False,
+        ),
+        ToolSpec(
+            name="preview_document_split",
+            description=(
+                "预览:把用户拖入的文档按规则【确定性】拆成几章、标题是什么(只读不落库)。"
+                "split_rule:auto(默认)/chapter_cn(第N章)/chapter_en(Chapter N)/number_dot(1.)/custom(配 custom_pattern)。"
+                "先预览给用户看,确认后再 import_document_as_chapters 落库。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "doc_id": {"type": "string"},
+                    "split_rule": {"type": "string"},
+                    "custom_pattern": {"type": "string"},
+                },
+                "required": ["doc_id"],
+            },
+            executor=_t_preview_document_split,
+            scope="script",
+            origins=_SCRIPT_WRITE_ORIGINS,
+            destructive=False,
+        ),
+        ToolSpec(
+            name="import_document_as_chapters",
+            description=(
+                "把用户拖入的文档【确定性】拆章并写入当前剧本。mode=append(默认,末尾追加)/"
+                "replace(清空现有章再导入,慎用)。建议先 preview_document_split 给用户确认章数/标题。"
+                "纯确定性拆分(不消耗 LLM token),适合整段/整章/整本导入。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "doc_id": {"type": "string"},
+                    "split_rule": {"type": "string"},
+                    "custom_pattern": {"type": "string"},
+                    "mode": {"type": "string", "enum": ["append", "replace"]},
+                },
+                "required": ["doc_id"],
+            },
+            executor=_t_import_document_as_chapters,
             scope="script",
             origins=_SCRIPT_WRITE_ORIGINS,
             destructive=True,
