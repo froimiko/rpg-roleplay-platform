@@ -288,6 +288,32 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
   const [model, setModel] = useState('');
   const [showModel, setShowModel] = useState(false);
   const toggleModel = useCallback(() => setShowModel((v) => !v), []);
+  // @引用(Cursor @file 风):把章节/角色卡/世界书 pin 进上下文 → 发送时指示 agent 用对应工具优先读取。
+  const [pinnedRefs, setPinnedRefs] = useState([]);   // [{kind, id, label}]
+  const [refPicker, setRefPicker] = useState(null);   // null | {items|null, q}
+  const openRefPicker = useCallback(async () => {
+    if (!scriptId) return;
+    setRefPicker({ items: null, q: '' });
+    try {
+      const A = window.api;
+      const [chs, cards, wb] = await Promise.all([
+        A?.scripts?.chapters?.(scriptId, { limit: 5000 }).catch(() => null),
+        A?.cards?.scriptList?.(scriptId).catch(() => null),
+        A?.scripts?.worldbook?.(scriptId).catch(() => null),
+      ]);
+      const items = [];
+      for (const c of ((chs?.chapters || chs?.items) || [])) items.push({ kind: 'chapter', id: c.chapter_index, label: `第${c.chapter_index}章 ${(c.title || '').replace(/^\s*第\s*[0-9一二三四五六七八九十百千]+\s*章\s*/, '')}`.trim() });
+      for (const c of (Array.isArray(cards) ? cards : (cards?.items || []))) items.push({ kind: 'card', id: c.id, label: c.name || `卡#${c.id}` });
+      for (const w of ((wb?.entries || wb?.items) || (Array.isArray(wb) ? wb : []))) items.push({ kind: 'worldbook', id: w.id, label: w.title || `世界书#${w.id}` });
+      setRefPicker((p) => p ? { ...p, items } : p);
+    } catch (_) { setRefPicker((p) => p ? { ...p, items: [] } : p); }
+  }, [scriptId]);
+  const addRef = useCallback((r) => {
+    setPinnedRefs((arr) => (arr.some((x) => x.kind === r.kind && x.id === r.id) ? arr : [...arr, r]).slice(0, 12));
+    setRefPicker(null);
+  }, []);
+  const removeRef = useCallback((r) => setPinnedRefs((arr) => arr.filter((x) => !(x.kind === r.kind && x.id === r.id))), []);
+
   // 拖入文档(txt/md):上传到 /agent-doc 暂存 → 拿 doc_id,下条消息带上让 agent 用确定性拆章工具处理。
   const [attached, setAttached] = useState(null);   // {doc_id, filename, chars}
   const [dragOver, setDragOver] = useState(false);
@@ -588,6 +614,16 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
         sentMsg = `[我在正文里选中的片段 —— 下文若说「这段 / 选中 / 这一段」即指它]\n"""\n${sc.selection.slice(0, 4000)}\n"""\n\n${raw}`;
       }
     }
+    // @引用:把 pin 的实体前置成指示,让 agent 用对应工具优先读取(无需客户端搬运正文)。
+    if (pinnedRefs.length) {
+      const lines = pinnedRefs.map((r) => {
+        if (r.kind === 'chapter') return `- ${r.label}(用 get_chapter_text(chapter_index=${r.id}) 读取)`;
+        if (r.kind === 'card') return `- 角色卡「${r.label}」(用 get_script_character_card(card_id=${r.id}) 读取)`;
+        return `- 世界书「${r.label}」(entry_id=${r.id};用 list_worldbook_entries 核对)`;
+      });
+      sentMsg = `[用户特别指定要参考以下内容,请【先用对应工具读取】再回答,优先级高于自行检索]\n${lines.join('\n')}\n\n${sentMsg}`;
+      setPinnedRefs([]);
+    }
     // 拖入文档:把 doc_id 前置到消息里,agent 用 preview_document_split/import_document_as_chapters/
     // read_uploaded_document 处理(原文不进上下文,只传引用)。发出后清除附件。
     if (attached && attached.doc_id) {
@@ -615,7 +651,7 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
     } catch (e) {
       setMessages((m) => m.map((msg2, i) => i === assistantIdx ? { ...msg2, error: e?.message || String(e) } : msg2));
     } finally { setBusy(false); abortRef.current = null; }
-  }, [input, busy, pageContext, makeHandler, selLen, selCtxOff, getSelectionContext, attached]);
+  }, [input, busy, pageContext, makeHandler, selLen, selCtxOff, getSelectionContext, attached, pinnedRefs]);
 
   // 按 call_id 直接发 /confirm(approve|reject)——既给 sidebar 确认块用,也给编辑器内联 diff 的
   // 「全部批准/拒绝」回调用(见 makeHandler 的 confirmation_required 拦截)。
@@ -825,6 +861,40 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
                 title={t('common.remove', { defaultValue: '移除' })} aria-label={t('common.remove', { defaultValue: '移除' })}>×</button>
             </span>
           )}
+        </div>
+      )}
+      <div className="mde-agent-refbar">
+        <button type="button" className="mde-agent-refadd" onClick={openRefPicker} disabled={!scriptId}
+          title={t('components.md_editor_agent.ref.add_tip', { defaultValue: '引用章节/角色卡/世界书作为上下文' })}>{t('components.md_editor_agent.ref.add', { defaultValue: '@ 引用' })}</button>
+        {pinnedRefs.map((r) => (
+          <span key={r.kind + ':' + r.id} className="mde-agent-refchip">
+            <span className="mde-agent-refchip-k">{({ chapter: '章', card: '卡', worldbook: '书' })[r.kind] || ''}</span>
+            <span className="mde-agent-refchip-l" title={r.label}>{r.label}</span>
+            <button type="button" className="mde-agent-refchip-x" onClick={() => removeRef(r)} aria-label={t('common.remove', { defaultValue: '移除' })}>×</button>
+          </span>
+        ))}
+      </div>
+      {refPicker && (
+        <div className="mde-qopen-scrim" onMouseDown={() => setRefPicker(null)}>
+          <div className="mde-refpick" onMouseDown={(e) => e.stopPropagation()}>
+            <input className="mde-qopen-input" autoFocus value={refPicker.q}
+              placeholder={t('components.md_editor_agent.ref.placeholder', { defaultValue: '引用:章节 / 角色卡 / 世界书…' })}
+              onChange={(e) => setRefPicker((p) => p ? { ...p, q: e.target.value } : p)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setRefPicker(null); }} />
+            <div className="mde-qopen-list">
+              {refPicker.items === null ? <div className="mde-qopen-empty">{t('common.loading')}</div>
+                : (() => {
+                  const f = (refPicker.items || []).filter((it) => !refPicker.q || (it.label || '').toLowerCase().includes(refPicker.q.toLowerCase())).slice(0, 60);
+                  return f.length === 0 ? <div className="mde-qopen-empty">{t('md_editor.quickopen.none', { defaultValue: '无匹配' })}</div>
+                    : f.map((it) => (
+                      <div key={it.kind + ':' + it.id} className="mde-qopen-item" onMouseDown={() => addRef(it)}>
+                        <span className="mde-qopen-icon">{({ chapter: '§', card: '@', worldbook: '#' })[it.kind] || '·'}</span>
+                        <span className="mde-qopen-label">{it.label}</span>
+                      </div>
+                    ));
+                })()}
+            </div>
+          </div>
         </div>
       )}
       <div className="mde-agent-composer">

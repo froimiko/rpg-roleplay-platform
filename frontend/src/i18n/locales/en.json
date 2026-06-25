@@ -6975,7 +6975,12 @@
         "empty": "No past conversations",
         "untitled": "(empty)"
       },
-      "editor_diff_hint": "Changes shown in the editor as green (added) / red (removed) — click “Approve all / Reject” at the editor top."
+      "editor_diff_hint": "Changes shown in the editor as green (added) / red (removed) — click “Approve all / Reject” at the editor top.",
+      "ref": {
+        "add": "@ Reference",
+        "add_tip": "Pin a chapter / card / worldbook entry as context",
+        "placeholder": "Reference: chapter / card / worldbook…"
+      }
     },
     "generate_image_modal": {
       "title": "AI Image Generation",
