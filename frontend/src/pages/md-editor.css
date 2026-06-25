@@ -320,6 +320,17 @@
   color: var(--accent, #b5654a); font-size: 12px; font-family: var(--font-sans, system-ui);
 }
 
+/* AI 改章内联 diff:绿(增行)/红(删行块)+ 顶栏「全部批准 / 拒绝」 */
+.mde-cm .cm-line.mde-diff-add { background: rgba(63,166,106,.16); box-shadow: inset 2px 0 0 var(--ok, #3fa66a); }
+.mde-cm .mde-diff-del { background: rgba(200,103,93,.14); color: var(--danger, #c8675d); text-decoration: line-through; padding: 1px 8px 1px 12px; box-shadow: inset 2px 0 0 var(--danger, #c8675d); white-space: pre-wrap; word-break: break-word; opacity: .8; }
+.mde-diff-panel { display: flex; align-items: center; gap: 10px; padding: 5px 12px; background: var(--bg-deep, #131211); border-bottom: 1px solid var(--accent, #b5654a); font-size: 12.5px; font-family: var(--font-sans, system-ui); }
+.mde-diff-panel-label { color: var(--accent, #b5654a); font-weight: 600; }
+.mde-diff-accept { margin-left: auto; background: var(--accent, #b5654a); color: #fff; border: none; border-radius: 6px; padding: 4px 14px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+.mde-diff-accept:hover { filter: brightness(1.08); }
+.mde-diff-reject { background: var(--panel-2, #282623); color: var(--text, #ebe7df); border: 1px solid var(--line, #36322d); border-radius: 6px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+.mde-diff-reject:hover { border-color: var(--danger, #c8675d); color: var(--danger, #c8675d); }
+.mde-agent-editordiff { font-size: 12px; line-height: 1.5; color: var(--accent, #b5654a); padding: 7px 10px; border: 1px solid rgba(181,101,74,.4); border-radius: 8px; background: rgba(181,101,74,.08); }
+
 /* 侧栏「续写到正文」工具条 */
 .mde-agent-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 8px 0; }
 .mde-agent-continue {

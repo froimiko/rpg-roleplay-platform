@@ -6941,7 +6941,8 @@
         "new": "新对话",
         "empty": "暂无历史对话",
         "untitled": "(空对话)"
-      }
+      },
+      "editor_diff_hint": "改动已在编辑器中以绿(增)/红(删)展示 —— 在编辑器顶栏点「全部批准 / 拒绝」。"
     },
     "generate_image_modal": {
       "title": "AI 生图",

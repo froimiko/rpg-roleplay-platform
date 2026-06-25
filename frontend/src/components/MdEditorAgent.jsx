@@ -256,7 +256,7 @@ const WRITING_SKILLS = [
     prompt: '请用 get_chapter_text 读【当前章节】(必要时 get_script_chapters 跨章回看),梳理本章埋下或呼应的伏笔/线索:哪些已回收、哪些悬而未决、哪些可能与既有设定冲突。只输出清单与建议,不改库。' },
 ];
 
-const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, onWriteComplete, onContinue, selLen = 0, getSelectionContext }, ref) {
+const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, onWriteComplete, onContinue, onProposeChapterEdit, selLen = 0, getSelectionContext }, ref) {
   const { t } = useTranslation();
   const [messages, setMessages] = useState([]);   // [{role, text, tools:[{call_id,tool,args,status,result}]}]
   const [input, setInput] = useState('');
@@ -492,9 +492,27 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
       return;
     }
     if (event === 'confirmation_required') {
-      setMessages((m) => m.map((msg, i) => i === assistantIdx
-        ? { ...msg, pendingConfirm: { call_id: data.call_id, tool: data.tool, args: data.args, description: data.description, preview: data.preview } }
-        : msg));
+      const pc = { call_id: data.call_id, tool: data.tool, args: data.args, description: data.description, preview: data.preview };
+      // 章节改写 → 优先在【中间编辑器】里内联 diff 审阅(绿增/红删 + 顶栏全部批准/拒绝)。
+      // 仅当该章正是当前激活 tab 时拦截;否则(或异常)退回侧栏确认块。
+      if (data.tool === 'update_script_chapter' && data.preview && data.preview.after != null
+          && typeof onProposeChapterEditRef.current === 'function') {
+        let ok = false;
+        try {
+          ok = onProposeChapterEditRef.current(data.args?.chapter_index, data.preview.after, {
+            onAccept: () => confirmCallRef.current?.(pc.call_id, 'approve'),
+            onReject: () => confirmCallRef.current?.(pc.call_id, 'reject'),
+          });
+        } catch (_) { ok = false; }
+        if (ok) {
+          // 编辑器接管审阅 → 聊天里只留一行轻提示,不挂 sidebar 确认块。
+          setMessages((m) => m.map((msg, i) => i === assistantIdx
+            ? { ...msg, pendingConfirm: null, editorDiff: { tool: pc.tool } }
+            : msg));
+          return;
+        }
+      }
+      setMessages((m) => m.map((msg, i) => i === assistantIdx ? { ...msg, pendingConfirm: pc } : msg));
       return;
     }
     if (event === 'error') {
@@ -583,24 +601,37 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
     } finally { setBusy(false); abortRef.current = null; }
   }, [input, busy, pageContext, makeHandler, selLen, selCtxOff, getSelectionContext, attached]);
 
-  const resolveConfirm = useCallback(async (msgIdx, decision) => {
-    const pc = messages[msgIdx]?.pendingConfirm;
-    if (!pc || busy) return;
+  // 按 call_id 直接发 /confirm(approve|reject)——既给 sidebar 确认块用,也给编辑器内联 diff 的
+  // 「全部批准/拒绝」回调用(见 makeHandler 的 confirmation_required 拦截)。
+  const confirmCall = useCallback(async (callId, decision) => {
+    if (!callId || busy) return;
     setBusy(true);
-    setMessages((m) => m.map((msg, i) => i === msgIdx ? { ...msg, pendingConfirm: null } : msg));
     let assistantIdx = -1;
     setMessages((m) => { const next = [...m, { role: 'assistant', text: '', tools: [] }]; assistantIdx = next.length - 1; return next; });
     try {
       const res = await fetch('/api/console_assistant/confirm', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation_id: convIdRef.current, call_id: pc.call_id, decision, page_context: pageContext() }),
+        body: JSON.stringify({ conversation_id: convIdRef.current, call_id: callId, decision, page_context: pageContext() }),
       });
       await consumeSSE(res, makeHandler(assistantIdx));
     } catch (e) {
       setMessages((m) => m.map((msg2, i) => i === assistantIdx ? { ...msg2, error: e?.message || String(e) } : msg2));
     } finally { setBusy(false); }
-  }, [messages, busy, pageContext, makeHandler]);
+  }, [busy, pageContext, makeHandler]);
+
+  const resolveConfirm = useCallback(async (msgIdx, decision) => {
+    const pc = messages[msgIdx]?.pendingConfirm;
+    if (!pc || busy) return;
+    setMessages((m) => m.map((msg, i) => i === msgIdx ? { ...msg, pendingConfirm: null } : msg));
+    confirmCall(pc.call_id, decision);
+  }, [messages, busy, confirmCall]);
+
+  // makeHandler deps=[] → 用 ref 取最新 onProposeChapterEdit / confirmCall(避免过期闭包)。
+  const onProposeChapterEditRef = useRef(null);
+  onProposeChapterEditRef.current = onProposeChapterEdit;
+  const confirmCallRef = useRef(null);
+  confirmCallRef.current = confirmCall;
 
   // 「续写后同步到知识库」桥接:编辑器接受一段续写/改写后,可一键把这段正文丢给本 agent,
   // 让它按【写作准则·知识同步】(rule 4)读现状 + 同步角色卡/世界书/时间线/canon。
@@ -730,6 +761,11 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
                     <button className="ok" disabled={busy} onClick={() => resolveConfirm(i, 'approve')}>{t('components.md_editor_agent.confirm_approve')}</button>
                     <button className="no" disabled={busy} onClick={() => resolveConfirm(i, 'reject')}>{t('common.cancel')}</button>
                   </div>
+                </div>
+              )}
+              {m.editorDiff && (
+                <div className="mde-agent-editordiff">
+                  {t('components.md_editor_agent.editor_diff_hint', { defaultValue: '改动已在编辑器中以绿(增)/红(删)展示 —— 在编辑器顶栏点「全部批准 / 拒绝」。' })}
                 </div>
               )}
               {m.error && <div className="mde-tool-errline">{stripEmoji(m.error)}</div>}

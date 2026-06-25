@@ -11,6 +11,7 @@ import CodeMirrorEditor from '../components/CodeMirrorEditor.jsx';
 import MdEditorAgent from '../components/MdEditorAgent.jsx';
 import { toMd, fromMd, splitFrontMatter } from '../lib/md-serialize.js';
 import { runContinue } from '../lib/md-continue.js';
+import { showChapterDiff } from '../lib/md-diff.js';
 import { undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
 
@@ -815,6 +816,20 @@ export default function MdEditorPage() {
     runContinue(view, { scriptId, instruction, onAccept: onProseAccepted, chapterIndex: _ci });
   }, [scriptId, onProseAccepted]);
 
+  // agent 提议改某章 → 在中间编辑器内联 diff(绿增/红删)+ 顶栏「全部批准/拒绝」。
+  // 仅当该章正是当前激活的 tab 时拦截到编辑器;否则返回 false → 侧栏走原确认。cbs.onAccept/onReject
+  // 在用户点批准/拒绝时回调(触发对 agent 的 /confirm approve|reject)。任何异常都回 false 退回侧栏。
+  const proposeChapterDiff = useCallback((chapterIndex, newText, cbs) => {
+    try {
+      const view = activeViewRef.current;
+      const a = activeRef.current;
+      if (!view || !a || a.kind !== 'chapter' || String(a.id) !== String(chapterIndex)) return false;
+      if (newText == null) return false;
+      const oldText = view.state.doc.toString();
+      return showChapterDiff(view, oldText, newText, cbs);
+    } catch (_) { return false; }
+  }, []);
+
   // 「同步设定」:把刚接受的正文丢给右栏 agent,按 rule 4 读现状 + 同步知识资产。
   const doSync = useCallback(() => {
     const n = syncNudge;
@@ -981,7 +996,7 @@ export default function MdEditorPage() {
         {/* 右:agent 直写面板(console_assistant SSE)+ 续写到正文 */}
         <aside className="mde-right">
           {scriptId
-            ? <MdEditorAgent ref={agentRef} scriptId={scriptId} activeTab={active} onWriteComplete={refreshTab} onContinue={onContinue} selLen={selLen} getSelectionContext={getSelectionContext} />
+            ? <MdEditorAgent ref={agentRef} scriptId={scriptId} activeTab={active} onWriteComplete={refreshTab} onContinue={onContinue} onProposeChapterEdit={proposeChapterDiff} selLen={selLen} getSelectionContext={getSelectionContext} />
             : <div className="mde-tree-hint">{t('md_editor.ws.select_first')}</div>}
         </aside>
       </div>

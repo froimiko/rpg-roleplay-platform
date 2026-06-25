@@ -6944,7 +6944,8 @@
         "new": "New chat",
         "empty": "No past conversations",
         "untitled": "(empty)"
-      }
+      },
+      "editor_diff_hint": "Changes shown in the editor as green (added) / red (removed) — click “Approve all / Reject” at the editor top."
     },
     "generate_image_modal": {
       "title": "AI Image Generation",

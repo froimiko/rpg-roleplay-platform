@@ -10,6 +10,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { aiContinueExtension, cmdKKeymap } from '../lib/md-continue.js';
+import { chapterDiffExtension } from '../lib/md-diff.js';
 
 const { useRef, useEffect } = React;
 
@@ -73,6 +74,7 @@ function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapter
   return [
     frontMatterGuard(),
     aiContinueExtension(),
+    chapterDiffExtension(),
     cmdKKeymap(getScriptId, getOnAccept, getChapterIndex),
     lineNumbers(),
     highlightActiveLineGutter(),
