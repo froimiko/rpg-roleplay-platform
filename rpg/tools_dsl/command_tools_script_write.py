@@ -1361,6 +1361,80 @@ def _t_import_document_as_chapters(user_id: int, script_id: int | None, args: di
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# 8) delegate_writing_task —— 派一个【用户自己配置的(BYOK)】子模型去写一段/做一个特定写作任务。
+#    铁律(用户明确要求):只用用户自己的 BYOK 模型,绝不平台兜底;调用失败必须明确回报主 agent。
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _t_delegate_writing_task(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    task = str(args.get("task") or "").strip()
+    if not task:
+        return "失败: task 必填(要委派子模型做的写作任务,如『以冷峻文风写第5章开头300字』)"
+    api_id_in = str(args.get("api_id") or "").strip()
+    model_in = str(args.get("model") or args.get("model_real_name") or "").strip()
+    # 1) 解析模型:显式优先 → 用户 writer/gm 偏好。
+    api_id = model = ""
+    try:
+        from agents._harness import resolve_api_and_model
+        api_id, model = resolve_api_and_model(
+            user_id, api_pref_key="writer.api_id", model_pref_key="writer.model_real_name",
+            api_id_override=(api_id_in or None), model_override=(model_in or None),
+        )
+    except Exception:
+        api_id = model = ""
+    if not (api_id and model):
+        try:
+            from core.llm_backend import first_user_model
+            fu = first_user_model(user_id)
+            if fu:
+                api_id, model = fu
+        except Exception:
+            pass
+    if not (api_id and model):
+        return ("委派失败: 没找到可用模型。本工具只用【你自己配置的模型】(不走平台兜底);"
+                "请到「设置 → API 与模型」配置并测试一个你自己的模型后重试。")
+    # 2) 强制 BYOK:用户必须持有该 provider 的 key —— 不走 env/平台兜底(用户铁律)。
+    try:
+        from platform_app.user_credentials import resolve_api_key
+        if not resolve_api_key(user_id, api_id, env_fallback="").get("key"):
+            return (f"委派失败: 模型 {api_id}/{model} 没有你自己的 API Key。本工具只用你自己配置的模型,"
+                    "请去「设置 → API 与模型」配置该 provider 的 key,或改用一个已配置的模型。")
+    except Exception as exc:  # noqa: BLE001
+        return f"委派失败(凭据校验出错): {type(exc).__name__}: {exc}"
+    # 3) 构造后端 + 纯文本生成;任何失败都明确回报(让主 agent 转述/换模型重试)。
+    try:
+        from agents.gm import GameMaster
+        backend = GameMaster(api_id=str(api_id), model=str(model), user_id=user_id)._backend
+    except Exception as exc:  # noqa: BLE001
+        from agents.provider_errors import classify_provider_error
+        known = classify_provider_error(exc)
+        return f"委派失败(后端初始化 {api_id}/{model}): {known[1] if known else f'{type(exc).__name__}: {exc}'}"
+    try:
+        max_tokens = min(6000, max(400, int(args.get("max_tokens") or 2500)))
+    except (TypeError, ValueError):
+        max_tokens = 2500
+    ctx = str(args.get("context") or "")[:8000]
+    sys_p = ("你是中文小说写作助手。严格按用户要求直接产出【成稿正文/内容】,"
+             "不要解释、不要加前后缀说明、不要复述任务。")
+    user_p = (f"【参考上下文】\n{ctx}\n\n" if ctx else "") + f"【写作任务】\n{task}"
+    try:
+        parts: list[str] = []
+        for chunk in backend.stream(sys_p, [{"role": "user", "content": user_p}], max_tokens=max_tokens):
+            if chunk:
+                parts.append(chunk)
+        out = "".join(parts).strip()
+    except Exception as exc:  # noqa: BLE001
+        from agents.provider_errors import classify_provider_error
+        known = classify_provider_error(exc)
+        return (f"委派失败(模型 {api_id}/{model} 调用出错): "
+                f"{known[1] if known else f'{type(exc).__name__}: {exc}'}。可换一个你已配置的模型重试。")
+    if not out:
+        return (f"委派失败: 模型 {api_id}/{model} 返回空内容(可能是推理模型 max_tokens 不够、"
+                "或中转站拒绝)。可调大 max_tokens、换模型或重试。")
+    return (f"[子模型 {api_id}/{model} 产出 · 仅供参考,需你确认后再落库]\n{out}")
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # 注册
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -1695,6 +1769,31 @@ def register_script_write_tools() -> None:
             scope="script",
             origins=_SCRIPT_WRITE_ORIGINS,
             destructive=True,
+        ),
+        ToolSpec(
+            name="delegate_writing_task",
+            description=(
+                "把一段写作/特定任务【委派】给一个用户自己配置的(BYOK)子模型来做 —— 例如用一个更强/"
+                "更擅长某文风的模型写某章某段。可显式指定 model(api_id+model),否则用用户的写作/默认模型。"
+                "【只用用户自己配置的模型,不用平台兜底】;调用失败会明确返回失败原因。"
+                "产出是【草稿】,需你向用户确认后再用 update_script_chapter/create_script_chapter 落库。"
+                "context 可放参考正文(如相邻章节片段)。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "description": "委派的写作任务(越具体越好)"},
+                    "api_id": {"type": "string", "description": "指定子模型 provider(可空=用默认写作模型)"},
+                    "model": {"type": "string", "description": "指定子模型名(可空)"},
+                    "context": {"type": "string", "description": "参考上下文/相邻正文(可空)"},
+                    "max_tokens": {"type": "integer", "description": "产出长度上限(默认2500)"},
+                },
+                "required": ["task"],
+            },
+            executor=_t_delegate_writing_task,
+            scope="script",
+            origins=_SCRIPT_WRITE_ORIGINS,
+            destructive=False,
         ),
         ToolSpec(
             name="get_chapter_text",
