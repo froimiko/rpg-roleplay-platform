@@ -441,9 +441,15 @@ def _t_update_script_chapter(user_id: int, script_id: int | None, args: dict, st
         init_db()
         # ② 严格 owner 闸(在 update_chapter 内部也会再查一次 script_owned,这里前置一道
         #    给出统一的工具友好失败串;update_chapter 自身的 ValueError 兜底捕获)。
+        prior: dict | None = None
         with connect() as db:
             if not script_owned(db, sid, user_id):
                 return "失败(权限): 剧本不属于当前用户"
+            # 撤销快照:落库前抓本章当前值,存进 commit.payload.before,让作者一键撤销 AI 改动。
+            prior = db.execute(
+                "select title, content, volume_title from script_chapters where script_id=%s and chapter_index=%s",
+                (sid, ci),
+            ).fetchone()
         # ③ 复用现成写函数 platform_app.script_import.update_chapter(自带 owner 校验 + word_count 同步)。
         from platform_app.script_import import update_chapter
         update_chapter(
@@ -452,9 +458,18 @@ def _t_update_script_chapter(user_id: int, script_id: int | None, args: dict, st
             content=(str(content) if content is not None else None),
             volume_title=(str(volume_title) if volume_title is not None else None),
         )
-        # 审计:章节正文走 script_commits,kind 取 chapter_edit(与 worldbook_edit 等对齐命名)。
+        # 审计 + 撤销:章节正文走 script_commits(kind=chapter_edit),payload.before 存改前全文供一键撤销。
         try:
             from platform_app.api.script_edit import _write_commit
+            changed = [k for k in ("title", "content", "volume_title") if args.get(k) is not None]
+            before_content = str((prior or {}).get("content") or "")
+            # 内容护栏:超长正文(>100k)不存 before,撤销不可用(极罕见;避免 commit jsonb 爆炸)。
+            undoable = bool(prior) and len(before_content) <= 100000
+            before_payload = {
+                "title": (prior or {}).get("title"),
+                "content": before_content if undoable else None,
+                "volume_title": (prior or {}).get("volume_title"),
+            } if prior else None
             with connect() as adb:
                 if script_owned(adb, sid, user_id):
                     _write_commit(
@@ -464,8 +479,10 @@ def _t_update_script_chapter(user_id: int, script_id: int | None, args: dict, st
                         payload={
                             "table": "script_chapters", "op": "edit",
                             "ids": {"chapter_index": ci},
-                            "fields": [k for k in ("title", "content", "volume_title")
-                                       if args.get(k) is not None],
+                            "fields": changed,
+                            "before": before_payload,
+                            "undoable": undoable,
+                            "is_new": prior is None,
                         },
                     )
                     adb.commit()

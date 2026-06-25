@@ -363,6 +363,77 @@ async def api_list_commits(
     })
 
 
+@router.get("/api/scripts/{script_id}/chapters/{chapter_index}/undoable")
+async def api_chapter_undoable(script_id: int, chapter_index: int, user=Depends(require_user)):
+    """本章是否有可撤销的 AI 改动(给前端决定是否显示「撤销」)。"""
+    with connect() as db:
+        if not script_owned(db, script_id, int(user["id"])):
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        row = db.execute(
+            """SELECT id, message FROM script_commits
+               WHERE script_id=%s AND kind='chapter_edit'
+                 AND coalesce((payload->>'undoable')::boolean, false) IS TRUE
+                 AND coalesce((payload->>'undone')::boolean, false) IS FALSE
+                 AND coalesce(payload->'ids'->>'chapter_index','') = %s
+               ORDER BY id DESC LIMIT 1""",
+            (script_id, str(chapter_index)),
+        ).fetchone()
+    return json_response({"ok": True, "undoable": bool(row),
+                          "commit_id": int(row["id"]) if row else None})
+
+
+@router.post("/api/scripts/{script_id}/chapters/{chapter_index}/undo")
+async def api_undo_chapter_edit(script_id: int, chapter_index: int, user=Depends(require_user)):
+    """撤销本章最近一次可撤销的改动:把正文恢复到那次改动之前(commit.payload.before)。
+
+    确定性、作者主动触发(非 agent 工具,不指望 LLM)。恢复后标记该 commit 已撤销 + 写一条
+    chapter_revert,故可连续往前逐次撤销。手动编辑走 CodeMirror 自带撤销,这里专治「AI 改了库
+    才发现不对」—— 与落库前的「改动预览」一前一后构成写作搭档的安全网。"""
+    uid = int(user["id"])
+    with connect() as db:
+        if not script_owned(db, script_id, uid):
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        row = db.execute(
+            """SELECT id, payload FROM script_commits
+               WHERE script_id=%s AND kind='chapter_edit'
+                 AND coalesce((payload->>'undoable')::boolean, false) IS TRUE
+                 AND coalesce((payload->>'undone')::boolean, false) IS FALSE
+                 AND coalesce(payload->'ids'->>'chapter_index','') = %s
+               ORDER BY id DESC LIMIT 1""",
+            (script_id, str(chapter_index)),
+        ).fetchone()
+        if not row:
+            return json_response({"ok": False, "error": "本章没有可撤销的 AI 改动"}, status_code=404)
+        before = ((row["payload"] or {}).get("before") or {})
+        commit_id = int(row["id"])
+    # 恢复改前全文(走现成 update_chapter,自带 owner 校验 + word_count 同步)
+    from platform_app.script_import import update_chapter
+    bc = before.get("content")
+    update_chapter(
+        uid, script_id, int(chapter_index),
+        title=(str(before["title"]) if before.get("title") is not None else None),
+        content=(str(bc) if bc is not None else None),
+        volume_title=(str(before["volume_title"]) if before.get("volume_title") is not None else None),
+    )
+    with connect() as db:
+        if not script_owned(db, script_id, uid):
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        db.execute(
+            "UPDATE script_commits SET payload = jsonb_set(payload, '{undone}', 'true') WHERE id=%s",
+            (commit_id,),
+        )
+        _write_commit(
+            db, script_id=script_id, user_id=uid, kind="chapter_revert",
+            message=f"撤销章节 #{chapter_index} 的改动",
+            payload={"table": "script_chapters", "op": "revert",
+                     "ids": {"chapter_index": int(chapter_index)},
+                     "reverted_commit_id": commit_id},
+        )
+        db.commit()
+    return json_response({"ok": True, "chapter_index": int(chapter_index),
+                          "reverted_commit_id": commit_id})
+
+
 # ─── pin / unpin ──────────────────────────────────────────────────────────────
 
 @router.post("/api/scripts/{script_id}/pin")

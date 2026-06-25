@@ -227,6 +227,25 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
   const tryRefreshRef = useRef(null);
   tryRefreshRef.current = tryRefresh;
 
+  // 一键撤销 agent 对某章的改动:调后端恢复改前全文 → 刷新编辑器标签 → 标记该工具已撤销。
+  const undoChapterEdit = useCallback(async (msgIdx, toolIdx, ci) => {
+    if (!scriptId || ci == null) return;
+    try {
+      const r = await window.api?.scripts?.undoChapter?.(scriptId, ci);
+      if (r && r.ok) {
+        window.__apiToast?.(t('components.md_editor_agent.undo_ok', { defaultValue: '已撤销,正文已恢复改前内容' }), { kind: 'ok' });
+        setMessages((m) => m.map((msg, i) => i === msgIdx
+          ? { ...msg, tools: (msg.tools || []).map((tc, j) => j === toolIdx ? { ...tc, undone: true } : tc) }
+          : msg));
+        try { onWriteComplete?.('chapter', ci); } catch (_) {}
+      } else {
+        window.__apiToast?.((r && r.error) || t('components.md_editor_agent.undo_fail', { defaultValue: '撤销失败' }), { kind: 'error' });
+      }
+    } catch (_) {
+      window.__apiToast?.(t('components.md_editor_agent.undo_fail', { defaultValue: '撤销失败' }), { kind: 'error' });
+    }
+  }, [scriptId, onWriteComplete, t]);
+
   const send = useCallback(async (text) => {
     const raw = (text ?? input).trim();
     if (!raw || busy) return;
@@ -348,6 +367,14 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
               <div key={j} className={'mde-agent-tool ' + tc.status}>
                 <span className="mde-agent-tool-name">{tc.tool}</span>
                 <span className="mde-agent-tool-status">{tc.status === 'running' ? t('components.md_editor_agent.tool_status.running') : tc.status === 'error' ? t('components.md_editor_agent.tool_status.error') : t('components.md_editor_agent.tool_status.done')}</span>
+                {tc.tool === 'update_script_chapter' && tc.status === 'done' && tc.args?.chapter_index != null && (
+                  tc.undone
+                    ? <span className="mde-agent-undone">{t('components.md_editor_agent.undone', { defaultValue: '已撤销' })}</span>
+                    : <button type="button" className="mde-agent-undo" disabled={busy}
+                        onClick={() => undoChapterEdit(i, j, tc.args.chapter_index)}>
+                        {t('components.md_editor_agent.undo_btn', { defaultValue: '撤销此次改动' })}
+                      </button>
+                )}
                 {tc.error && <div className="mde-agent-tool-err">{tc.error}</div>}
               </div>
             ))}

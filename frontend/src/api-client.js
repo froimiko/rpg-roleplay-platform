@@ -469,6 +469,9 @@
       // 单章节完整 content(列表只回 180-char preview;点入章节后 lazy 拉真正文)
       chapterDetail: (sid, idx) => GET(`${API_PREFIX}/scripts/${sid}/chapters/${idx}`),
       updateChapter: (sid, idx, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/${idx}`, body),
+      // 撤销本章最近一次 AI 改动(恢复改前全文);undoable 查是否有可撤销改动。
+      undoChapter: (sid, idx) => POST(`${API_PREFIX}/scripts/${sid}/chapters/${idx}/undo`, {}),
+      chapterUndoable: (sid, idx) => GET(`${API_PREFIX}/scripts/${sid}/chapters/${idx}/undoable`),
       mergeChapter: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/merge`, body),
       // 批量删除章节(一次删整批再重排,避免逐章删 index 漂移)。indexes:number[]。
       deleteChapters: (sid, indexes) => POST(`${API_PREFIX}/scripts/${sid}/chapters/delete`, { indexes }),

@@ -6899,6 +6899,10 @@
       },
       "confirm_prompt": "The AI wants to run {{tool}} (overwrites saved data)",
       "confirm_approve": "Run",
+      "undo_btn": "Undo this change",
+      "undone": "Undone",
+      "undo_ok": "Undone — chapter restored to its previous content",
+      "undo_fail": "Undo failed",
       "preview": {
         "change": "Change preview",
         "new": "New",

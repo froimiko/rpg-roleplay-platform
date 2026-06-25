@@ -6896,6 +6896,10 @@
       },
       "confirm_prompt": "AI 想执行 {{tool}}(覆盖写入)",
       "confirm_approve": "确认执行",
+      "undo_btn": "撤销此次改动",
+      "undone": "已撤销",
+      "undo_ok": "已撤销,正文已恢复改前内容",
+      "undo_fail": "撤销失败",
       "preview": {
         "change": "改动预览",
         "new": "新建",
