@@ -4,6 +4,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Composer } from '../game-composer.jsx';
+import { RpgMarkdown } from '../markdown-render.jsx';
 
 const { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } = React;
 
@@ -227,12 +228,30 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
       return;
     }
     if (event === 'tool_result') {
-      setMessages((m) => m.map((msg, i) => i === assistantIdx
-        ? { ...msg, tools: (msg.tools || []).map((tc) => tc.tool === data.tool || tc.call_id === data.call_id
-            ? { ...tc, status: data.ok === false ? 'error' : 'done', result: data.result, error: data.error } : tc) }
-        : msg));
+      // 关键修复:后端 tool_call 事件不带 call_id、tool_result 不带 tool 名 → 原「按 tool/call_id 配对」
+      // 永不命中 → 工具永远卡在「执行中」。工具按调用顺序串行执行,故把【最早一个仍 running 的】工具
+      // 标完成(FIFO),既治卡死、又能正确对应顺序(重名工具如多次 get_script_character_card 不再错配)。
+      setMessages((m) => m.map((msg, i) => {
+        if (i !== assistantIdx) return msg;
+        let patched = false;
+        const tools = (msg.tools || []).map((tc) => {
+          if (!patched && tc.status === 'running') {
+            patched = true;
+            return { ...tc, status: data.ok === false ? 'error' : 'done', result: data.result, error: data.error };
+          }
+          return tc;
+        });
+        return { ...msg, tools };
+      }));
       // 写工具成功 → 刷新编辑器对应标签。用 ref 取最新 tryRefresh(makeHandler deps=[],否则捕获过期闭包→读到旧 tabs)。
       if (data.ok !== false) tryRefreshRef.current?.(data);
+      return;
+    }
+    if (event === 'done') {
+      // 兜底:流结束时把残留 running 的工具全标完成(防个别 result 丢失/不配对导致永久转圈)。
+      setMessages((m) => m.map((msg, i) => i === assistantIdx
+        ? { ...msg, tools: (msg.tools || []).map((tc) => tc.status === 'running' ? { ...tc, status: 'done' } : tc) }
+        : msg));
       return;
     }
     if (event === 'confirmation_required') {
@@ -402,7 +421,7 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
         )}
         {messages.map((m, i) => (
           <div key={i} className={'mde-agent-msg ' + m.role}>
-            {m.text && <div className="mde-agent-text">{m.text}</div>}
+            {/* 工具调用在前(agent 先读后写,这些是「思考/取数」过程),最终答复在后,符合流的时序 */}
             {(m.tools || []).map((tc, j) => (
               (tc.tool === 'set_writing_plan' || tc.tool === 'report_writing_issues') ? (
                 <MdeAgentPanel key={j} tc={tc} t={t} />
@@ -422,6 +441,9 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
               </div>
               )
             ))}
+            {m.text && (m.role === 'assistant'
+              ? <div className="mde-agent-text"><RpgMarkdown.Block text={m.text} streaming={busy && i === messages.length - 1} /></div>
+              : <div className="mde-agent-text">{m.text}</div>)}
             {m.pendingConfirm && (
               <div className="mde-agent-confirm">
                 <div className="mde-agent-confirm-q">

@@ -200,7 +200,13 @@
 .mde-agent-hint { color: var(--muted-2, #6b655e); font-size: 12px; line-height: 1.6; padding: 8px; }
 .mde-agent-msg { font-size: 12.5px; line-height: 1.6; }
 .mde-agent-msg.user .mde-agent-text { background: var(--info-soft, rgba(122,166,194,.12)); border-radius: 8px; padding: 7px 10px; color: var(--text, #ebe7df); }
-.mde-agent-msg.assistant .mde-agent-text { color: var(--text, #ebe7df); white-space: pre-wrap; }
+.mde-agent-msg.assistant .mde-agent-text { color: var(--text, #ebe7df); }
+/* assistant 答复走 RpgMarkdown 渲染(标题/表格/列表/加粗),控制行内尺寸贴合右栏窄宽 */
+.mde-agent-msg.assistant .mde-agent-text :is(h1,h2,h3,h4) { font-size: 13px; margin: 8px 0 4px; }
+.mde-agent-msg.assistant .mde-agent-text p { margin: 4px 0; }
+.mde-agent-msg.assistant .mde-agent-text ul, .mde-agent-msg.assistant .mde-agent-text ol { margin: 4px 0; padding-left: 20px; }
+.mde-agent-msg.assistant .mde-agent-text .rpg-md-table { border-collapse: collapse; font-size: 11.5px; }
+.mde-agent-msg.assistant .mde-agent-text .rpg-md-table th, .mde-agent-msg.assistant .mde-agent-text .rpg-md-table td { border: 1px solid var(--line, #36322d); padding: 3px 7px; }
 .mde-agent-tool { display: flex; align-items: center; gap: 8px; margin-top: 5px; padding: 5px 8px; border: 1px solid var(--line-soft, #2a2724); border-radius: 6px; font-size: 11.5px; background: var(--panel-2, #282623); }
 .mde-agent-tool-name { font-family: var(--font-mono, monospace); color: var(--accent, #b5654a); }
 .mde-agent-tool-status { margin-left: auto; color: var(--muted-2, #6b655e); }
