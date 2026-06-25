@@ -94,6 +94,29 @@
 .mde-splitter::after { content: ''; position: absolute; inset: 0 -3px; }   /* 加宽命中区,视觉仍 5px */
 /* 右栏折叠(宽屏:从网格抽走右栏 + 分隔条) */
 .mde-panes.right-collapsed { grid-template-columns: var(--mde-left-w, 240px) 5px minmax(0, 1fr) 0 0; }
+/* Mod+B 折叠左侧文件树(VSCode 风) */
+.mde-panes.left-collapsed { grid-template-columns: 0 0 minmax(0, 1fr) 5px var(--mde-right-w, 320px); }
+.mde-panes.left-collapsed.right-collapsed { grid-template-columns: 0 0 minmax(0, 1fr) 0 0; }
+.mde-panes.left-collapsed > .mde-left, .mde-panes.left-collapsed > .mde-splitter-left { display: none; }
+
+/* 底部状态栏(VSCode 风):字数 / 行:列 / 选中 / 保存态 */
+.mde-statusbar { flex: 0 0 auto; display: flex; align-items: center; gap: 16px; height: 22px; padding: 0 12px; border-top: 1px solid var(--line-soft, #2a2724); background: var(--bg-deep, #131211); font-size: 11px; color: var(--muted, #968f85); }
+.mde-sb-item { white-space: nowrap; }
+.mde-sb-item.dirty { color: var(--accent, #b5654a); }
+.mde-sb-spacer { flex: 1 1 auto; }
+
+/* 快速打开(Mod+P)浮层 */
+.mde-qopen-scrim { position: fixed; inset: 0; z-index: 4000; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+.mde-qopen { width: min(620px, 90vw); background: var(--panel, #1c1a18); border: 1px solid var(--line, #36322d); border-radius: 10px; box-shadow: 0 16px 48px rgba(0,0,0,.55); overflow: hidden; }
+.mde-qopen-input { width: 100%; box-sizing: border-box; padding: 11px 14px; background: var(--bg-deep, #131211); border: none; border-bottom: 1px solid var(--line-soft, #2a2724); color: var(--text, #ebe7df); font-size: 14px; outline: none; font-family: inherit; }
+.mde-qopen-list { max-height: 50vh; overflow-y: auto; padding: 4px; }
+.mde-qopen-empty { padding: 14px; color: var(--muted-2, #6b655e); font-size: 12.5px; text-align: center; }
+.mde-qopen-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+.mde-qopen-item.sel { background: var(--accent, #b5654a); color: #fff; }
+.mde-qopen-icon { flex: 0 0 auto; width: 14px; text-align: center; font-family: var(--font-mono, monospace); opacity: .8; }
+.mde-qopen-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.mde-qopen-item.sel .mde-qopen-kind { color: rgba(255,255,255,.8); }
+.mde-qopen-kind { flex: 0 0 auto; font-size: 10.5px; color: var(--muted-2, #6b655e); }
 .mde-panes.right-collapsed > .mde-right, .mde-panes.right-collapsed > .mde-splitter-right { display: none; }
 /* 右栏浮层遮罩:默认隐藏(宽屏右栏是网格列不需遮罩);窄屏 @media(<1100px)内改 display:block。
    必须定义在该 @media 之前 —— 否则同特异性下后置规则会反盖掉 @media 的 block。 */

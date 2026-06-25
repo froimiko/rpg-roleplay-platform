@@ -11,7 +11,11 @@ import CodeMirrorEditor from '../components/CodeMirrorEditor.jsx';
 import MdEditorAgent from '../components/MdEditorAgent.jsx';
 import { toMd, fromMd, splitFrontMatter } from '../lib/md-serialize.js';
 import { runContinue } from '../lib/md-continue.js';
-import { showChapterDiff } from '../lib/md-diff.js';
+import { showChapterDiff, hasChapterDiff } from '../lib/md-diff.js';
+
+// OS 自适应:Mac=⌘ / Win·Linux=Ctrl。快捷键标签 + 全局键判断都用它。
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+const MOD_LABEL = IS_MAC ? '⌘' : 'Ctrl';
 import { undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
 
@@ -525,6 +529,59 @@ function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, ch
   );
 }
 
+const KIND_LABEL_KEY = { chapter: 'md_editor.tree.group_chapter', card: 'md_editor.tree.group_card', worldbook: 'md_editor.tree.group_worldbook', anchor: 'md_editor.tree.group_anchor', canon: 'md_editor.tree.group_canon' };
+function kindLabelZh(kind) { return i18n.t(KIND_LABEL_KEY[kind] || '', { defaultValue: ({ chapter: '章节', card: '角色卡', worldbook: '世界书', anchor: '时间线', canon: '设定' })[kind] || kind }); }
+
+// 快速打开(Mod+P,VSCode 风):跨所有实体类型模糊过滤 + 键盘选择 + 回车打开。
+function QuickOpen({ scriptId, openNode, onClose }) {
+  const { t } = useTranslation();
+  const [q, setQ] = useState('');
+  const [items, setItems] = useState(null);
+  const [sel, setSel] = useState(0);
+  const inputRef = useRef(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const lists = await Promise.all(NODE_GROUPS.map((g) =>
+          fetchGroupList(g.kind, scriptId).then((arr) => arr.map((it) => ({ kind: g.kind, id: it.id, label: it.label, icon: g.icon }))).catch(() => [])));
+        if (!cancelled) setItems(lists.flat());
+      } catch (_) { if (!cancelled) setItems([]); }
+    })();
+    setTimeout(() => inputRef.current && inputRef.current.focus(), 30);
+    return () => { cancelled = true; };
+  }, [scriptId]);
+  const filtered = (items || []).filter((it) => !q || (it.label || '').toLowerCase().includes(q.toLowerCase())).slice(0, 60);
+  const choose = (it) => { if (!it) return; try { openNode({ kind: it.kind, id: it.id, label: it.label, meta: {} }); } catch (_) {} onClose(); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); choose(filtered[sel]); }
+  };
+  return (
+    <div className="mde-qopen-scrim" onMouseDown={onClose}>
+      <div className="mde-qopen" onMouseDown={(e) => e.stopPropagation()}>
+        <input ref={inputRef} className="mde-qopen-input" value={q}
+          placeholder={t('md_editor.quickopen.placeholder', { defaultValue: '快速打开:章节 / 角色卡 / 世界书 / 时间线 / 设定…' })}
+          onChange={(e) => { setQ(e.target.value); setSel(0); }} onKeyDown={onKey} />
+        <div className="mde-qopen-list">
+          {items === null ? <div className="mde-qopen-empty">{t('common.loading')}</div>
+            : filtered.length === 0 ? <div className="mde-qopen-empty">{t('md_editor.quickopen.none', { defaultValue: '无匹配' })}</div>
+              : filtered.map((it, i) => (
+                <div key={it.kind + ':' + it.id} className={'mde-qopen-item' + (i === sel ? ' sel' : '')}
+                  onMouseEnter={() => setSel(i)} onMouseDown={() => choose(it)}>
+                  <span className="mde-qopen-icon">{it.icon || '·'}</span>
+                  <span className="mde-qopen-label">{it.label}</span>
+                  <span className="mde-qopen-kind">{kindLabelZh(it.kind)}</span>
+                </div>
+              ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 主页面 ───────────────────────────────────────────────────────────
 export default function MdEditorPage() {
   const { t } = useTranslation();
@@ -539,6 +596,16 @@ export default function MdEditorPage() {
   const activeRef = useRef(null);                          // 当前标签(在接受续写的回调里读最新 label)
   const [syncNudge, setSyncNudge] = useState(null);        // 接受续写后提示同步:{text, label, rewrite} | null
   const [selLen, setSelLen] = useState(0);                 // 正文当前选中字数(右栏「选区改写」+ 选区上下文芯片)
+  const [cursor, setCursor] = useState({ line: 1, col: 1, total: 0 });   // 底部状态栏:光标行:列 + 总字数
+  const [leftHidden, setLeftHidden] = useState(false);     // 左侧文件树折叠(Mod+B,VSCode 风)
+  const [quickOpen, setQuickOpen] = useState(false);       // Mod+P 快速打开
+  // 选区/光标上报(对象):右栏要 selLen(数字),状态栏要 line/col/total。
+  const onSel = useCallback((info) => {
+    if (info && typeof info === 'object') {
+      setSelLen(info.len || 0);
+      setCursor({ line: info.line || 1, col: info.col || 1, total: info.total || 0 });
+    } else { setSelLen(info || 0); }
+  }, []);
   // 读当前编辑器选区 + 上下文(供右栏 agent 把选中正文作为上下文)。在发送时实时读,保证拿到最新选区。
   const getSelectionContext = useCallback(() => {
     const v = activeViewRef.current;
@@ -838,20 +905,41 @@ export default function MdEditorPage() {
     try { agentRef.current?.syncFromProse(n.text, n.label, n.rewrite); } catch (_) { /* 静默 */ }
   }, [syncNudge]);
 
-  // Cmd/Ctrl+S 保存当前标签。
+  // 全局快捷键(OS 自适应:Mac=⌘ / 其它=Ctrl):保存 / 折叠左树 / 快速打开 / 替换。
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const k = (e.key || '').toLowerCase();
+      if (k === 's') { e.preventDefault(); if (activeKey) saveTab(activeKey); }
+      else if (k === 'b' && !e.shiftKey && !e.altKey) { e.preventDefault(); setLeftHidden((v) => !v); }
+      else if (k === 'p' && !e.shiftKey && !e.altKey) { e.preventDefault(); setQuickOpen(true); }
+      // 替换:Mac=⌘⌥F(系统占用 ⌘H);Win/Linux=Ctrl+H。两者都打开 CM 搜索面板(含替换)。
+      else if ((IS_MAC && e.altKey && k === 'f') || (!IS_MAC && k === 'h')) {
         e.preventDefault();
-        if (activeKey) saveTab(activeKey);
+        const v = activeViewRef.current; if (v) { v.focus(); try { openSearchPanel(v); } catch (_) {} }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [activeKey, saveTab]);
 
+
   const active = tabs.find((t) => t.key === activeKey) || null;
   activeRef.current = active;
+
+  // 自动保存:正文 dirty 后 2.5s 空闲存盘;内联 diff 审阅中【绝不】自动保存(否则把未批准的 diff
+  // 文本落库)。云端多用户安全:saveTab 走 owner 校验的 updateChapter 端点。
+  useEffect(() => {
+    if (!active || !active.dirty) return undefined;
+    const key = active.key;
+    const id = setTimeout(() => {
+      const v = activeViewRef.current;
+      if (v && hasChapterDiff(v)) return;   // diff 审阅中,跳过
+      saveTab(key);
+    }, 2500);
+    return () => clearTimeout(id);
+  }, [active && active.key, active && active.content, active && active.dirty, saveTab]);
 
   return (
     <div className="mde-root">
@@ -929,7 +1017,7 @@ export default function MdEditorPage() {
 
       {/* 窄屏右栏浮层的背景遮罩:点击/触摸关闭(CSS 只在 <1100px 显示;宽屏右栏是网格列不显示)。 */}
       {rightOpen && <div className="mde-scrim" onClick={toggleRight} aria-hidden="true" />}
-      <div className={'mde-panes' + (rightOpen ? '' : ' right-collapsed')} ref={panesRef} style={{ '--mde-left-w': leftW + 'px', '--mde-right-w': rightW + 'px' }}>
+      <div className={'mde-panes' + (rightOpen ? '' : ' right-collapsed') + (leftHidden ? ' left-collapsed' : '')} ref={panesRef} style={{ '--mde-left-w': leftW + 'px', '--mde-right-w': rightW + 'px' }}>
         {/* 左:文件树 */}
         <aside className="mde-left">
           {scriptId ? <FileTree scriptId={scriptId} openNode={openNode} activeKey={activeKey} reloadKey={treeReloadKey} onMutate={onTreeMutate} /> : <div className="mde-tree-hint">{t('md_editor.ws.select_first')}</div>}
@@ -951,7 +1039,19 @@ export default function MdEditorPage() {
             ))}
           </div>
           <div className="mde-editorwrap" onContextMenu={(e) => { if (!active) return; e.preventDefault(); setEditorCtx({ x: e.clientX, y: e.clientY }); }}>
-            <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} onContinueAccept={onProseAccepted} chapterIndex={active && active.kind === 'chapter' ? active.id : null} onSelectionChange={setSelLen} />
+            <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} onContinueAccept={onProseAccepted} chapterIndex={active && active.kind === 'chapter' ? active.id : null} onSelectionChange={onSel} />
+          </div>
+          {/* 底部状态栏(VSCode 风):字数 + 光标行:列 + 选中 + 保存态 */}
+          <div className="mde-statusbar">
+            {active ? (
+              <>
+                <span className="mde-sb-item">{t('md_editor.statusbar.words', { n: (cursor.total || (active.content || '').length).toLocaleString(), defaultValue: '{{n}} 字' })}</span>
+                <span className="mde-sb-item">{t('md_editor.statusbar.lncol', { line: cursor.line, col: cursor.col, defaultValue: '行 {{line}}, 列 {{col}}' })}</span>
+                {selLen > 0 && <span className="mde-sb-item">{t('md_editor.statusbar.selected', { n: selLen, defaultValue: '选中 {{n}}' })}</span>}
+                <span className="mde-sb-spacer" />
+                <span className={'mde-sb-item' + (active.dirty ? ' dirty' : '')}>{active.dirty ? t('md_editor.statusbar.unsaved', { defaultValue: '未保存' }) : t('md_editor.statusbar.saved', { defaultValue: '已保存' })}</span>
+              </>
+            ) : <span className="mde-sb-item muted">{t('md_editor.statusbar.no_file', { defaultValue: '未打开文件' })}</span>}
           </div>
           {tabCtx && (() => {
             const idx = tabs.findIndex((t) => t.key === tabCtx.key);
@@ -1000,6 +1100,7 @@ export default function MdEditorPage() {
             : <div className="mde-tree-hint">{t('md_editor.ws.select_first')}</div>}
         </aside>
       </div>
+      {quickOpen && scriptId && <QuickOpen scriptId={scriptId} openNode={openNode} onClose={() => setQuickOpen(false)} />}
     </div>
   );
 }

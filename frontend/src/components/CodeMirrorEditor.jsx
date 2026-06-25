@@ -93,10 +93,12 @@ function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapter
     EditorView.editable.of(!readOnly),
     EditorView.updateListener.of((u) => {
       if (u.docChanged) onChange?.(u.state.doc.toString());
-      // 选区变化 → 上报选中字数(右栏「选区改写」+ 选区上下文芯片)。
+      // 选区变化 → 上报 {选中字数, 光标行:列, 总字数}(右栏选区改写 + 底部状态栏)。
       if (u.selectionSet || u.docChanged) {
         const s = u.state.selection.main;
-        getOnSel?.()?.(s.empty ? 0 : (s.to - s.from));
+        const doc = u.state.doc;
+        const ln = doc.lineAt(s.head);
+        getOnSel?.()?.({ len: s.empty ? 0 : (s.to - s.from), line: ln.number, col: s.head - ln.from + 1, total: doc.length });
       }
     }),
   ];

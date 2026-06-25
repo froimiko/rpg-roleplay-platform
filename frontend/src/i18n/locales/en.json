@@ -4034,6 +4034,18 @@
       "script_fallback": "Script {{id}}",
       "select_first": "Select a script first",
       "switch_title": "Switch workspace (script)"
+    },
+    "statusbar": {
+      "words": "{{n}} chars",
+      "lncol": "Ln {{line}}, Col {{col}}",
+      "selected": "{{n}} selected",
+      "unsaved": "Unsaved",
+      "saved": "Saved",
+      "no_file": "No file open"
+    },
+    "quickopen": {
+      "placeholder": "Quick open: chapters / cards / worldbook / timeline / canon…",
+      "none": "No matches"
     }
   },
   "tavern_page": {
