@@ -34,7 +34,15 @@ async def api_console_assistant_conversations(
     if not user_id:
         return JSONResponse({"items": []})
     from console_assistant import list_conversations
+    from console_assistant.conversations import list_conversations_pg
     items = list_conversations(user_id)
+    seen = {it.get("id") for it in items}
+    # 进程内 dict 在 worker 重启后为空 → 并入 PG 持久化的对话(刷新/换 worker 也能列出历史会话)。
+    for it in list_conversations_pg(user_id):
+        if it.get("id") not in seen:
+            items.append(it)
+            seen.add(it.get("id"))
+    items.sort(key=lambda r: r.get("last_used", ""), reverse=True)
     return JSONResponse({"items": items})
 
 

@@ -81,6 +81,40 @@ def _persist_conv_pg(user_id: int, cid: str, conv: dict[str, Any]) -> None:
         pass
 
 
+def list_conversations_pg(user_id: int) -> list[dict[str, Any]]:
+    """从 PG 列对话(进程内 dict 在 worker 重启后为空,此为持久兜底)。返回与 list_conversations 同形。"""
+    if not user_id:
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        from platform_app.db import connect, init_db
+        init_db()
+        with connect() as db:
+            rows = db.execute(
+                "select conversation_id, conv, updated_at from console_conversations "
+                "where user_id=%s order by updated_at desc limit 100",
+                (int(user_id),),
+            ).fetchall()
+        for r in rows:
+            conv = (r.get("conv") if isinstance(r, dict) else r["conv"]) or {}
+            if not isinstance(conv, dict):
+                conv = {}
+            msgs = conv.get("messages") or []
+            out.append({
+                "id": r["conversation_id"],
+                "created_at": conv.get("created_at", ""),
+                "last_used": conv.get("last_used", "") or str(r["updated_at"]),
+                "message_count": len(msgs),
+                "cum_input_tokens": int(conv.get("cum_input_tokens", 0) or 0),
+                "cum_output_tokens": int(conv.get("cum_output_tokens", 0) or 0),
+                "context_limit": int(conv.get("context_limit", 0) or 0),
+                "last_user_message": (conv.get("last_user_message", "") or "")[:50],
+            })
+    except Exception:
+        pass
+    return out
+
+
 def _load_conv_pg(user_id: int, cid: str) -> dict[str, Any] | None:
     if not (user_id and cid):
         return None

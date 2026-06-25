@@ -6938,6 +6938,12 @@
       "subagent": {
         "title": "Sub-agent writing",
         "output": "Sub-model output"
+      },
+      "conv": {
+        "history": "History",
+        "new": "New chat",
+        "empty": "No past conversations",
+        "untitled": "(empty)"
       }
     },
     "generate_image_modal": {

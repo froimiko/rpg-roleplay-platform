@@ -6935,6 +6935,12 @@
       "subagent": {
         "title": "子代理写作",
         "output": "子模型产出"
+      },
+      "conv": {
+        "history": "历史",
+        "new": "新对话",
+        "empty": "暂无历史对话",
+        "untitled": "(空对话)"
       }
     },
     "generate_image_modal": {

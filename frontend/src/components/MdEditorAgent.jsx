@@ -376,6 +376,58 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
     return () => { cancelled = true; };
   }, [scriptId]);
 
+  // ── 对话管理:新对话 / 历史列表 / 切换 / 删除(后端 console_assistant 早有 4 端点,编辑器此前没接) ──
+  const [convList, setConvList] = useState(null);
+  const [showConvList, setShowConvList] = useState(false);
+
+  const loadConversation = useCallback(async (cid) => {
+    convIdRef.current = cid || null;
+    setMessages([]);
+    try { if (scriptIdRef.current && cid) localStorage.setItem(`mde.conv.${scriptIdRef.current}`, cid); } catch (_) {}
+    if (!cid) return;
+    try {
+      const j = await window.api?.consoleAssistant?.getMessages?.(cid);
+      if (!j?.ok || !Array.isArray(j.messages)) return;
+      setMessages(j.messages.map((m) => ({ role: m.role, text: m.text, tools: Array.isArray(m.tools) ? m.tools : [] })));
+    } catch (_) { /* 静默 */ }
+  }, []);
+
+  const newConversation = useCallback(async () => {
+    let nid = null;
+    try { nid = (await window.api?.consoleAssistant?.newConversation?.())?.conversation_id || null; } catch (_) {}
+    convIdRef.current = nid;
+    try {
+      if (scriptIdRef.current) {
+        if (nid) localStorage.setItem(`mde.conv.${scriptIdRef.current}`, nid);
+        else localStorage.removeItem(`mde.conv.${scriptIdRef.current}`);
+      }
+    } catch (_) {}
+    setMessages([]);
+    setShowConvList(false);
+  }, []);
+
+  const toggleConvList = useCallback(async () => {
+    const next = !showConvList;
+    setShowConvList(next);
+    if (next) {
+      try {
+        const r = await window.api?.consoleAssistant?.listConversations?.();
+        setConvList(Array.isArray(r?.items) ? r.items : []);
+      } catch (_) { setConvList([]); }
+    }
+  }, [showConvList]);
+
+  const deleteConv = useCallback(async (cid, e) => {
+    try { e?.stopPropagation?.(); } catch (_) {}
+    try { await window.api?.consoleAssistant?.deleteConversation?.(cid); } catch (_) {}
+    setConvList((list) => (Array.isArray(list) ? list.filter((c) => c.id !== cid) : list));
+    if (convIdRef.current === cid) {
+      convIdRef.current = null;
+      setMessages([]);
+      try { if (scriptIdRef.current) localStorage.removeItem(`mde.conv.${scriptIdRef.current}`); } catch (_) {}
+    }
+  }, []);
+
   const pageContext = useCallback(() => {
     // 章节 tab 的 id 即 chapter_index(见 md-editor.jsx tree/create)。带上它,后端在弱模型漏填
     // chapter_index 时可确定性补默认(否则 update_script_chapter 必失败,新剧本写作流完全失效)。
@@ -581,7 +633,32 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
       <div className="mde-agent-head">
         <span className="mde-agent-head-icon">AI</span>
         <span className="mde-agent-head-title">{t('components.md_editor_agent.title')}{activeTab ? ` · ${activeTab.label}` : ''}</span>
+        <button type="button" className={'mde-agent-headbtn' + (showConvList ? ' active' : '')}
+          onClick={toggleConvList} title={t('components.md_editor_agent.conv.history', { defaultValue: '历史对话' })}>
+          {t('components.md_editor_agent.conv.history', { defaultValue: '历史' })}
+        </button>
+        <button type="button" className="mde-agent-headbtn"
+          onClick={newConversation} title={t('components.md_editor_agent.conv.new', { defaultValue: '新对话' })}>
+          {t('components.md_editor_agent.conv.new', { defaultValue: '新对话' })}
+        </button>
       </div>
+      {showConvList && (
+        <div className="mde-agent-convlist">
+          {(convList || []).length === 0 ? (
+            <div className="mde-agent-conv-empty">{t('components.md_editor_agent.conv.empty', { defaultValue: '暂无历史对话' })}</div>
+          ) : (convList || []).map((c) => (
+            <div key={c.id} role="button" tabIndex={0}
+              className={'mde-agent-conv' + (c.id === convIdRef.current ? ' active' : '')}
+              onClick={() => { setShowConvList(false); loadConversation(c.id); }}>
+              <span className="mde-agent-conv-text">{stripEmoji(c.last_user_message || t('components.md_editor_agent.conv.untitled', { defaultValue: '(空对话)' }))}</span>
+              <span className="mde-agent-conv-n">{c.message_count || 0}</span>
+              <button type="button" className="mde-agent-conv-del"
+                title={t('common.remove', { defaultValue: '删除' })}
+                onClick={(e) => deleteConv(c.id, e)}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
       {selLen > 0 && (
         <div className="mde-agent-selcard">
           <div className="mde-agent-selcard-head">

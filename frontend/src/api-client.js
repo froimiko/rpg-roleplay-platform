@@ -906,6 +906,15 @@
       active: () => GET(`/api/me/tasks/active`),
     },
 
+    // ---------- 剧本编辑器写作搭档(console_assistant)对话管理 ----------
+    // 端点用绝对 /api/console_assistant/*(非 API_PREFIX);SSE 的 /chat、/confirm 仍由组件裸 fetch。
+    consoleAssistant: {
+      listConversations: () => GET(`/api/console_assistant/conversations`),
+      getMessages: (id) => GET(`/api/console_assistant/conversations/${encodeURIComponent(id)}/messages`),
+      newConversation: () => POST(`/api/console_assistant/new_conversation`, {}),
+      deleteConversation: (id) => POST(`/api/console_assistant/delete_conversation`, { conversation_id: id }),
+    },
+
     // ---------- Tools / MCP / Skills ----------
     tools: {
       list: () => GET(`${API_PREFIX}/tools`),

@@ -166,6 +166,19 @@
 .mde-agent-head { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 6px 10px; border-bottom: 1px solid var(--line-soft, #2a2724); font-weight: 600; font-size: 12px; background: var(--bg-deep, #131211); min-height: 32px; }
 .mde-agent-head-icon { flex: 0 0 auto; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px; background: rgba(181,101,74,0.16); color: var(--accent, #b5654a); font-size: 10px; font-weight: 700; letter-spacing: 0.2px; }
 .mde-agent-head-title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted, #968f85); font-weight: 600; }
+.mde-agent-headbtn { flex: 0 0 auto; font-size: 11px; padding: 2px 9px; border-radius: 6px; border: 1px solid var(--line, #36322d); background: var(--panel, #1c1a18); color: var(--muted, #968f85); cursor: pointer; font-family: inherit; }
+.mde-agent-headbtn:hover { border-color: var(--accent, #b5654a); color: var(--accent, #b5654a); }
+.mde-agent-headbtn.active { border-color: var(--accent, #b5654a); color: var(--accent, #b5654a); background: rgba(181,101,74,.1); }
+/* 对话历史下拉:从头栏下方展开 */
+.mde-agent-convlist { flex: 0 0 auto; max-height: 240px; overflow-y: auto; border-bottom: 1px solid var(--line-soft, #2a2724); background: var(--bg-deep, #131211); animation: mdeMsgIn .16s ease-out; }
+.mde-agent-conv-empty { padding: 12px; color: var(--muted-2, #6b655e); font-size: 12px; text-align: center; }
+.mde-agent-conv { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line-soft, #2a272488); cursor: pointer; }
+.mde-agent-conv:hover { background: var(--panel-2, #282623); }
+.mde-agent-conv.active { background: rgba(181,101,74,.1); box-shadow: inset 2px 0 0 var(--accent, #b5654a); }
+.mde-agent-conv-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text, #ebe7df); }
+.mde-agent-conv-n { flex: 0 0 auto; font-size: 10px; color: var(--muted-2, #6b655e); font-family: var(--font-mono, monospace); }
+.mde-agent-conv-del { flex: 0 0 auto; border: none; background: transparent; color: var(--muted-2, #6b655e); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; }
+.mde-agent-conv-del:hover { color: var(--danger, #c8675d); }
 
 /* 选区改写卡片:有选中正文时出现,提供「精简/扩写/润色/画面感/按指令改写」+ 选中正文作聊天上下文开关 */
 .mde-agent-selcard { flex: 0 0 auto; padding: 8px 10px; border-bottom: 1px solid var(--line-soft, #2a2724); background: rgba(181,101,74,0.06); animation: mdeSelIn .18s ease-out; }
