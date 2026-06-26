@@ -547,6 +547,39 @@ function wireIpc() {
     } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   });
 
+  // 邀请链接:别人扫码/点链接 → /Login.html?invite= 轻量注册自己的账号加入(自部署多用户)。
+  // token 可复用,持久化到配置(稳定链接,反复打开控制台还是同一个);撤销 = 后端作废 + 清配置。
+  ipcMain.handle('lan:inviteUrl', async () => {
+    if (!cfg.load().lanEnabled) return { ok: false, error: 'lan_off' };
+    const ip = _lanIp();
+    const port = supervisor.backendPort || cfg.load().backendPort || 0;
+    if (!ip || !port || supervisor.state !== 'running') return { ok: false, error: 'not_ready' };
+    let token = cfg.load().inviteToken || '';
+    if (!token) {
+      try {
+        const r = await _netJson('POST', `http://127.0.0.1:${port}/api/local/account/invite-token`);
+        if (r && r.ok && r.token) { token = r.token; cfg.save({ inviteToken: token }); }
+      } catch (_) { /* fall through */ }
+    }
+    if (!token) return { ok: false, error: 'mint_failed' };
+    const url = `http://${ip}:${port}/Login.html?invite=${encodeURIComponent(token)}`;
+    let dataUrl = '';
+    try {
+      const QR = require('qrcode');
+      dataUrl = await QR.toDataURL(url, { margin: 1, width: 240, color: { dark: '#1a1817', light: '#f4efe6' } });
+    } catch (_) {}
+    return { ok: true, url, dataUrl };
+  });
+
+  ipcMain.handle('lan:inviteRevoke', async () => {
+    const port = supervisor.backendPort || cfg.load().backendPort || 0;
+    if (port && supervisor.state === 'running') {
+      try { await _netJson('POST', `http://127.0.0.1:${port}/api/local/account/invite-token/revoke`); } catch (_) {}
+    }
+    cfg.save({ inviteToken: '' });
+    return { ok: true };
+  });
+
   // 可靠复制:走主进程 clipboard(渲染层 navigator.clipboard 在部分上下文不可用)。
   ipcMain.handle('sys:copyText', (_e, text) => { clipboard.writeText(String(text || '')); return { ok: true }; });
 

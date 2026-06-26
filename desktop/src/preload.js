@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('sv', {
   lanInfo: () => ipcRenderer.invoke('lan:info'),
   lanQr: () => ipcRenderer.invoke('lan:qr'),
   lanLoginUrl: () => ipcRenderer.invoke('lan:loginUrl'),
+  lanInviteUrl: () => ipcRenderer.invoke('lan:inviteUrl'),
+  lanInviteRevoke: () => ipcRenderer.invoke('lan:inviteRevoke'),
 
   // 可靠复制(主进程 clipboard)
   copyText: (text) => ipcRenderer.invoke('sys:copyText', text),

@@ -144,6 +144,7 @@ function renderMode() {
   document.querySelectorAll('.modeseg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === cfg.mode));
   $('localSvc').hidden = !local;
   $('lanShareRow').hidden = !local;   // 局域网分享(复制地址+二维码)仅本地模式
+  if ($('lanInviteRow')) $('lanInviteRow').hidden = !local;   // 邀请链接(请别人注册加入)仅本地模式
   if ($('magicChkWrap')) $('magicChkWrap').hidden = !local;
   if ($('cloudAccount')) $('cloudAccount').hidden = local;
   if ($('magicLink')) $('magicLink').checked = cfg.magicLink !== false;
@@ -441,6 +442,36 @@ async function init() {
   $('qrBtn').addEventListener('mouseleave', _hideQr);
   $('qrPop').addEventListener('mouseenter', () => clearTimeout(_qrT));
   $('qrPop').addEventListener('mouseleave', _hideQr);
+
+  // ── 邀请链接(请别人注册自己的账号加入)──
+  if ($('copyInviteBtn')) {
+    $('copyInviteBtn').addEventListener('click', async () => {
+      const r = await sv.lanInviteUrl();
+      const ok = r && r.ok && await copy(r.url || '');
+      flash($('copyInviteBtn'), ok ? '已复制邀请链接' : '生成失败');
+    });
+  }
+  if ($('inviteQrBtn')) {
+    let _ivT, _ivLoaded = false;
+    const _showIv = async () => {
+      clearTimeout(_ivT);
+      if (!_ivLoaded) {
+        try { const r = await sv.lanInviteUrl(); if (r && r.ok && r.dataUrl) { $('inviteQrImg').src = r.dataUrl; _ivLoaded = true; $('inviteQrPop').hidden = false; } } catch (_) {}
+      } else { $('inviteQrPop').hidden = false; }
+    };
+    const _hideIv = () => { _ivT = setTimeout(() => { $('inviteQrPop').hidden = true; _ivLoaded = false; }, 180); };
+    $('inviteQrBtn').addEventListener('mouseenter', _showIv);
+    $('inviteQrBtn').addEventListener('mouseleave', _hideIv);
+    $('inviteQrPop').addEventListener('mouseenter', () => clearTimeout(_ivT));
+    $('inviteQrPop').addEventListener('mouseleave', _hideIv);
+  }
+  if ($('revokeInviteBtn')) {
+    $('revokeInviteBtn').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await sv.lanInviteRevoke();
+      flash($('revokeInviteBtn'), '已停止邀请');
+    });
+  }
   $('startBtn').addEventListener('click', async () => { await sv.start().catch(() => {}); loadLocalAccount(); });
   $('stopBtn').addEventListener('click', () => sv.stop().catch(() => {}));
   $('restartBtn').addEventListener('click', doRestart);

@@ -178,6 +178,13 @@ function LoginApp() {
   const [tsToken, setTsToken] = useState('');
   const tsRef = useRef(null);
   const tsWidgetId = useRef(null);
+  // 自部署「邀请链接」轻量注册: ?invite=TOKEN → 用户名+密码即可加入(无邮箱)
+  const [inviteToken, setInviteToken] = useState('');
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [inviteAge, setInviteAge] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteErr, setInviteErr] = useState('');
 
   // 1) 已登录直接走开 — 不要让用户重复登录
   useEffect(() => {
@@ -221,6 +228,14 @@ function LoginApp() {
           setMode('reset');
         }
       }
+    } catch (_) {}
+  }, []);
+
+  // 2b2) 自部署邀请链接: ?invite=TOKEN → 切到轻量注册屏(用户名+密码加入)
+  useEffect(() => {
+    try {
+      const tok = new URLSearchParams(location.search).get('invite') || '';
+      if (tok) setInviteToken(tok);
     } catch (_) {}
   }, []);
 
@@ -676,6 +691,79 @@ function LoginApp() {
       }
     }
   };
+
+  const submitInvite = async (e) => {
+    e?.preventDefault?.();
+    setInviteErr('');
+    if (!inviteUsername.trim()) { setInviteErr(t('auth.invite.need_username')); return; }
+    if ((invitePassword || '').length < 8) { setInviteErr(t('auth.invite.weak_password')); return; }
+    if (!inviteAge) { setInviteErr(t('auth.invite.need_age')); return; }
+    setInviteBusy(true);
+    try {
+      const base = window.__API_BASE || '';
+      const r = await fetch(`${base}/api/local/register`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invite: inviteToken, username: inviteUsername.trim(), password: invitePassword, age_confirmed: true }),
+      });
+      const j = await r.json();
+      if (j.ok) {
+        try { history.replaceState(null, '', location.pathname); } catch (_) {}
+        location.href = j.next || '/Platform.html';
+      } else { setInviteErr(j.error || t('auth.invite.failed')); }
+    } catch (err) { setInviteErr(err?.message || t('auth.invite.failed')); }
+    finally { setInviteBusy(false); }
+  };
+
+  // 邀请链接屏:URL 带 ?invite= 时短路渲染 —— 用户名 + 密码 + 18+ 即可加入(自部署多用户)。
+  if (inviteToken) {
+    return (
+      <div className="pl-auth-wrap">
+        <div className="pl-auth">
+          <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+            <div className="pl-auth-mark" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 19V5l8 4 8-4v14" /><path d="M4 14l8 4 8-4" />
+              </svg>
+            </div>
+            <div>
+              <h1>{t('auth.invite.title')}</h1>
+              <div className="pl-auth-sub">{t('auth.invite.subtitle')}</div>
+            </div>
+          </div>
+          <form className="pl-auth-form" onSubmit={submitInvite}>
+            <div className="pl-field">
+              <label htmlFor="inv-username">{t('auth.invite.username')}</label>
+              <input id="inv-username" type="text" autoFocus autoComplete="username"
+                     value={inviteUsername} onChange={(e) => setInviteUsername(e.target.value)}
+                     placeholder={t('auth.invite.username_ph')} />
+            </div>
+            <div className="pl-field">
+              <label htmlFor="inv-password">{t('auth.invite.password')}</label>
+              <input id="inv-password" type="password" autoComplete="new-password"
+                     value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)}
+                     placeholder={t('auth.invite.password_ph')} />
+            </div>
+            <div className="pl-field" style={{flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 6}}>
+              <input id="inv-age" type="checkbox" checked={inviteAge}
+                     onChange={(e) => setInviteAge(e.target.checked)}
+                     style={{marginTop: 3, flexShrink: 0, accentColor: 'var(--accent)'}} />
+              <label htmlFor="inv-age" style={{fontWeight: 'normal', cursor: 'pointer', fontSize: 13}}>{t('auth.invite.age')}</label>
+            </div>
+            {inviteErr && (
+              <div className="pl-auth-error" role="alert"
+                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{inviteErr}</div>
+            )}
+            <button type="submit" className="btn primary" disabled={inviteBusy}
+                    style={{justifyContent: 'center', height: 34, opacity: inviteBusy ? 0.7 : 1}}>
+              {inviteBusy ? t('auth.submitting') : t('auth.invite.join')}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pl-auth-wrap">
