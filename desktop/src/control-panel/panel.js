@@ -422,11 +422,21 @@ async function init() {
   let _qrT;
   const _showQr = async () => {
     clearTimeout(_qrT);
+    // 每次打开都重新拉一张二维码:免登录 token 单次、10 分钟有效,缓存会过期 → 始终给最新的。
     if (!_qrLoaded) {
-      try { const r = await sv.lanQr(); if (r && r.ok) { $('qrImg').src = r.dataUrl; _qrLoaded = true; $('qrPop').hidden = false; } } catch (_) {}
+      try {
+        const r = await sv.lanQr();
+        if (r && r.ok) {
+          $('qrImg').src = r.dataUrl;
+          if ($('qrCap')) $('qrCap').textContent = r.magic ? t('overview.qr_cap_login') : t('overview.qr_cap');
+          _qrLoaded = true;
+          $('qrPop').hidden = false;
+        }
+      } catch (_) {}
     } else { $('qrPop').hidden = false; }
   };
-  const _hideQr = () => { _qrT = setTimeout(() => { $('qrPop').hidden = true; }, 180); };
+  // 关闭后清缓存,下次打开重铸 token(避免拿到过期的免登录链接)。
+  const _hideQr = () => { _qrT = setTimeout(() => { $('qrPop').hidden = true; _qrLoaded = false; }, 180); };
   $('qrBtn').addEventListener('mouseenter', _showQr);
   $('qrBtn').addEventListener('mouseleave', _hideQr);
   $('qrPop').addEventListener('mouseenter', () => clearTimeout(_qrT));

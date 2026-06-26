@@ -512,11 +512,28 @@ function wireIpc() {
     const ip = _lanIp();
     const port = supervisor.backendPort || cfg.load().backendPort || 0;
     if (!ip || !port) return { ok: false };
-    const url = `http://${ip}:${port}/`;
+    // 二维码默认编「免登录魔法链接」→ 手机扫码即登录默认账户(token 走回环铸,单次、10 分钟有效)。
+    // 仅当「magicLink 开 + 服务在跑 + 默认账户未设密码」时如此。设了密码 = 用户明确要求局域网设备
+    // 登录,保持裸地址让手机走密码登录,尊重该意图(对齐控制台「设密码后局域网需登录」)。
+    // 与「在浏览器中打开」复用同一 magic-token 端点。铸不出/任何异常 → 退回裸地址,绝不报错。
+    let url = `http://${ip}:${port}/`;
+    let magic = false;
+    if (cfg.load().magicLink !== false && supervisor.state === 'running') {
+      try {
+        const acct = await _netJson('GET', `http://127.0.0.1:${port}/api/local/account`);
+        if (acct && acct.ok && !acct.has_password) {
+          const r = await _netJson('POST', `http://127.0.0.1:${port}/api/local/account/magic-token`);
+          if (r && r.ok && r.token) {
+            url = `http://${ip}:${port}/api/auth/desktop-login?token=${encodeURIComponent(r.token)}&next=${encodeURIComponent('/Platform.html')}`;
+            magic = true;
+          }
+        }
+      } catch (_) { /* 退回裸地址 */ }
+    }
     try {
       const QR = require('qrcode');
       const dataUrl = await QR.toDataURL(url, { margin: 1, width: 240, color: { dark: '#1a1817', light: '#f4efe6' } });
-      return { ok: true, url, dataUrl };
+      return { ok: true, url, dataUrl, magic };
     } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   });
 
