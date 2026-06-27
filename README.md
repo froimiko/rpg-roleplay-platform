@@ -41,7 +41,7 @@ RPG Roleplay drops a long-form novel into a self-hosted, LLM-driven RPG runtime:
 | **SillyTavern V2/V3 import** — character cards (PNG tEXt / JSON) + chat history (JSONL → new save) | ✅ Stable |
 | **Tavern Mode** — SillyTavern-style 1:1 character chat: drop-in cards, agent tools (create/swap character, popup choices, import/export card), per-conversation system-prompt editor, round-trip JSONL | ✅ Stable |
 | **Script & novel editor** (`/md-editor`) — three-pane IDE (file tree · CodeMirror 6 · AI side-panel) over chapters / cards / worldbook / personas with lossless Markdown round-trip; AI writing copilot: inline ghost-text continuation, per-hunk diff accept/reject, persistent Problems panel, delegated BYOK sub-models | ✅ Stable |
-| **Native iOS / iPadOS client** (SwiftUI, bring-your-own-server) — mirrors the web game console; QR scan-login, invite-link join, register / OTP / forgot-password | 🟡 Beta |
+| **Native iOS / iPadOS client** — ⚠️ *closed-source companion app, **not** in this repo*; a proprietary SwiftUI client (bring-your-own-server) that connects to this open-source server over its public API. Mirrors the web game console; QR scan-login, invite-link join, register / OTP / forgot-password | 🟡 Beta · proprietary |
 | **Achievements** — declarative catalog, unlock toasts, public profile wall | ✅ Stable |
 | **Image generation** — covers / avatars / in-chat scene art / character + persona portraits, unified provider layer, BYOK | ✅ Stable |
 | **Provider catalog** — 10 providers (Anthropic / OpenAI / Vertex / Google AI Studio / DeepSeek / DashScope / Hunyuan / MiMo / xAI / OpenRouter), BYOK encrypted at-rest (AES-256-GCM HKDF per-user-per-api), live model sniffing | ✅ Stable |
@@ -80,6 +80,8 @@ Don't want to touch a terminal? Download the desktop app — it bundles its own 
 - Update channel: pulls from GitHub Releases, falls back to a mirror if GitHub is slow
 
 ### Native iOS / iPadOS app
+
+> **⚠️ Closed-source companion — NOT part of this open-source repository.** The iOS / iPadOS app is a **proprietary, closed-source** client distributed through the App Store / TestFlight. It is a thin client that connects to the open-source server in this repo over the public API. The server, web frontend, and desktop wrapper here are AGPL-licensed open source; the native mobile app is **not**, and its source is not published here. The AGPL license in this repo covers the server/web/desktop code only.
 
 A SwiftUI companion client (bring-your-own-server) that mirrors the web game console. Point it at the official cloud or your own self-hosted server; sign in by typing your credentials or by **scanning a QR code** from the desktop app — either a passwordless login QR for your own account, or an invite link to register on a self-hosted LAN instance. Currently in private beta.
 

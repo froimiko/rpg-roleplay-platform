@@ -41,7 +41,7 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 | **SillyTavern V2/V3 导入** — 角色卡(PNG tEXt / JSON) + 聊天记录(JSONL → 新存档) | ✅ 稳定 |
 | **酒馆模式** — SillyTavern 风 1:1 角色对话:拖卡即用、agent 工具(建/换角色、弹出选择、导入/导出卡)、本对话系统提示编辑、JSONL 往返 | ✅ 稳定 |
 | **剧本/小说编辑器**(`/md-editor`)— 三栏 IDE(文件树 · CodeMirror 6 · AI 侧栏)编辑章节 / 角色卡 / 世界书 / 人设,Markdown 无损往返;AI 写作搭档:正文内联 ghost-text 续写、逐块 diff 接受/拒绝、持久化 Problems 面板、可委派 BYOK 子模型 | ✅ 稳定 |
-| **原生 iOS / iPadOS 客户端**(SwiftUI,自带服务器地址)— 镜像网页游戏台;扫码登录、邀请链接加入、注册 / 验证码 / 找回密码 | 🟡 Beta |
+| **原生 iOS / iPadOS 客户端** — ⚠️ *闭源配套 App,**不在本仓库***;一个专有(闭源)SwiftUI 客户端(自带服务器地址),通过公开 API 连接本仓库的开源服务器。镜像网页游戏台;扫码登录、邀请链接加入、注册 / 验证码 / 找回密码 | 🟡 Beta · 闭源 |
 | **成就系统** — 声明式目录、解锁 toast、公开主页墙 | ✅ 稳定 |
 | **图像生成** — 封面 / 头像 / 聊天场景图 / 角色 + 人设立绘,统一模型层,BYOK | ✅ 稳定 |
 | **Provider 目录** — 10 家(Anthropic / OpenAI / Vertex / Google AI Studio / DeepSeek / DashScope / Hunyuan / MiMo / xAI / OpenRouter), BYOK 加密存储(AES-256-GCM HKDF per-user-per-api), 实时模型嗅探 | ✅ 稳定 |
@@ -80,6 +80,8 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 - 更新渠道:优先 GitHub Releases,GitHub 慢时自动回退镜像
 
 ### 原生 iOS / iPadOS 客户端
+
+> **⚠️ 闭源配套客户端 —— 不属于本开源仓库。** iOS / iPadOS App 是通过 App Store / TestFlight 分发的**专有、闭源**客户端,只是一个通过公开 API 连接本仓库开源服务器的瘦客户端。本仓库里的服务器、网页前端、桌面端是 AGPL 开源;原生移动 App **不是**,其源码不在此公开。本仓库的 AGPL 许可只覆盖服务器/网页/桌面端代码。
 
 一个 SwiftUI 配套客户端(自带服务器地址),镜像网页游戏台。可指向官方云端,也可指向你自部署的服务器;登录方式:手输账号密码,或**扫桌面端二维码** —— 扫自己的免密码登录码直接进号,或扫邀请链接在自部署局域网实例上注册。目前内测中。
 
