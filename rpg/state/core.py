@@ -990,8 +990,33 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
 
     def remove_memory(self, bucket: str, index: int):
         items = self.data["memory"].get(bucket, [])
-        if 0 <= index < len(items):
-            items.pop(index)
+        if not (0 <= index < len(items)):
+            return
+        raw = items[index]
+        removed_text = _clean_item(raw if isinstance(raw, str) else str(raw))
+        items.pop(index)
+        # 假删除根因修复：add_memory 对 legacy bucket 做了 dual-write 到结构化
+        # memory.items（legacy_bucket=bucket），而 context_engine 注入 GM 上下文
+        # 只读 memory.items（layers._fact_groups_layer，且只取 status==active）。
+        # 若删除仅 pop legacy bucket、不清 items，被删条目仍以 status=active 留在
+        # items → 下回合注入 GM 上下文 → GM 复述 → 经 apply_ops 又写回 bucket，
+        # 表现为「玩家删了笔记、点推进剧情又自动加回来」（且依赖 GM 是否复述而时
+        # 有时无）。这里把 items 中 legacy_bucket 与文本都匹配的首个 active 条目一并
+        # 硬删，让两套表示在删除时严格一致（根因修复，而非在注入侧打补丁）。
+        if not removed_text:
+            return
+        structured = self.data.get("memory", {}).get("items")
+        if not isinstance(structured, list):
+            return
+        for i, it in enumerate(structured):
+            if (
+                isinstance(it, dict)
+                and it.get("legacy_bucket") == bucket
+                and (it.get("status") or "active") == "active"
+                and _clean_item(str(it.get("text", ""))) == removed_text
+            ):
+                structured.pop(i)
+                break
 
     # task 75：hypothesis 独立 namespace。codex §1 强调"推测不能混进事实"——
     # 这里给 hypothesis 提供专门的写/查/确认/拒绝 API，让 context_engine
