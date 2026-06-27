@@ -46,6 +46,15 @@ _MAX_EMBED_BATCH_RETRIES = 5
 # Vertex 中文 ~1 char/0.5 token,2400 char ≈ 1200 token;30 × 1200 = 36000 仍超。
 # 改成 1200 char/chunk ≈ 600 token;30 × 600 = 18000 安全。
 PER_CHUNK_CHAR_LIMIT = 1200
+# 嵌入请求超时按「本批条数」自适应:本地/自部署慢模型每条 embedding 可能 2-3s(群反馈 abci
+# 实测 2.5s/条),一批 30/64 条就要 75-160s,**原硬编码 60s 必超时** → 模型返 200 但平台已放弃 →
+# 向量索引永远卡在 0(实测现象:模型日志收到几条请求后「半天才增加一条」)。按条数 × 每条预算
+# (取 8s,覆盖到 CPU 慢模型)放大,下限 60s 不变(单条 query 仍快速失败,GM 召回热路径不受拖)。
+_EMBED_SECS_PER_TEXT = 8.0
+
+
+def _embed_req_timeout(n_texts: int) -> float:
+    return max(60.0, float(n_texts) * _EMBED_SECS_PER_TEXT)
 # 进程内 cache,避免 ChatPipeline 每次 _embed_query 都重新 import vertex SDK
 _VERTEX_CLIENT_CACHE: dict[str, Any] = {}
 _EMBED_QUEUE_RUNNING: dict[int, bool] = {}  # script_id → 是否在跑(进程内降级标志,多 worker 各自独立)
@@ -345,7 +354,7 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
             },
             method="POST",
         )
-        with safe_urlopen(req, timeout=60) as resp:
+        with safe_urlopen(req, timeout=_embed_req_timeout(len(texts))) as resp:
             data = _json.loads(resp.read())
         items = sorted(data["data"], key=lambda x: x["index"])
         return [item["embedding"] for item in items]

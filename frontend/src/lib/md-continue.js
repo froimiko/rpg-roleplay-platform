@@ -168,10 +168,18 @@ export async function runContinue(view, opts = {}) {
 
     const p = pendingState(view);
     if (!p) { opts.onState?.('cancel'); return; }
-    if (errMsg && !got) {
-      rejectPending(view);   // 没产出任何内容 + 报错 → 撤回待定区
-      opts.onState?.('error', errMsg);
-      try { window.__apiToast?.('AI 续写失败', { kind: 'danger', detail: errMsg }); } catch (_) {}
+    if (!got) {
+      // SSE 正常结束却一个 token 都没产出(模型返空/拒答/上下文不适合补全),或带 error —— 别留个
+      // 空的「续写完成」让用户以为写了却「啥也没看到」(群反馈 耀月余辉)。撤回空待定区 + 明确提示。
+      rejectPending(view);
+      opts.onState?.('error', errMsg || 'empty');
+      try {
+        window.__apiToast?.(
+          errMsg ? 'AI 续写失败' : 'AI 没有返回续写内容',
+          { kind: errMsg ? 'danger' : 'warn',
+            detail: errMsg || '该模型对当前上下文没有给出补全。试试:把光标放进正文段落里、先选中一段再「改写」、或在右栏切换一个模型重试。' },
+        );
+      } catch (_) {}
       return;
     }
     // 完成:留高亮 + 提示条,等用户 Tab 接受 / Esc 放弃。

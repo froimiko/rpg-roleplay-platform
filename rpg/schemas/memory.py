@@ -22,6 +22,12 @@ class MemoryRemoveRequest(_BaseRequest):
     index: int | None = None
 
 
+class MemoryUpdateRequest(_BaseRequest):
+    bucket: str | None = "notes"
+    index: int | None = None
+    text: Annotated[str, Field(max_length=2000)] | None = ""
+
+
 class MemorySettings(BaseModel):
     """用户级记忆系统配置（存于 settings 表，key 前缀 memory.*）。
 

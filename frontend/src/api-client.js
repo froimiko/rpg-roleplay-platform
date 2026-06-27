@@ -984,6 +984,7 @@
       memoryMode: (mode) => POST(`${API_PREFIX}/memory/mode`, { mode }),
       memoryAdd: (body) => POST(`${API_PREFIX}/memory/add`, body),
       memoryRemove: (body) => POST(`${API_PREFIX}/memory/remove`, body),
+      memoryUpdate: (body) => POST(`${API_PREFIX}/memory/update`, body),
       permissions: (body) => POST(`${API_PREFIX}/permissions`, body),
       pendingWrite: (body) => POST(`${API_PREFIX}/permissions/pending-write`, body),
       clearQuestions: (body) => POST(`${API_PREFIX}/questions/clear`, body || {}),

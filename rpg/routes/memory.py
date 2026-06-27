@@ -14,7 +14,12 @@ from fastapi.responses import JSONResponse
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, StateResponse
-from schemas.memory import MemoryAddRequest, MemoryModeRequest, MemoryRemoveRequest
+from schemas.memory import (
+    MemoryAddRequest,
+    MemoryModeRequest,
+    MemoryRemoveRequest,
+    MemoryUpdateRequest,
+)
 
 router = APIRouter()
 
@@ -97,6 +102,36 @@ async def api_memory_add(
     )
     if not result.ok:
         return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+    state.save()
+    _persist_runtime_checkpoint(state, api_user)
+    return JSONResponse({"ok": True, "state": _payload(api_user)})
+
+
+@router.post("/api/memory/update", response_model=StateResponse, responses=COMMON_ERROR_RESPONSES)
+async def api_memory_update(
+    body: MemoryUpdateRequest,
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> JSONResponse:
+    """就地编辑一条玩家记忆/笔记(原来只能删了重加 —— 群反馈 行者无疆「玩家日记直接编辑」)。
+    只动玩家可手编的桶(notes/pinned/facts/resources/abilities),按 index 替换该条文本。"""
+    from app import _ensure_loaded, _payload, _persist_runtime_checkpoint
+    body_dict = body.model_dump(exclude_none=True)
+    bucket = body_dict.get("bucket", "notes")
+    index = body_dict.get("index")
+    text = (body_dict.get("text") or "").strip()
+    if index is None or not isinstance(index, int) or index < 0:
+        return JSONResponse({"ok": False, "error": "index 必须是非负整数"}, status_code=400)
+    if not text:
+        return JSONResponse({"ok": False, "error": "内容不能为空"}, status_code=400)
+    if bucket not in {"notes", "pinned", "facts", "resources", "abilities"}:
+        return JSONResponse({"ok": False, "error": "该记忆桶不支持编辑"}, status_code=400)
+    state = _ensure_loaded(api_user)
+    items = state.data.setdefault("memory", {}).setdefault(bucket, [])
+    if index >= len(items):
+        return JSONResponse({"ok": False, "error": "条目不存在(可能已被修改,请刷新)"}, status_code=400)
+    if not isinstance(items[index], str):
+        return JSONResponse({"ok": False, "error": "该条目不是可编辑的文本"}, status_code=400)
+    items[index] = text
     state.save()
     _persist_runtime_checkpoint(state, api_user)
     return JSONResponse({"ok": True, "state": _payload(api_user)})

@@ -558,6 +558,16 @@ function PanelMemory({ state, density }) {
           {(m.notes || []).map((item, i) => (
             <li key={i} style={{display: "flex", alignItems: "center", gap: 6}}>
               <span style={{flex: 1}}>{item}</span>
+              <button className="iconbtn" data-tip={t('game.memory.edit_note_tip', { defaultValue: '编辑这条' })}
+                onClick={async () => {
+                  // 就地编辑(原来只能删了重加 — 群反馈 行者无疆):预填当前文本,改完直接覆盖该条。
+                  const txt = await window.__prompt({ title: t('game.memory.edit_note_prompt', { defaultValue: '编辑笔记' }), default: item });
+                  if (txt == null || !txt.trim() || txt === item) return;
+                  try { await window.api.game.memoryUpdate({ bucket: "notes", index: i, text: txt }); try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {} window.__apiToast?.(t('game.memory.saved_ok', { defaultValue: '已保存' }), { kind: "ok" }); }
+                  catch (e) { window.__apiToast?.(t('game.memory.action_failed'), { kind: "danger", detail: e?.message }); }
+                }}>
+                <Icon name="edit" size={12} />
+              </button>
               <button className="iconbtn" data-tip={t('game.memory.delete_note_tip')}
                 onClick={async () => {
                   if (!await window.__confirm({ message: t('game.memory.delete_note_confirm'), danger: true })) return;
