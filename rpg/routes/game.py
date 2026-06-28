@@ -324,7 +324,13 @@ async def api_opening(
             opening = text
             yield _sse("stage", {"phase": "done", "label": ""})
             opening_for_history, opening_options = _extract_trailing_markdown_options(opening)
-            state.data["history"].append({"role": "assistant", "content": opening_for_history})
+            # 剥掉 ops JSON 围栏 / 工具元叙述 / 泄漏脚手架,得到给玩家看 + 落历史的干净正文。
+            # 复用 chat 路径同一套 stripper(chat_pipeline 落库前也这么洗);结构化解析仍用含 ops
+            # 的 opening_for_history(见下方 apply_structured_updates)。根因:开场原先直接存原文,
+            # ```json ops 块漏给玩家(基准测出多档开场命中 leak)。
+            from state import strip_json_state_ops, strip_leaked_scaffold, strip_meta_tool_preamble
+            opening_visible = strip_leaked_scaffold(strip_meta_tool_preamble(strip_json_state_ops(opening_for_history)))
+            state.data["history"].append({"role": "assistant", "content": opening_visible})
             # 让开场也走结构化解析,把【询问玩家】+JSON ops 解析进 pending_questions / state
             before_questions = len(((state.data.get("permissions") or {}).get("pending_questions") or []))
             try:
@@ -341,7 +347,7 @@ async def api_opening(
                 if api_user and persist_user_id and active_save_id:
                     platform_branches.record_runtime_turn(
                         "",
-                        opening_for_history,
+                        opening_visible,
                         user_id=api_user["id"],
                         state_data=state.data,
                     )
@@ -354,7 +360,7 @@ async def api_opening(
                             active_save_id,
                             state.data,
                             "",
-                            opening_for_history,
+                            opening_visible,
                         )
                     except Exception:
                         pass
