@@ -54,6 +54,27 @@ async def api_save_export(save_id: int, user=Depends(require_user)):
     )
 
 
+@router.get("/api/saves/{save_id}/export/txt")
+async def api_save_export_txt(save_id: int, user=Depends(require_user)):
+    """下载存档为人类可读 .txt(游戏 / 酒馆通用,二者皆 game_saves)——群反馈「想当小说给别人看」。
+
+    剥掉 ops JSON / 工具脚手架,玩家输入 + GM 正文交替成文。媒体类型 text/plain + attachment。
+    """
+    from .. import save_io
+    try:
+        filename, text = save_io.export_transcript_txt(user["id"], save_id)
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+    ascii_fallback = filename.encode("ascii", "ignore").decode("ascii") or f"save-{save_id}.txt"
+    quoted = _quote(filename, safe="")
+    cd = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quoted}"
+    return Response(
+        content=text.encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": cd, "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.get("/api/saves/{save_id}/export/estimate")
 async def api_save_export_estimate(save_id: int, user=Depends(require_user)):
     """即时算各档自包含导出包大小(前端导出弹窗按所选存档实时显示,不静态预估)。"""

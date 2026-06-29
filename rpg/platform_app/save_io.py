@@ -116,6 +116,87 @@ def export_save(user_id: int, save_id: int) -> dict[str, Any]:
     }
 
 
+def _clean_gm_text(text: str) -> str:
+    """剥掉给玩家不该看的 ops JSON / 工具脚手架 → 人类可读正文(同开场清洗三件套)。"""
+    from state.json_ops import (
+        strip_json_state_ops,
+        strip_leaked_scaffold,
+        strip_meta_tool_preamble,
+    )
+    return strip_leaked_scaffold(strip_meta_tool_preamble(strip_json_state_ops(text or ""))).strip()
+
+
+def _clean_player_text(text: str) -> str:
+    """玩家输入:剥 ops + 去掉开头的 slash 指令前缀(/retry /set 等),纯指令则返回空。"""
+    import re
+    s = _clean_gm_text(text)
+    s = re.sub(r"^/[A-Za-z_]+\s*", "", s).strip()
+    return s
+
+
+def export_transcript_txt(user_id: int, save_id: int) -> tuple[str, str]:
+    """把存档(游戏 / 酒馆都行,二者皆 game_saves 行)整理成人类可读 .txt——当小说分享用,
+    不含 ops / 代码。返回 (filename, text)。
+
+    历史来源 = 活跃 commit 的 state_snapshot blob 的 history(分支隔离,与前端所见一致;
+    所有存档的 commit 都写了 blob,见 record_runtime_turn);blob 缺则回退 messages 表。
+    """
+    import re
+    import time
+    init_db()
+    with connect() as db:
+        if not owns_save(db, save_id, user_id):
+            raise ValueError("无权访问该存档")
+        save = db.execute("select * from game_saves where id = %s", (save_id,)).fetchone()
+        if not save:
+            raise ValueError("存档不存在")
+        active_cid = save.get("active_commit_id") or save.get("active_branch_node_id")
+        history: list[Any] = []
+        snap: dict[str, Any] = {}
+        if active_cid:
+            commit = db.execute(
+                "select state_snapshot from branch_commits where id = %s and save_id = %s",
+                (active_cid, save_id),
+            ).fetchone()
+            snap = (commit or {}).get("state_snapshot") or {}
+            h = snap.get("history")
+            if isinstance(h, list):
+                history = h
+        if not history:
+            sids = [int(r["id"]) for r in db.execute(
+                "select id from game_sessions where save_id = %s", (save_id,)).fetchall()]
+            if sids:
+                rows = db.execute(
+                    "select role, content from messages where session_id = ANY(%s::bigint[]) "
+                    "and role in ('user','assistant') order by id",
+                    (sids,),
+                ).fetchall()
+                history = [{"role": r["role"], "content": r["content"]} for r in rows]
+
+    title = str(save.get("title") or save.get("name") or f"存档 {save_id}")
+    player_name = str(((snap.get("player") or {}).get("name")) or "").strip() or "你"
+
+    blocks: list[str] = []
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        role = str(entry.get("role") or "")
+        if role == "user":
+            txt = _clean_player_text(entry.get("content") or "")
+            if txt:
+                blocks.append(f"{player_name}：{txt}")
+        elif role == "assistant":
+            txt = _clean_gm_text(entry.get("content") or "")
+            if txt:
+                blocks.append(txt)
+
+    header = [f"《{title}》", time.strftime("导出于 %Y-%m-%d %H:%M", time.localtime()), "", "─" * 24, ""]
+    text = "\n".join(header) + "\n\n".join(blocks).rstrip() + "\n"
+
+    safe_title = re.sub(r"[^\w一-鿿 -]", "_", title).strip()[:48] or f"save-{save_id}"
+    return f"{safe_title}.txt", text
+
+
 def _strip_id_and_save_id(row: dict[str, Any], extra_strip: tuple[str, ...] = ()) -> dict[str, Any]:
     """剥离 id / save_id / created_at — 由数据库重新分配。"""
     out = dict(row)

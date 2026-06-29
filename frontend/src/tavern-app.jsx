@@ -226,7 +226,7 @@ function TavernSidebar({
 }
 
 /* ── 顶栏:persona ⇄ character 两枚 chip + 操作 ─────────────────────── */
-function TavernHeader({ chat, character, persona, onOpenDrawer, onExport, onOpenNav, railCollapsed, onExpandRail }) {
+function TavernHeader({ chat, character, persona, onOpenDrawer, onExport, onExportTxt, onOpenNav, railCollapsed, onExpandRail }) {
   const { t } = useTranslation();
   const charName = (character && character.name) || (chat && chat.character_name) || '';
   return (
@@ -248,6 +248,11 @@ function TavernHeader({ chat, character, persona, onOpenDrawer, onExport, onOpen
         <span className="tv-title tv-title-empty">{t('tavern_app.sidebar.brand')}</span>
       )}
       <div className="tv-header-actions">
+        {chat && onExportTxt && (
+          <a className="iconbtn" href={onExportTxt} download data-tip={t('tavern_app.header.export_txt')} aria-label={t('tavern_app.header.export_txt')}>
+            <Icon name="book" size={15} />
+          </a>
+        )}
         {chat && onExport && (
           <a className="iconbtn" href={onExport} target="_blank" rel="noopener" data-tip={t('tavern_app.header.export_jsonl')} aria-label={t('tavern_app.header.export_jsonl')}>
             <Icon name="download" size={15} />
@@ -1048,6 +1053,8 @@ export default function TavernApp() {
   const personaName = (persona && persona.name) || t('tavern_app.persona.you');
   const personaAvatar = (persona && persona.avatar_path) || null;
   const exportUrl = activeId != null ? window.api.tavern.exportJsonl(activeId) : null;
+  // 酒馆对话即 game_saves 行 → 复用 /api/saves/{id}/export/txt 出人类可读 .txt(当小说分享)
+  const exportTxtUrl = activeId != null ? `${window.__API_BASE || ''}/api/saves/${activeId}/export/txt` : null;
 
   return (
     <div className="gc-shell tavern-chat" style={{ '--gc-rail-w': _railResize.size + 'px' }}>
@@ -1071,6 +1078,7 @@ export default function TavernApp() {
           chat={activeChat} character={character} persona={persona}
           onOpenDrawer={() => setDrawerOpen(true)}
           onExport={exportUrl}
+          onExportTxt={exportTxtUrl}
           onOpenNav={() => setMobileNav(true)}
           railCollapsed={railCollapsed}
           onExpandRail={() => setRailCollapsed(false)}

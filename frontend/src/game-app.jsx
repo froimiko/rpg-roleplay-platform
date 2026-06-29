@@ -1794,6 +1794,15 @@ function TopBar({ state, saveUpdatedAt, onOpenTweaks, onOpenSearch, onOpenHistor
       <div className="gc-topbar-right">
         <button className="iconbtn" data-tip={t('game.app.topbar.history_tip')} data-tip-pos="below" onClick={onOpenHistory}><Icon name="history" size={14} /></button>
         <button className="iconbtn" data-tip={t('game.app.topbar.search_tip')} data-tip-pos="below" onClick={onOpenSearch}><Icon name="search" size={14} /></button>
+        {/* 导出可读 .txt(当小说分享用)— 链接走 cookie 鉴权,Content-Disposition: attachment 直接下载 */}
+        {state?._raw?.save_id ? (
+          <a className="iconbtn" download
+             href={`${window.__API_BASE || ''}/api/saves/${state._raw.save_id}/export/txt`}
+             data-tip={t('game.app.topbar.export_txt_tip')} data-tip-pos="below"
+             aria-label={t('game.app.topbar.export_txt_tip')}>
+            <Icon name="book" size={14} />
+          </a>
+        ) : null}
         <button className="iconbtn" data-tip={t('game.app.topbar.settings_tip')} data-tip-pos="below" onClick={onOpenSettings}><Icon name="settings" size={14} /></button>
         {/* 反馈入口 — 玩家遇 bug 时不用切回 Platform tab,直接报。
             runtime-telemetry 已装钩子,提交时自动附带最近 20 errors + 10 失败

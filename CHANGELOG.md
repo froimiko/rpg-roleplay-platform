@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-06-29
+
+### Added
+- **导出对话为人类可读 .txt(当小说分享)**(群反馈,白玖):游戏台顶栏与酒馆头部各加一个「导出 TXT」按钮(book 图标),把整段对话整理成不含 ops/代码的可读文本下载。后端 `GET /api/saves/{id}/export/txt`(游戏 / 酒馆通用,二者皆 game_saves 行)读活跃 commit 的 blob history(分支隔离,与所见一致),逐条剥掉 ops JSON / 工具脚手架(复用开场清洗三件套)+ 去玩家输入的 slash 指令前缀,玩家发言(标玩家名)与 GM 正文交替成文,UTF-8 attachment 下载。
+
 ## [1.30.1] - 2026-06-29
 
 ### Fixed

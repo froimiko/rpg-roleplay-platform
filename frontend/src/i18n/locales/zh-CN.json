@@ -3459,6 +3459,7 @@
         "history_tip": "历史回顾",
         "search_tip": "搜索本档",
         "settings_tip": "游戏内设置",
+        "export_txt_tip": "导出 TXT(可读·当小说分享)",
         "feedback_tip": "提交反馈",
         "expand_assistant": "展开控制台助手",
         "expand_panel": "展开右侧面板"
@@ -4260,6 +4261,7 @@
       "expand_rail": "展开列表",
       "view_edit_char": "查看 / 编辑角色 · 我的角色",
       "export_jsonl": "导出 JSONL",
+      "export_txt": "导出 TXT(可读·当小说)",
       "char_persona": "角色卡 / persona"
     },
     "tool_block": {

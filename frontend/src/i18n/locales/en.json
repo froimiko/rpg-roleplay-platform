@@ -3368,6 +3368,7 @@
         "history_tip": "History",
         "search_tip": "Search this save",
         "settings_tip": "In-game settings",
+        "export_txt_tip": "Export as TXT (readable, share as a story)",
         "feedback_tip": "Send feedback",
         "expand_assistant": "Expand console assistant",
         "expand_panel": "Expand right panel"
@@ -4260,6 +4261,7 @@
       "expand_rail": "Expand sidebar",
       "view_edit_char": "View / edit character · persona",
       "export_jsonl": "Export JSONL",
+      "export_txt": "Export TXT (readable, as a story)",
       "char_persona": "Character card / persona"
     },
     "tool_block": {
