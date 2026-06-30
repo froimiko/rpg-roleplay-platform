@@ -62,6 +62,8 @@ export function ModelEffortPicker({
     try {
       await settings.selectModel(api_id, model_id, saveId);
       setSelected({ api_id, model_id });
+      // Sync console_assistant_model_override so FamiliarSanctum follows this choice
+      prefs.set({ console_assistant_model_override: { api_id, model: model_id } }).catch(() => {});
       onPicked?.(label);
     } catch (e) {
       Alert.alert("切换失败", e instanceof ApiError ? e.message : "请重试");

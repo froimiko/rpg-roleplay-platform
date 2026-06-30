@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { tavern, game, cards } from "@/api";
+import { tavern, game, cards, NpcCardRef } from "@/api";
 import { ApiError } from "@/api/http";
 import { EmberButton, RuneDivider } from "@/components/ui";
 import { theme, palette } from "@/theme/theme";
@@ -42,6 +42,7 @@ export function CharacterSheet({
   const [personaName, setPersonaName] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [immersive, setImmersive] = useState(false);
+  const [npcCards, setNpcCards] = useState<NpcCardRef[]>([]);
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [myPersonas, setMyPersonas] = useState<any[]>([]);
   const [boundPersonaId, setBoundPersonaId] = useState<number | null>(null);
@@ -65,6 +66,8 @@ export function CharacterSheet({
         setBoundPersonaId(tav.persona_card_id ?? persona.id ?? null);
         setSystemPrompt(tav.system_prompt || "");
         setImmersive(!!tav.immersive);
+        const npcRaw = state?.last_context?.npc_cards;
+        setNpcCards(Array.isArray(npcRaw) ? npcRaw : []);
       } catch {
         /* keep blanks */
       } finally {
@@ -134,7 +137,14 @@ export function CharacterSheet({
           <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
             {tab === "character" ? (
               <View style={{ gap: theme.space(3) }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: theme.space(2) }}>
                 <Text style={styles.cardName}>{characterName || "未命名角色"}</Text>
+                {npcCards.some((n) => n.name && characterName && (n.name === characterName || characterName.includes(n.name) || n.name.includes(characterName))) ? (
+                  <View style={styles.npcBadge}>
+                    <Text style={styles.npcBadgeText}>本轮</Text>
+                  </View>
+                ) : null}
+              </View>
                 <RuneDivider />
                 <Text style={styles.cardDesc}>{characterDesc || "这张卡没有提供描述。"}</Text>
                 <View style={styles.immersiveRow}>
@@ -242,6 +252,8 @@ const styles = StyleSheet.create({
   personaCheck: { fontSize: theme.size.md, color: theme.color.accentBright },
   immersiveRow: { flexDirection: "row", alignItems: "center", gap: theme.space(3), marginTop: theme.space(3), paddingTop: theme.space(3), borderTopWidth: 1, borderTopColor: theme.color.surfaceLine },
   immersiveLabel: { fontFamily: theme.font.proseSemi, fontSize: theme.size.base, color: theme.color.text },
+  npcBadge: { paddingHorizontal: theme.space(2), paddingVertical: 2, borderRadius: theme.radius.pill, backgroundColor: theme.color.accentSoft, borderWidth: 1, borderColor: theme.color.accent },
+  npcBadgeText: { fontFamily: theme.font.displaySemi, fontSize: 9, letterSpacing: 1, color: theme.color.accentBright },
   immersiveHint: { fontFamily: theme.font.prose, fontSize: theme.size.sm, color: theme.color.textFaint },
   promptInput: { minHeight: 180, backgroundColor: theme.color.bgInput, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.surfaceLine, padding: theme.space(4), color: theme.color.text, fontFamily: theme.font.mono, fontSize: theme.size.sm, lineHeight: 20, textAlignVertical: "top" },
 });

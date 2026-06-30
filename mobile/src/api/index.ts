@@ -34,6 +34,8 @@ export type ProviderInfo = {
   [k: string]: unknown;
 };
 
+export type NpcCardRef = { name?: string; matched?: boolean; [k: string]: unknown };
+
 export const auth = {
   me: () => http.get<{ ok: boolean; user: User }>(`${V1}/auth/me`),
   login: (username: string, password: string) =>

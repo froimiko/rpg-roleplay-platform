@@ -20,6 +20,7 @@ const TOGGLES: ToggleDef[] = [
   { key: "autosave", label: "自动存档", note: "每回合后自动保存进度，无需手动落子。" },
   { key: "extractor.enabled", label: "提取子代理", note: "对话后台自动抽取角色卡 / 世界书 / 时间线。" },
   { key: "black_swan.enabled", label: "黑天鹅事件", note: "允许引擎在叙事中投下意料之外的转折。" },
+  { key: "gc.keepFailedTurn", label: "保留未响应对话", note: "生成失败/中断时不自动撤回玩家发言，保留对话便于重试。" },
 ];
 
 const LANGS = [
