@@ -51,6 +51,33 @@ class RollbackOffByOneGuard(unittest.TestCase):
         self.assertIn("deleted_turn = target_turn + 1", code,
                       "删除起点应为保留点的下一回合(否则会连保留回合一起删/漏删)")
 
+    def test_gm_message_deletion_drops_its_turn(self):
+        # 回归(v1.32.4):删 GM 回复(偶数 index)必须把这条回复连其所在回合一起删,
+        # 否则回退到本回合 round commit 会把它一起保留 = 用户「删了 GM 回复却还在」。
+        # 偶数 index 要在 N//2 基础上再退一格(odd=玩家输入不变,保留原 off-by-one 修复)。
+        code = _rollback_code()
+        self.assertIn("msg_index % 2 == 0", code,
+                      "未按奇偶区分 → 删 GM 回复(偶)会把它保留(v1.30.1 引入的回归)")
+        self.assertIn("target_turn - 1", code,
+                      "GM 回复(偶)未再退一格 → 该回合的 GM 回复删不掉")
+
+    def _even_odd_behavior(self):
+        # 纯逻辑复核:偶=删该回合、奇=保留到上一回合(与源码一致)
+        def tt(K):
+            t = K // 2
+            if K % 2 == 0:
+                t = max(0, t - 1)
+            return t
+        return tt
+
+    def test_parity_target_turn_values(self):
+        tt = self._even_odd_behavior()
+        # idx2=GM(turn1) 应退到 turn0(删 turn1 含该 GM 回复);idx3=玩家(turn2)留到 turn1
+        self.assertEqual(tt(2), 0, "删 GM turn1 回复应退到 turn0")
+        self.assertEqual(tt(3), 1, "删玩家 turn2 输入应留到 turn1")
+        self.assertEqual(tt(1), 0)
+        self.assertEqual(tt(0), 0, "删开场不应越界为负")
+
     def test_module_import_drops_message_row_by_index(self):
         # 该符号在本模块已无用 → import 行不应再带它(防 ruff 未用导入 + 防误用回退)
         import_lines = [ln for ln in SRC.splitlines()

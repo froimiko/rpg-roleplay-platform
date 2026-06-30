@@ -109,12 +109,19 @@ def rollback_to_message(
         current_commit_id = save.get("active_commit_id") or save.get("active_branch_node_id")
 
         # 「删除消息 N 及之后」→ 软回滚到 frontend history 约定下应保留的 round commit。
-        # 前端 history index 约定(与 resolve_commit_id_by_message=fork 同口径):history[0]=GM 开场白
-        # (不落 messages 表),其后 [玩家,GM] 交替 → index N 落在 round 边界 turn = N//2:保留到 turn
-        # N//2、删除 turn N//2+1 起。**绝不**用 message_row_by_index(读 flat messages 表:含开场空
-        # user 行 + 非分支隔离 → 与 blob history 错位 ≥1 位),那正是群反馈「删除会多回退一个回合、要去
-        # 分支树手动切回来」的根因——fork 路径早改成 N//2,delete 路径漏同步(v1.28.1 分支隔离后错位更大)。
+        # 前端 history index 约定:history[0]=GM 开场白(不落 messages 表),其后 [玩家,GM] 交替。
+        # **绝不**用 message_row_by_index(读 flat messages 表:含开场空 user 行 + 非分支隔离 → 与 blob
+        # history 错位 ≥1 位),那正是群反馈「删除会多回退一个回合」的根因(fork 早改 N//2、delete 漏同步)。
+        #
+        # 奇偶要分开(回归修复 v1.32.4):被删消息要【连它一起删】,故保留点 = 它【所在回合的前一个边界】。
+        #  · N 奇 = 玩家输入(turn (N+1)//2 的输入)→ 保留到 turn N//2(=该回合之前),删该回合输入及之后。
+        #    对奇数 N,N//2 == (N-1)//2,与 fork 一致。
+        #  · N 偶 = GM 回复(turn N//2 的回复)→ 若只退到 N//2 会把这条 GM 回复一起【保留】(它就在该 round
+        #    commit 里)= 用户点「删除此 GM 回复」却没删掉(v1.30.1 引入的回归)。故偶数再退一格 N//2-1,
+        #    把这条 GM 回复所在的整回合删掉。开场(N=0)等边界 clamp ≥0(保留开场,删其后)。
         target_turn = msg_index // 2
+        if msg_index % 2 == 0:
+            target_turn = max(0, target_turn - 1)
         deleted_turn = target_turn + 1
         target_message_role = "user" if msg_index % 2 == 1 else "assistant"
 

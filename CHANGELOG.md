@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.32.4] - 2026-06-30
+
+### Fixed
+- **回归:删除 GM 回复(v1.30.1 引入)删不掉它**(自查 8 个修复时发现):v1.30.1 把 rollback 统一成 `target_turn = msg_index//2` 对齐 fork,但对**偶数 index(GM 回复)**而言,N//2 正是该 GM 回复所在回合,回退到该 round commit 会把这条回复一起【保留】→ 用户点「删除此 GM 回复及以后」却发现它还在(只删掉了后续回合)。修:奇偶分开——奇(玩家输入)保持 N//2(原 off-by-one 修复不变);偶(GM 回复)再退一格 `max(0, N//2-1)`,把该回合连同这条 GM 回复一起删。删除弹窗去掉不再成立的「玩家输入保留」字样。守卫测试加偶数/奇数用例。
+
 ## [1.32.3] - 2026-06-30
 
 ### Fixed

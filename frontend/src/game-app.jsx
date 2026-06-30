@@ -614,7 +614,6 @@ function DeleteConfirmModal({ open, text, msgIndex, role, busy, onClose, onConfi
     >
       <div style={{fontSize: 13.5, lineHeight: 1.7, color: "var(--text-quiet)"}}>
         {t('game.app.delete_modal.irreversible')} {isAssistant ? t('game.app.delete_modal.this_gm_reply') : t('game.app.delete_modal.this_message')}<strong style={{color: "var(--danger)"}}>{t('game.app.delete_modal.all_after')}</strong>{t('game.app.delete_modal.discarded')}
-        {isAssistant && <span> {t('game.app.delete_modal.player_input_kept')}</span>}
         <div style={{
           marginTop: 10, padding: "10px 12px",
           background: "var(--bg-deep)", border: "1px solid var(--line-soft)",
