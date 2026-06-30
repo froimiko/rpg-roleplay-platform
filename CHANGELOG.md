@@ -9,6 +9,15 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.32.5] - 2026-06-30
+
+### Fixed
+- **选「出生点」开局仍从序章 / 贴原著正文+对话消失**(群反馈 #62/#63/#66/#67):入场选出生点(从原著第 N 章开局)时,只把章节范围写进 `world.timeline.anchor_chapter_range`,却没灌进进度信号 `worldline.progress_chapter`。后果:`retrieve_context._progress_chapter` 默认 1(reveal 闸锁序章、第 2 章以后角色被藏)、`get_progress_window` 退回 `[1,30]` 兜底 → 待发生锚点窗口 / NPC 抽取 / ongoing 回合贴原著正文全按序章走。修(两处确定性缝,出生点=玩家显式选择的确定性起始章):① `_build_initial_snapshot` 出生点同时写 `worldline.progress_chapter=chapter_min`(`_PRESERVE_SETTINGS_SQL` 已含该键 → 跨回合 sticky;`advance_progress` 仍可 max 前推);② `get_progress_window` 无 occurred 锚点时读 `worldline.progress_chapter` 作下限(优先于易错的 `world.time` 标签匹配)。真库回归 `test_birthpoint_progress.py`(4 passed)。复核确认 #73/#77/#82-84 多为本根因下游、或既有 `_apply_pace_fallback` 已兜底,无需再动 GM 路径。
+
+### Added (internal tooling, 不影响线上运行)
+- **bench 叙事质量度量闭环 — LLM 裁判层**:在确定性 bench 之上补 pairwise 4 维裁判(faithfulness/coherence/identity/spoiler_control)+ anti-position-bias 校准 + 合并报告(`rpg/bench/judge*.py`、`run_judge.py`)。离线逻辑测试 `test_bench_judge.py`(10 passed);真模型端到端标定待 evomap key。
+- 自包含存档 export→import 无损往返回归 `test_save_import_roundtrip.py`(锁住已修的 #78;#64/#71/#78 修复早已在线)。
+
 ## [1.32.4] - 2026-06-30
 
 ### Fixed
