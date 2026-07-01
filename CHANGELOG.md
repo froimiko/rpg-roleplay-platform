@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.32.13] - 2026-07-01
+
+### Fixed
+- **世界书双注入 —— 保留两种激活模型、只删重复**:两条世界书注入路径**不是冗余而是互补** —— A(`retrieve_context`:`priority>=80` 无条件常驻 + query 命中)与 B(`NovelWorldbookProvider`:最近对话关键词激活 + reveal 剧透门控)覆盖不同情况,删任一条都会丢一种覆盖(高优设定的关键词这几轮没提到时删 A 就消失)= 回归。真正的浪费只在**两条都命中的重叠**。修:A 把已注入条目的**唯一 id**(`db_{id}`,非 title —— worldbook 常同名/空 title)挂到 `state` 瞬态属性,B 跳过这些 id;属性缺失时不过滤 = 原行为(无回归)。两模型都保留,只删重复注入。
+
 ## [1.32.12] - 2026-07-01
 
 流水线去 fork · 批次7(收尾全清)。
