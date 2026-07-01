@@ -9,6 +9,17 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.32.12] - 2026-07-01
+
+流水线去 fork · 批次7(收尾全清)。
+
+### Fixed
+- **「当前目标·主线」不更新**(群反馈,行者无疆):`memory.main_quest`(面板顶部醒目)与 `memory.current_objective`(底部灰字)是两个字段,GM 每回合发 `【当前目标】` 只写后者,`main_quest` 只有发 `【主线】` 才更新 → 固化在开局值。改为**从当前 phase 派生** `main_quest`(`retrieve_context` 调 `_resolve_active_phase_range`,锚点系统已知当前阶段)。非破坏:仅当 `main_quest` 为空、或仍是上次自动派生值(=没被玩家 `set_main_quest` / GM `【主线】` 手改)时刷新,保护手写主线。
+- **`_default_judge`(`recorder_unified` 关时走)不产 `progress_motion`**:该路径 pace fallback 也失效(与批次1 修的史官三合一路径同类)。补上 `progress_motion` 产出与解析。
+- **`candidate_actions` 措辞矛盾**:`master.py`「不得原创不在候选里的动作」↔ `rules_text`「不强制」→ 统一为「优先参考、不强制」。
+- **`confidence < 0.5` 提示词与实际不符**:声称主 GM 本轮不出场,但管线早已移除该短路 → 对齐真实行为(主 GM 仍做最合理解读推进)。
+- **`_worldline_layer` 死代码删除 + 权限模式行为说明移植进 `WorldlineProvider`**:provider 化迁移遗漏了这段 → GM 之前只看到「只读模式」标签、不知其写入语义(read_only 下写入全进 pending 应改用询问)。
+
 ## [1.32.11] - 2026-07-01
 
 流水线去 fork · 批次6(真机 e2e 复查 + 审计遗漏补修)。
