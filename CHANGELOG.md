@@ -9,6 +9,17 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.32.8] - 2026-07-01
+
+流水线去 fork · 批次3(确定性 P2 簇)。
+
+### Fixed
+- **acceptance retry 第二稿工具集与首稿不一致**:`narrator_slim` 档首稿用精简 `_gm_tools`,retry 却写死 `unified_tools` → slim 档 retry 触发本该剔除的重型写工具、与史官竞争写入。统一为 `_gm_tools`。
+- **novel RAG 原文的 `【】` 状态标签未中和**:provider 化后漏了旧 fallback 路径的 `_neutralize_state_write_tags` → 485 万字网文里的 `【签到奖励】` 等括号被 GM 复述后被 `apply_structured_updates` 误当状态写入执行。补中和(anchor 段同理)。
+- **酒馆/模组层不在 `MAX_LAYER_CHARS`**:`tavern_character/tavern_card_system/tavern_persona/module_scene/module_encounter` 走默认 1800 → 角色卡/persona 被截断。补 5 个层预算。
+- **RulesProvider 动态层错进 A 级缓存**:layer id 与静态 `rules`(A 级)撞 → 含每回合变的 HP/骰子日志被标 ephemeral 缓存但每回合 miss(零效率)。改独立 id `rules_state` + 显式 `cache_tier="C"`。
+- **进度回退端点整列读-改-写竞态**:workers=2 下与并发 `advance_progress` 竞态吞更新、整列覆盖抹掉其它 worldline 键(进程内 RLock 跨 worker 无效)。改原子 `jsonb_set`(只动 progress_chapter)。
+
 ## [1.32.7] - 2026-07-01
 
 流水线去 fork · 批次2(mode 打通)。
