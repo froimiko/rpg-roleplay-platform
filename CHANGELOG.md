@@ -9,6 +9,14 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.32.15] - 2026-07-01
+
+编辑器 AI 写作副驾审计修复 · 批次B。
+
+### Fixed
+- **编辑器写模式不安全默认**(P2):`_resolve_editor_write_mode` 直接信 `_normalize_permission_mode`,而后者对**任何未识别串**兜底成 `full_access` → DB 里一个坏值(迁移残留/拼写/废弃键)就静默跳过所有写确认。改为只认**显式** `full_access`,未识别/default 一律回最稳 `review`(与空串路径对称)。
+- **确认流 dual-store 不一致**(P2):`_resolve_pending` 只从 Redis 拉对话,Redis TTL(6h)过期/不可达时报「对话不存在」→ 玩家隔几小时回来点确认就失败。补 PG 回落(与 `_get_or_create` 的 Redis||PG 对齐)。
+
 ## [1.32.14] - 2026-07-01
 
 md 编辑器 AI 写作副驾(`console_assistant`)系统性审计后修复 · 批次A(2 个 P1)。
