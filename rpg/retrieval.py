@@ -1009,9 +1009,18 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
             # task 122: 把当前 phase 的 chapter_max 透传给 worldbook 过滤,
             # 防止柏林暗流/中后期专属设定泄漏到火星线早期玩家
             _wb_chmax = (timeline_filter or {}).get("chapter_max") if timeline_filter else None
+            _wb_ids: set = set()
             wb_text = _load_worldbook_for_retrieval(
                 script_id, user_input, top_k=3, current_chapter_max=_wb_chmax,
+                seen_out=_wb_ids,
             )
+            # 把本路径已注入的世界书条目【唯一 id】挂到 state(瞬态属性,不落库),供
+            # NovelWorldbookProvider 跳过重叠;属性缺失时 provider 照旧全注入(无回归)。
+            try:
+                if state is not None:
+                    setattr(state, "_rag_wb_ids", _wb_ids)
+            except Exception:
+                pass
             if wb_text:
                 parts.append("=== 世界设定 (worldbook) ===\n" + wb_text)
         except Exception:
@@ -1054,6 +1063,7 @@ def _load_worldbook_for_retrieval(
     query: str,
     top_k: int = 3,
     current_chapter_max: int | None = None,
+    seen_out: set | None = None,
 ) -> str:
     """通用 worldbook 注入:
     - 高优先级 entries (priority>=80) 永远进 (世界观 / 设定集类)
@@ -1067,7 +1077,7 @@ def _load_worldbook_for_retrieval(
     try:
         with _connect() as db:
             high = db.execute(
-                "select title, content, metadata from worldbook_entries "
+                "select id, title, content, metadata from worldbook_entries "
                 "where script_id=%s and enabled=true and priority>=80 "
                 "order by priority desc, id asc limit 10",
                 (script_id,),
@@ -1080,7 +1090,7 @@ def _load_worldbook_for_retrieval(
             matched = []
             if query and query.strip() and query != "开场":
                 matched = db.execute(
-                    "select title, content, keys, priority, metadata from worldbook_entries "
+                    "select id, title, content, keys, priority, metadata from worldbook_entries "
                     "where script_id=%s and enabled=true and priority<80 "
                     "order by priority desc, id asc limit 40",
                     (script_id,),
@@ -1100,6 +1110,13 @@ def _load_worldbook_for_retrieval(
                     seen_titles.add(r["title"])
                 if len(picks) >= top_k + len(high):
                     break
+        # dedup 用:把本函数选中条目的【唯一 id】记给 caller(非 title —— worldbook 常有同名/空 title,
+        # 见 formatters._active_worldbook 注释),让 NovelWorldbookProvider 跳过重叠、不重复注入同一条。
+        if seen_out is not None:
+            for _r in picks:
+                _rid = _r.get("id")
+                if _rid is not None:
+                    seen_out.add(f"db_{_rid}")
         if not picks:
             return ""
         lines = []

@@ -478,6 +478,13 @@ class NovelWorldbookProvider(ContextProvider):
                 provider_id=self.id, applied=False,
                 warnings=[f"load worldbook failed: {exc}"],
             )
+        # 去重叠(反馈:世界书双注入):retrieve_context(RAG 路径,priority>=80 常驻 + query 命中)
+        # 已注入的条目,本 provider(关键词激活 + reveal 门控)不再重复注入同一条 —— 两种激活模型都
+        # 保留、只删重复内容。按【唯一 id】(db_{id})匹配,非 title(worldbook 常同名/空 title)。
+        # _rag_wb_ids 缺失(A 未跑 / 顺序在前)时不过滤 → 全注入 = 原行为,无回归。
+        _rag_ids = getattr(state, "_rag_wb_ids", None)
+        if _rag_ids:
+            entries = [e for e in entries if str(e.get("id", "")) not in _rag_ids]
         if not entries:
             return ContextContribution.skipped(self.id, "no worldbook entries")
         content = "\n\n".join(e.get("text", "") for e in entries)
