@@ -42,11 +42,11 @@ def test_saves_rewind_uses_atomic_jsonb_set():
 
 def test_acceptance_retry_uses_same_toolset_as_first_pass():
     cp = (REPO / "chat_pipeline.py").read_text(encoding="utf-8")
-    # retry 第二稿工具集必须 = 首稿(_gm_tools),不能写死 unified_tools(slim 档不一致)
-    # 定位 retry 块内的 respond_stream_with_tools 调用
-    idx = cp.find("_retry_state_iter = gm.respond_stream_with_tools")
-    assert idx > 0
-    window = cp[idx:idx + 400]
+    # retry 现抽进 _acceptance_gate 闭包:工具集必须 = 首稿(_gm_tools),不能写死 unified_tools
+    gate = cp.split("def _acceptance_gate", 1)[1].split("# ── W1 容量优化", 1)[0]
+    idx = gate.find("gm.respond_stream_with_tools")
+    assert idx > 0, "retry 的 gm 调用不在 _acceptance_gate 闭包里"
+    window = gate[idx:idx + 400]
     assert "tools=_gm_tools" in window, "retry 仍用 unified_tools → slim 档工具集不一致"
 
 

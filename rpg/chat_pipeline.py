@@ -1306,6 +1306,86 @@ async def run_gm_phase(
 
     ctx.response = response
 
+    # fork 收编:acceptance verify+retry 抽成同步闭包,sync 内联调 / async 用 to_thread 调
+    # (阻塞的 retry GM 调用跑线程里不塞事件循环 → 生产 async 也真跑 retry、又不牺牲容量)。
+    # 全程 try/except 兜底 = 任何失败退回原稿(worst-case == 今日行为)。返回 (response, updates, 待 yield 事件)。
+    def _acceptance_gate(_resp, _upd):
+        _events = []
+        try:
+            _cur_plan = (agent_result or {}).get("curator_plan", {}) or {}
+            _acc = _cur_plan.get("acceptance") or []
+            if not (_acc and (_resp or "").strip()):
+                return _resp, _upd, _events
+            import os as _os2
+            _retry_on = _os2.environ.get("RPG_ACCEPTANCE_RETRY", "1") not in ("0", "false", "False", "")
+            _amode = acceptance_verifier_mode(api_user)
+            _auid = int(api_user.get("id")) if api_user and api_user.get("id") else None
+            unmet = verify_acceptance(_acc, _resp, _upd, mode=_amode, user_id=_auid)
+            retry_used = False
+            if unmet and _retry_on:
+                retry_used = True
+                _events.append(("agent", {"phase": "acceptance_retry",
+                    "message": f"acceptance 有 {len(unmet)} 条未通过,触发 retry once 补写",
+                    "status": "running", "elapsed_ms": 0, "unmet": unmet[:5]}))
+                _retry_msg = ("【系统:本轮 acceptance 自检】上一稿正文没有覆盖到以下验收点:\n"
+                    + "\n".join(f"  - {x}" for x in unmet[:5])
+                    + "\n请在保持原叙事走向不变的前提下,重写本轮回应,确保覆盖每一条验收点。"
+                      "如果某条确实不该满足(玩家行动本就不触发),也要在 JSON op 注明原因。")
+                try:
+                    _parts = []
+                    for _ev in gm.respond_stream_with_tools(
+                            _retry_msg, bundle["prompt"], state,
+                            tools=_gm_tools, max_iterations=max(4, _gm_max_iters() // 2),
+                            max_tokens=_max_tokens, tool_call_router=gm_tool_router,
+                            prompt_segments=bundle.get("prompt_segments"),
+                            dynamic_prefix="\n\n".join(_dynamic_prefix_parts)):
+                        if isinstance(_ev, dict) and _ev.get("type") == "text":
+                            _parts.append(_ev.get("text", ""))
+                    _r2 = "".join(_parts).strip()
+                    if _r2:
+                        import secrets as _sec
+                        from state_write_context import (ChatWriteContext,
+                            clear_context as _clr, set_context as _setc)
+                        _rc = ChatWriteContext(
+                            user_id=int(api_user.get("id")) if api_user else 0,
+                            save_id=ctx.early_active_save_id or 0,
+                            script_id=active_script_id(api_user),
+                            trace_id=f"gm-jsop-retry-{_sec.token_urlsafe(6)}",
+                            origin="llm_chat_json_op")
+                        _tok = _setc(_rc)
+                        try:
+                            _ru2 = state.apply_structured_updates(_r2)
+                        finally:
+                            _clr(_tok)
+                        _resp = _r2
+                        _upd = list(_upd) + ["[acceptance_retry]"] + list(_ru2 or [])
+                        unmet = verify_acceptance(_acc, _resp, _upd, mode=_amode, user_id=_auid)
+                        _events.append(("agent", {"phase": "acceptance_retry",
+                            "message": f"retry 完成 — 第二稿剩余 unmet {len(unmet)} 条",
+                            "status": "done", "elapsed_ms": 0, "unmet_after": unmet[:5]}))
+                except Exception as _re:
+                    log.warning(f"[acceptance] retry once failed: {_re}")
+                    _events.append(("agent", {"phase": "acceptance_retry",
+                        "message": f"retry 跑挂(降级到只记 audit): {_re}",
+                        "status": "warning", "elapsed_ms": 0}))
+            if unmet:
+                from datetime import datetime as _dt
+                audit = state.data.setdefault("permissions", {}).setdefault("audit_log", [])
+                for item in unmet[:5]:
+                    audit.append({"ts": _dt.now().isoformat(timespec="seconds"),
+                        "kind": "acceptance_unmet", "source": "curator:acceptance",
+                        "retry_used": retry_used, "hint": f"未通过验收：{item[:160]}",
+                        "turn": state.data.get("turn", 0)})
+                if len(audit) > 200:
+                    state.data["permissions"]["audit_log"] = audit[-200:]
+                _events.append(("agent", {"phase": "acceptance_check",
+                    "message": (f"本轮 GM 输出有 {len(unmet)} 条 acceptance 未通过"
+                        + ("(retry 后仍存在,已记 audit_log)" if retry_used else "(retry 关闭,已记 audit_log)")),
+                    "status": "warning", "elapsed_ms": 0, "unmet": unmet[:5]}))
+        except Exception as _acc_exc:
+            log.warning(f"[acceptance] gate failed: {_acc_exc}")
+        return _resp, _upd, _events
+
     # ── W1 容量优化: fire-and-forget 模式 ──────────────────────────────────
     # async 模式(默认): GM 流完后立刻入队 Phase 4 任务,不等 LLM 后处理,
     # 直接 return。主 worker async slot 在此释放。容量 25 → ~55 并发回合。
@@ -1430,6 +1510,12 @@ async def run_gm_phase(
                             "message": f"世界线锚点确定性兜底(史官):本回合自动标记 {_rec_marked} 个原著锚点已到达",
                             "status": "done", "elapsed_ms": 0, "marked": _rec_marked,
                         })
+                    # fork 收编:async 也跑 acceptance verify+retry(阻塞的 retry 走 to_thread 不塞事件循环)。
+                    response, ctx._updates, _acc_events = await asyncio.to_thread(
+                        _acceptance_gate, response, ctx._updates)
+                    ctx.response = response
+                    for _ac, _ap in _acc_events:
+                        yield (_ac, _ap)
                     return
             # 关键修复:GM JSON op 确定性写回(async 早退路径也必须 apply,否则 GM 经
             # JSON op 写的 location/time/resources/quest/relationships/选项 全部丢失)。
@@ -1444,6 +1530,12 @@ async def run_gm_phase(
             except Exception as _apply_err:
                 log.warning(f"[chat] async apply_structured_updates 失败,退回 directive_updates: {_apply_err}")
                 ctx._updates = ctx.directive_updates[:]
+            # fork 收编:async 也跑 acceptance verify+retry(在 anchor 兜底之前,用最终稿);retry 走 to_thread。
+            response, ctx._updates, _acc_events = await asyncio.to_thread(
+                _acceptance_gate, response, ctx._updates)
+            ctx.response = response
+            for _ac, _ap in _acc_events:
+                yield (_ac, _ap)
             # 每回合确定性锚点兜底(GM 自调工具 + JSON op 已 apply,已 occurred 不在 pending)。
             _rec_marked = await _run_anchor_reconcile(ctx, api_user, response)
             if _rec_marked:
@@ -1509,128 +1601,11 @@ async def run_gm_phase(
         ctx=ctx,
     )
 
-    # task 81 / 84 / iter#3: acceptance 自动验证 + retry once (硬 gate 化)
-    #
-    # 之前:unmet 只写 audit_log 发个 warning event,GM 违规直接进 history 污染后续。
-    # 现在:unmet 时同步再跑一次 GM (附"上一稿哪几条没满足,请重写"提示),拿第二稿
-    # 重新 apply_structured_updates。最多 retry 1 次(防死循环 + 控成本)。
-    # 客户端已经看到第一稿流式 token,服务端 state 用第二稿 — 设计上接受 UX 略不
-    # 一致,因为 acceptance 是规则严格性的最后一道门,优先级高于 streaming 平滑。
-    # 关:RPG_ACCEPTANCE_RETRY=0
-    import os as _os
-    _retry_enabled = _os.environ.get("RPG_ACCEPTANCE_RETRY", "1") not in ("0", "false", "False", "")
-    try:
-        _curator_plan_for_check = (agent_result or {}).get("curator_plan", {}) or {}
-        _acceptance = _curator_plan_for_check.get("acceptance") or []
-        if _acceptance and response.strip():
-            _acc_mode = acceptance_verifier_mode(api_user)
-            _acc_user_id = int(api_user.get("id")) if api_user and api_user.get("id") else None
-            unmet = verify_acceptance(
-                _acceptance, response, updates,
-                mode=_acc_mode, user_id=_acc_user_id,
-            )
-            retry_used = False
-            if unmet and _retry_enabled:
-                retry_used = True
-                yield ("agent", {
-                    "phase": "acceptance_retry",
-                    "message": f"acceptance 有 {len(unmet)} 条未通过,触发 retry once 补写",
-                    "status": "running", "elapsed_ms": 0,
-                    "unmet": unmet[:5],
-                })
-                # 构造 retry user message — 把 unmet 当成"用户的修订指令"
-                _retry_msg = (
-                    "【系统:本轮 acceptance 自检】上一稿正文没有覆盖到以下验收点:\n"
-                    + "\n".join(f"  - {x}" for x in unmet[:5])
-                    + "\n请在保持原叙事走向不变的前提下,重写本轮回应,确保覆盖每一条验收点。"
-                    "如果某条确实不该满足(玩家行动本就不触发),也要在 JSON op 注明原因。"
-                )
-                try:
-                    _retry_parts: list[str] = []
-                    _retry_state_iter = gm.respond_stream_with_tools(
-                        _retry_msg, bundle["prompt"], state,
-                        # fork 收编:retry 第二稿必须与首稿用【同一工具集】。原写死 unified_tools,
-                        # 而 narrator_slim 档首稿用精简 _gm_tools(约12个KB工具)→ 两稿工具集不一致,
-                        # slim 档 retry 会触发本该剔除的重型写工具、与史官(recorder)竞争写入。
-                        tools=_gm_tools, max_iterations=max(4, _gm_max_iters() // 2), max_tokens=_max_tokens,
-                        tool_call_router=gm_tool_router,
-                        prompt_segments=bundle.get("prompt_segments"),
-                        dynamic_prefix="\n\n".join(_dynamic_prefix_parts),
-                    )
-                    for _ev in _retry_state_iter:
-                        if isinstance(_ev, dict) and _ev.get("type") == "text":
-                            _retry_parts.append(_ev.get("text", ""))
-                    _retry_response = "".join(_retry_parts).strip()
-                    if _retry_response:
-                        # 第二稿覆盖第一稿 — 重新 apply_structured_updates
-                        import secrets as _ctx_secrets
-                        from state_write_context import (
-                            ChatWriteContext,
-                            clear_context as _clear_write_ctx,
-                            set_context as _set_write_ctx,
-                        )
-                        _retry_ctx = ChatWriteContext(
-                            user_id=int(api_user.get("id")) if api_user else 0,
-                            save_id=ctx.early_active_save_id or 0,
-                            script_id=active_script_id(api_user),
-                            trace_id=f"gm-jsop-retry-{_ctx_secrets.token_urlsafe(6)}",
-                            origin="llm_chat_json_op",
-                        )
-                        _retry_token = _set_write_ctx(_retry_ctx)
-                        try:
-                            retry_updates = state.apply_structured_updates(_retry_response)
-                        finally:
-                            _clear_write_ctx(_retry_token)
-                        # 用第二稿替换主 response / updates
-                        response = _retry_response
-                        updates = list(updates) + ["[acceptance_retry]"] + list(retry_updates or [])
-                        ctx.response = response
-                        ctx._updates = updates
-                        # 重新校验
-                        unmet_after = verify_acceptance(
-                            _acceptance, response, updates,
-                            mode=_acc_mode, user_id=_acc_user_id,
-                        )
-                        yield ("agent", {
-                            "phase": "acceptance_retry",
-                            "message": f"retry 完成 — 第二稿剩余 unmet {len(unmet_after)} 条",
-                            "status": "done", "elapsed_ms": 0,
-                            "unmet_after": unmet_after[:5],
-                        })
-                        unmet = unmet_after  # 落到下面 audit_log 的也是第二轮残余
-                except Exception as _retry_err:
-                    log.warning(f"[acceptance] retry once failed: {_retry_err}")
-                    yield ("agent", {
-                        "phase": "acceptance_retry",
-                        "message": f"retry 跑挂(降级到只记 audit): {_retry_err}",
-                        "status": "warning", "elapsed_ms": 0,
-                    })
-            if unmet:
-                from datetime import datetime as _dt
-                audit = state.data.setdefault("permissions", {}).setdefault("audit_log", [])
-                for item in unmet[:5]:
-                    audit.append({
-                        "ts": _dt.now().isoformat(timespec="seconds"),
-                        "kind": "acceptance_unmet",
-                        "source": "curator:acceptance",
-                        "retry_used": retry_used,
-                        "hint": f"未通过验收：{item[:160]}",
-                        "turn": state.data.get("turn", 0),
-                    })
-                if len(audit) > 200:
-                    state.data["permissions"]["audit_log"] = audit[-200:]
-                yield ("agent", {
-                    "phase": "acceptance_check",
-                    "message": (
-                        f"本轮 GM 输出有 {len(unmet)} 条 acceptance 未通过"
-                        + ("(retry 后仍存在,已记 audit_log)" if retry_used else "(retry 关闭,已记 audit_log)")
-                    ),
-                    "status": "warning",
-                    "elapsed_ms": 0,
-                    "unmet": unmet[:5],
-                })
-    except Exception as _acc_exc:
-        log.warning(f"[acceptance] check failed: {_acc_exc}")
+    # sync 路径:走同一个 _acceptance_gate 闭包(与 async 路径同源,消除 sync/async fork ——
+    # 这正是审计里「async(生产默认)下 acceptance retry 失效」的根:两路各写一套、只在 sync 实现)。
+    response, updates, _acc_events = _acceptance_gate(response, updates)
+    for _ac, _ap in _acc_events:
+        yield (_ac, _ap)
 
     # 把 updates 写到 ctx 留给 phase 5
     ctx.response = response
