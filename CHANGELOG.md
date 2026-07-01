@@ -9,6 +9,13 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.32.7] - 2026-07-01
+
+流水线去 fork · 批次2(mode 打通)。
+
+### Fixed
+- **发散局仍被强推「修炼/主线」、日常/亲密场景也被拽回主线**(群反馈 行者无疆;审计 A 根因):引导强度开关 `steering_strength`(rail 贴原著 / guided / free 自由)此前只接到 `steering.py` 一处,curator 造 acceptance、steering 末节点、retrieval 收束段都无视它,一律按 rail 强推 canon → free 局玩家被 railroad。mode 贯穿整条目标管线(fork 收编):① curator(`_curator_task_prompt` 现读 `steering_strength`,与 retrieval 同源)按档生成 acceptance —— free **严禁**凭空造「推进主线/修炼进度」的验收点、主线仅作背景,guided 温和且玩家跑题以其意图为先,rail 维持收束;② `steering.py` 末节点补 free 分支(不注软目标);③ `retrieval.py` 世界线收束段加 `steering_strength != "free"` gate。admin 账户真机 e2e(剧本6《我蕾穆丽娜不爱你》):rail 注入收束段 / free 已 gate 掉。
+
 ## [1.32.6] - 2026-07-01
 
 GM 每回合流水线系统性审计(43 原始发现 → 30 对抗验证确认)后的分批去 fork 收尾 · 批次1(全确定性根修)。
