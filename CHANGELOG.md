@@ -9,6 +9,13 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.32.9] - 2026-07-01
+
+流水线去 fork · 批次4(async acceptance retry 真正生效)。
+
+### Fixed
+- **async(生产默认)下 acceptance retry 名存实亡**:`_POSTPROC_MODE=async` 时 GM 流完即 early-return,整个 acceptance verify+retry 块被跳过 → 生产上只剩 worker 事后审计、不重写(原为 W1 容量优化的取舍)。fork 收编:把 verify+retry+重 apply 抽成单一同步闭包 `_acceptance_gate`,sync/async 同源(消除「两路各写一套、只在 sync 实现」)。async 两处 early-return 前用 `asyncio.to_thread` 调它 —— 阻塞的 retry GM 调用跑线程里不塞事件循环,既恢复生产 retry、又不牺牲 async 容量。全程 try/except 兜底(闭包恒返 3-tuple,任何失败退回原稿);逃生开关 `RPG_ACCEPTANCE_RETRY=0` 仍在。
+
 ## [1.32.8] - 2026-07-01
 
 流水线去 fork · 批次3(确定性 P2 簇)。
