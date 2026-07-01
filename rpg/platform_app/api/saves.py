@@ -592,12 +592,15 @@ async def api_save_progress_rewind(save_id: int, request: Request, user=Depends(
             ).fetchone()
             if _cc_row and _cc_row.get("chapter_count"):
                 target = min(target, int(_cc_row["chapter_count"]))
-            sess = db.execute(
-                "select worldline from game_sessions where save_id=%s", (save_id,)).fetchone()
-            wl = dict((sess or {}).get("worldline") or {}) if sess else {}
-            wl["progress_chapter"] = target  # 显式回退:直接设,不走 max-only 的 advance_progress
-            db.execute("update game_sessions set worldline=%s, updated_at=now() where save_id=%s",
-                       (Jsonb(wl), save_id))
+            # fork 收编(workers=2 竞态):原读-改-写整列会被并发 advance_progress 的 jsonb_set
+            # 吞更新,且整列覆盖抹掉对方刚写的其它 worldline 键(_get_sync_scope_lock 是进程内
+            # RLock,跨 worker 无效)。改单条原子 jsonb_set(只动 progress_chapter),与
+            # advance_progress(settings.py:124-128)同范式。回退语义=显式设(非 max),故不用 greatest。
+            db.execute(
+                "update game_sessions set "
+                "worldline = jsonb_set(coalesce(worldline,'{}'::jsonb), '{progress_chapter}', to_jsonb(%s::int), true), "
+                "updated_at = now() where save_id=%s",
+                (target, save_id))
             relocked = db.execute(
                 "update save_anchor_states set status='pending', occurred_at_turn=null, "
                 "variant_description=null, drift_score=0, updated_at=now() "

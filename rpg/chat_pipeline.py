@@ -1549,7 +1549,10 @@ async def run_gm_phase(
                     _retry_parts: list[str] = []
                     _retry_state_iter = gm.respond_stream_with_tools(
                         _retry_msg, bundle["prompt"], state,
-                        tools=unified_tools, max_iterations=max(4, _gm_max_iters() // 2), max_tokens=_max_tokens,
+                        # fork 收编:retry 第二稿必须与首稿用【同一工具集】。原写死 unified_tools,
+                        # 而 narrator_slim 档首稿用精简 _gm_tools(约12个KB工具)→ 两稿工具集不一致,
+                        # slim 档 retry 会触发本该剔除的重型写工具、与史官(recorder)竞争写入。
+                        tools=_gm_tools, max_iterations=max(4, _gm_max_iters() // 2), max_tokens=_max_tokens,
                         tool_call_router=gm_tool_router,
                         prompt_segments=bundle.get("prompt_segments"),
                         dynamic_prefix="\n\n".join(_dynamic_prefix_parts),

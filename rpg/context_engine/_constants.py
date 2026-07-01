@@ -19,6 +19,8 @@ except (TypeError, ValueError):
 
 _BASE_LAYER_CHARS = {
     "rules": 2000,
+    "rules_state": 2000,          # RulesProvider 动态层(HP/骰子日志),与静态 rules 分 id
+
     "agent_runtime": 1600,
     "timeline": 2400,
     "timeline_pending": 2400,     # provider 实际层 id,补全防默认 1800 截断
@@ -46,6 +48,12 @@ _BASE_LAYER_CHARS = {
     # task 107E: 双时间线 — 存档级历史摘要 + 剧本未来预期
     "runtime_phase_digests": 5000,        # GM 思考历史 (本存档)
     "script_phase_anticipation": 4000,    # GM 思考未来 (剧本预期)
+    # 补全:酒馆/模组 provider 层 id 之前不在表 → 走默认 1800 → 角色卡/persona/场景被截断。
+    "tavern_card_system": 6000,           # 导入 persona skill 原文常 2000-5000 字
+    "tavern_character": 5000,             # 完整角色卡(identity/性格/外观/说话风格/样例对话)
+    "tavern_persona": 3000,
+    "module_scene": 3000,                 # 房间描述/出口/NPC/检查
+    "module_encounter": 3000,
 }
 MAX_LAYER_CHARS = {k: int(v * _CTX_SCALE) for k, v in _BASE_LAYER_CHARS.items()}
 

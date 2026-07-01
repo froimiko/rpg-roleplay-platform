@@ -128,6 +128,12 @@ class NovelRetrievalProvider(ContextProvider):
         # 必然丢 → GM 永远收不到 pending anchors,玩家进 ch1 GM 不知道该让 [卡切尔] 登场。
         # 拆开后 anchor_pending 独立 trim 上限 3000,RAG body 保留原 1800 上限,各取所需。
         anchor_section, rag_body = _split_anchor_pending(text)
+        # fork 收编:旧 fallback 路径(core.py)对 rag_body 调 _neutralize_state_write_tags 把原文里的
+        # 【签到奖励】【状态写入：…】等括号换成［］,切断「原著括号→GM 复述→apply_structured_updates
+        # 解析执行」链路;provider 化后此路径漏了中和。485 万字网文常含这类括号 → 补上(anchor 段同理)。
+        from context_engine.helpers import _neutralize_state_write_tags as _neu
+        anchor_section = _neu(anchor_section) if anchor_section else anchor_section
+        rag_body = _neu(rag_body) if rag_body else rag_body
 
         layers = []
         if anchor_section:

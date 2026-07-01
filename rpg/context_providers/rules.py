@@ -88,8 +88,11 @@ class RulesProvider(ContextProvider):
                 lines.append(f"  · {summary}")
         text = "\n".join(lines)
         layer = self.make_layer(
-            "rules", "规则集状态", text,
-            sticky=False, priority=80,
+            # 用独立 id 避免与 universal_layers 的静态 "rules"(A级缓存)撞 id;
+            # 且本层含每回合变的 HP/AC/dice_log,显式 cache_tier="C"(逐回合易变),
+            # 否则继承 LAYER_CACHE_TIER["rules"]="A" → 被标 ephemeral 缓存但每回合 miss(零效率)。
+            "rules_state", "规则集状态", text,
+            sticky=False, priority=80, cache_tier="C",
         )
         facts: list[str] = []
         if pc:
