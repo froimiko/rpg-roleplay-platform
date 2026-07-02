@@ -78,6 +78,35 @@ def _maybe_auto_archive(state, ms) -> None:
         pass  # 归档失败不影响正常出牌
 
 
+def _restore_persistent_buckets(state) -> None:
+    """自愈:把此前被(旧)auto-archive 误归档的 abilities/resources 条目救回 legacy bucket + 取消 archived。
+    v1.34.1 起 abilities/resources 豁免归档(角色卡式持久状态),但**历史存档里已被移出 bucket 的**不会自己
+    回来 —— 老玩家丢掉的能力/资源要恢复。只动 archived 的(auto-archive 是唯一置 archived 的路径);玩家显式
+    删除的条目 remove_memory 已从 items 移除,不会被复活;superseded 的跳过。幂等,MemoryProvider 每回合调。"""
+    try:
+        data = getattr(state, "data", state) or {}
+        mem = data.get("memory")
+        if not isinstance(mem, dict):
+            return
+        items = mem.get("items") or []
+        for bucket in ("abilities", "resources"):
+            bucket_list = mem.get(bucket)
+            if not isinstance(bucket_list, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict) or item.get("legacy_bucket") != bucket:
+                    continue
+                if item.get("status") == "superseded":
+                    continue
+                if item.get("archived"):
+                    item["archived"] = False  # 取消误归档
+                text = item.get("text")
+                if text and text not in bucket_list:
+                    bucket_list.append(text)  # 补回 bucket
+    except Exception:
+        pass  # 自愈失败不影响正常出牌
+
+
 class MemoryProvider(ContextProvider):
     id = "memory"
 
@@ -95,6 +124,8 @@ class MemoryProvider(ContextProvider):
             from schemas.memory import MemorySettings
             ms = MemorySettings()  # 全默认
 
+        # ── 自愈:恢复历史存档里被旧 auto-archive 误归档移出的 abilities/resources(持久状态)──
+        _restore_persistent_buckets(state)
         # ── 触发自动归档（只做内存标记，不 save，调用方在 chat 结束后 save）──
         _maybe_auto_archive(state, ms)
 

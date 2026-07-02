@@ -57,6 +57,44 @@ def test_facts_still_auto_archive():
     assert st["memory"]["items"][0].get("archived") is True
 
 
+def test_selfheal_restores_previously_archived_ability():
+    """历史存档:能力此前被旧 auto-archive 移出 bucket(item 仍在、标 archived)→ 自愈救回 + 取消 archived。"""
+    from context_providers.memory import _restore_persistent_buckets
+    st = {
+        "turn": 70,
+        "memory": {
+            "abilities": [],  # bucket 已被旧逻辑清空
+            "resources": [],
+            "items": [
+                {"id": "a1", "text": "剑气纵横", "legacy_bucket": "abilities", "archived": True, "status": "active"},
+                {"id": "r1", "text": "回血丹×3", "legacy_bucket": "resources", "archived": True, "status": "active"},
+            ],
+        },
+    }
+    _restore_persistent_buckets(st)
+    assert "剑气纵横" in st["memory"]["abilities"]
+    assert "回血丹×3" in st["memory"]["resources"]
+    assert st["memory"]["items"][0]["archived"] is False
+    assert st["memory"]["items"][1]["archived"] is False
+
+
+def test_selfheal_does_not_resurrect_superseded_or_deleted():
+    """自愈不复活 superseded 条目;玩家删除的已不在 items,天然不会回来。"""
+    from context_providers.memory import _restore_persistent_buckets
+    st = {
+        "turn": 70,
+        "memory": {
+            "abilities": [],
+            "items": [
+                {"id": "a1", "text": "旧能力(已被取代)", "legacy_bucket": "abilities",
+                 "archived": True, "status": "superseded"},
+            ],
+        },
+    }
+    _restore_persistent_buckets(st)
+    assert "旧能力(已被取代)" not in st["memory"]["abilities"], "superseded 不应被复活"
+
+
 def test_real_gamestate_add_memory_ability_survives():
     """走真实 GameState.add_memory 写入路径(玩家手动加能力的实际后端路径),
     过 auto_archive 阈值后 MemoryProvider 触发归档,能力仍在。"""

@@ -9,6 +9,16 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.34.2] - 2026-07-02 (@ 62510f0c8)
+
+### Fixed
+- **恢复历史存档里已被误归档移出的能力/资源**(承接 1.34.1 的「彻底修复」):1.34.1 只止损(往后不再归档
+  abilities/resources),但老玩家**此前已丢**的条目不会自己回来。新增自愈 `_restore_persistent_buckets`
+  (MemoryProvider 每回合幂等调):把 `memory.items` 里 `legacy_bucket ∈ {abilities,resources}` 且被(旧)
+  auto-archive 标 archived 的条目救回对应 bucket + 取消 archived。安全:auto-archive 是唯一置 archived 的路径;
+  玩家显式删除的条目 `remove_memory` 已硬删出 items(不会被复活);superseded 跳过。含回归测试(恢复 +
+  不复活 superseded/已删)。
+
 ## [1.34.1] - 2026-07-02 (@ ae4521119)
 
 ### Fixed
