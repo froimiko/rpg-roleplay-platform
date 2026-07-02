@@ -9,6 +9,23 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.34.0] - 2026-07-02 (@ 925f8bc38)
+
+acceptance A/B 二次迭代:选择持久化根修 + 用户级开关(行者无疆二次反馈 + 承诺)。
+
+### Fixed
+- **选了改写(第二套)、过一会/刷新/切页后又变回首稿(第一套)**(行者无疆二次反馈):`/api/acceptance/choice`
+  的换稿旧实现只改 `messages` 表 + `state.save()` blob,但 **kb_native 存档(现所有新档)刷新时 materialize 从
+  【活跃 branch_commit 快照】的 history 读**(`save_kb.materialize`;messages 表只是空 history 时的兜底)——没改
+  那里 → 换 worker / 缓存失效重 materialize 就回退首稿。根修:`_amend_history_message` 自包含写穿所有刷新会读到的
+  存储 —— 活跃 commit 快照(权威)+ game_saves/runtime_checkouts 工作树快照 + **bump runtime snapshot_hash**
+  (跨 worker 缓存失效,其它 worker 下次请求 hash_drift 重 materialize;同固定记忆 out-of-turn 编辑范式)+ messages 表,
+  全程内容匹配替换(避免各存储 index 基准不一致)。
+
+### Added
+- **AI 改写建议开关**(游戏内设置,用户级 `user_preferences['acceptance_ab.enabled']`,默认开):玩家可手动关掉
+  acceptance A/B 改写候选(关掉则始终只用首稿,不再弹选择)。后端 `_acceptance_gate` 在生成候选前读该开关。
+
 ## [1.33.0] - 2026-07-02 (@ 2474a5fc9)
 
 acceptance 硬闸从「静默重写替换首稿」改造成「节流 + 双栏 A/B 玩家裁决 + 数据采集」。

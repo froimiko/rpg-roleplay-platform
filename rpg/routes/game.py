@@ -987,6 +987,97 @@ async def api_message_edit(
     return JSONResponse({"ok": True})
 
 
+def _amend_history_message(db, save_id: int, message_index: int, new_content: str) -> tuple[bool, str | None]:
+    """把 save 第 message_index 条(展示序 = materialize 的非空过滤视图)assistant 消息内容换成 new_content,
+    确定性写穿【刷新/换 worker 后会重新读到的】所有权威存储,并 bump 跨 worker 缓存失效信号:
+      ① 活跃 branch_commit 快照 —— kb_native 存档 materialize 读 history 的**权威源**(save_kb.materialize
+         从 branch_commits[active].state_snapshot.history 读;messages 表只是空 history 时的兜底)。
+         这正是「选了改写、刷新/切 worker 后又变回首稿」的根:旧实现只改 messages 表 + blob,没改这里。
+      ② game_saves / runtime_checkouts 工作树快照 —— 非 kb 旧档刷新读它 + 工作树一致。
+      ③ runtime_checkouts.snapshot_hash bump —— 其它 worker 下次请求 hash_drift → 重 materialize 读到新稿
+         (同固定记忆 out-of-turn 编辑的跨 worker 失效范式;read_runtime 从 runtime_checkouts 读该 hash)。
+      ④ messages 表 —— materialize 兜底源 + 不写 commit 快照的旧档。
+    返回 (swapped, original_content)。全程用内容匹配跨存储替换(同 save 内该 assistant 全文唯一),
+    避免各存储 index 基准(滤空/分支)不一致;完全自包含,不依赖 _ensure_loaded 的进程内缓存态。"""
+    import json as _json
+
+    from platform_app.branches.commits import _state_snapshot_hash
+    from psycopg.types.json import Jsonb
+
+    def _hist_content_at(snap, idx):
+        if not (isinstance(snap, dict) and isinstance(snap.get("history"), list)):
+            return None
+        raw_idx = [i for i, m in enumerate(snap["history"])
+                   if isinstance(m, dict) and str(m.get("content") or "").strip()]
+        if 0 <= idx < len(raw_idx):
+            m = snap["history"][raw_idx[idx]]
+            if m.get("role") == "assistant":
+                return m.get("content")
+        return None
+
+    srow = db.execute("select active_commit_id from game_saves where id = %s", (save_id,)).fetchone()
+    commit_id = int((srow or {}).get("active_commit_id") or 0) if srow else 0
+    original = None
+    # ① 活跃 commit 快照(权威展示源):按展示序定位 original,就地改写回写。
+    if commit_id:
+        crow = db.execute(
+            "select state_snapshot from branch_commits where id = %s and save_id = %s",
+            (commit_id, save_id),
+        ).fetchone()
+        snap = (crow or {}).get("state_snapshot") if crow else None
+        if isinstance(snap, str):
+            snap = _json.loads(snap)
+        original = _hist_content_at(snap, message_index)
+        if original is not None and original != new_content:
+            for m in snap["history"]:
+                if isinstance(m, dict) and m.get("content") == original:
+                    m["content"] = new_content
+            db.execute("update branch_commits set state_snapshot = %s where id = %s", (Jsonb(snap), commit_id))
+    # 兜底:commit 无 history(酒馆/旧档)→ messages 表按展示序(滤空)定位 original。
+    if original is None:
+        rows = db.execute(
+            "select role, content from messages where save_id = %s order by turn, id", (save_id,)
+        ).fetchall()
+        filt = [r for r in rows if str(r["content"] or "").strip()]
+        if 0 <= message_index < len(filt) and filt[message_index]["role"] == "assistant":
+            original = filt[message_index]["content"]
+    if original is None:
+        return False, None
+    if original == new_content:
+        return True, original
+    # ② 工作树快照(非 kb 旧档刷新读它)+ ③ snapshot_hash bump(跨 worker 失效)
+    for tbl, keycol in (("game_saves", "id"), ("runtime_checkouts", "save_id")):
+        for r in db.execute(f"select id, state_snapshot from {tbl} where {keycol} = %s", (save_id,)).fetchall():
+            snap = r.get("state_snapshot")
+            if isinstance(snap, str):
+                snap = _json.loads(snap)
+            if not (isinstance(snap, dict) and isinstance(snap.get("history"), list)):
+                continue
+            changed = False
+            for m in snap["history"]:
+                if isinstance(m, dict) and m.get("content") == original:
+                    m["content"] = new_content
+                    changed = True
+            if changed:
+                if tbl == "runtime_checkouts":
+                    db.execute(
+                        "update runtime_checkouts set state_snapshot = %s, snapshot_hash = %s,"
+                        " row_version = row_version + 1 where id = %s",
+                        (Jsonb(snap), _state_snapshot_hash(snap), r["id"]),
+                    )
+                else:
+                    db.execute(
+                        "update game_saves set state_snapshot = %s, row_version = row_version + 1 where id = %s",
+                        (Jsonb(snap), r["id"]),
+                    )
+    # ④ messages 表(内容匹配)
+    db.execute(
+        "update messages set content = %s where save_id = %s and role = 'assistant' and content = %s",
+        (new_content, save_id, original),
+    )
+    return True, original
+
+
 @router.post("/api/acceptance/choice", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_acceptance_choice(
     body: dict[str, Any],
@@ -1036,35 +1127,15 @@ async def api_acceptance_choice(
             )
             db.commit()
 
-            if choice == "rewrite" and rewrite_text and msg_index is not None:
+            if choice == "rewrite" and rewrite_text and msg_index is not None and save_id:
                 try:
                     mi = int(msg_index)
                 except (TypeError, ValueError):
                     mi = -1
-                if mi >= 0 and save_id and owns_save(db, save_id, uid):
-                    rows = db.execute(
-                        "select id, role from messages where save_id = %s order by turn, id",
-                        (save_id,),
-                    ).fetchall()
-                    if 0 <= mi < len(rows) and (rows[mi]["role"] == "assistant"):
-                        db.execute(
-                            "update messages set content = %s where id = %s",
-                            (rewrite_text, rows[mi]["id"]),
-                        )
-                        db.commit()
-                        swapped = True
-        # 同步 blob history(与 /api/message/edit 同款;非 kb_native 直接读 blob)
-        if swapped:
-            try:
-                from app import _ensure_loaded
-                state = _ensure_loaded(api_user)
-                hist = state.data.get("history") or []
-                mi = int(msg_index)
-                if 0 <= mi < len(hist):
-                    hist[mi]["content"] = rewrite_text
-                    state.save()
-            except Exception:
-                pass
+                if mi >= 0 and owns_save(db, save_id, uid):
+                    # 自包含写穿所有存储(commit 快照 + 工作树 blob + snapshot_hash bump + messages)。
+                    swapped, _orig = _amend_history_message(db, save_id, mi, rewrite_text)
+                    db.commit()
     except Exception as e:
         _log.exception("[acceptance/choice] failed")
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)

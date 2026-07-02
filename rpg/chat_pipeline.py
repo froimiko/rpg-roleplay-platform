@@ -970,6 +970,24 @@ def _apply_gm_json_ops(
 _ACCEPTANCE_AB_MIN_INTERVAL = 5
 
 
+def _acceptance_ab_pref_enabled(user_id) -> bool:
+    """用户级开关:user_preferences.preferences['acceptance_ab.enabled']。缺省/非 False = 开(默认提供改写候选)。
+    玩家可在游戏设置里手动关掉(行者无疆诉求)。仅在即将花一次 LLM 生成候选前读一次(热路径零额外开销)。"""
+    if not user_id:
+        return True
+    try:
+        from platform_app.db import connect
+        with connect() as db:
+            row = db.execute(
+                "select preferences->>'acceptance_ab.enabled' as v from user_preferences where user_id = %s",
+                (int(user_id),),
+            ).fetchone()
+        v = (row or {}).get("v")
+        return not (str(v).strip().lower() in ("false", "0", "off", "no")) if v is not None else True
+    except Exception:
+        return True
+
+
 def _log_acceptance_ab(user_id, save_id, turn, unmet, original_text, rewrite_text):
     """插入一条 acceptance A/B 候选(chosen=null 待玩家选),返回行 id;失败返回 None。
     数据采集层:统计玩家偏好首稿/改写稿 + 触发改写的验收点,用于迭代 acceptance 算法。"""
@@ -1362,7 +1380,8 @@ async def run_gm_phase(
             _last_offer = int(_ab_meta.get("last_offer_turn", -(10 ** 9)))
             _throttle_ok = (_turn_now - _last_offer) >= _ACCEPTANCE_AB_MIN_INTERVAL
             rewrite_offered = False
-            if unmet and _rewrite_on and _throttle_ok:
+            # 用户级开关(游戏设置可手动关):关了就不生成候选(节流通过也不弹)。
+            if unmet and _rewrite_on and _throttle_ok and _acceptance_ab_pref_enabled(_auid):
                 _events.append(("agent", {"phase": "acceptance_retry",
                     "message": f"acceptance 有 {len(unmet)} 条未覆盖,生成改写候选供选择",
                     "status": "running", "elapsed_ms": 0, "unmet": unmet[:5]}))

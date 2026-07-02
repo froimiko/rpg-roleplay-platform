@@ -1346,6 +1346,8 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
   const [keepFailedTurn, setKeepFailedTurnState] = useStateA(_readKeepFailedTurn);
   // null = 尚未从后端拉到本档真实值;加载期不高亮任何档,避免先闪默认「软引导」再跳真值(被误读成"自己回跳")
   const [steerStrength, setSteerStrength] = useStateA(null);
+  // acceptance 改写建议开关(用户级 user_preferences['acceptance_ab.enabled'],默认开)。行者无疆诉求:可手动关。
+  const [abEnabled, setAbEnabled] = useStateA(true);
 
   // sync density state with external RPG_setDensity calls
   useEffectA(() => {
@@ -1364,6 +1366,29 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
       .then(d => { if (d?.ok && d.settings) setSteerStrength(d.settings.steering_strength || "guided"); })
       .catch(() => {});
   }, [open, saveId]);
+
+  // 打开时拉用户偏好,取 acceptance 改写建议开关(默认开)
+  useEffectA(() => {
+    if (!open) return;
+    const base = (window.__API_BASE || '');
+    fetch(`${base}/api/me/profile`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const v = d && d.preferences && d.preferences['acceptance_ab.enabled'];
+        setAbEnabled(!(String(v).toLowerCase() === 'false' || v === false));
+      })
+      .catch(() => {});
+  }, [open]);
+
+  const handleAbEnabled = (v) => {
+    setAbEnabled(v);
+    const base = (window.__API_BASE || '');
+    fetch(`${base}/api/me/preference`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 'acceptance_ab.enabled': v }),
+    }).catch(() => {});
+  };
 
   const handleDensity = (d) => {
     setDensityState(d);
@@ -1541,6 +1566,20 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
                      onChange={(e) => handleKeepFailedTurn(e.target.checked)}
                      style={{width: 15, height: 15, cursor: "pointer"}} />
               <span style={{fontSize: 12.5, color: "var(--text-quiet)"}}>{keepFailedTurn ? t('game.app.settings.on') : t('game.app.settings.off')}</span>
+            </label>
+          </div>
+
+          {/* ── AI 改写建议(acceptance A/B) ── */}
+          <div style={rowStyle}>
+            <div style={labelStyle}>
+              <div>{t('game.app.settings.ab_label', 'AI 改写建议')}</div>
+              <div style={sublabelStyle}>{t('game.app.settings.ab_desc', 'AI 偶尔漏掉本回合该体现的剧情点时,并排给你一个改写版本供选择(最多每 5 回合一次)。关掉则始终只用首稿。')}</div>
+            </div>
+            <label style={{display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flexShrink: 0}}>
+              <input type="checkbox" checked={abEnabled}
+                     onChange={(e) => handleAbEnabled(e.target.checked)}
+                     style={{width: 15, height: 15, cursor: "pointer"}} />
+              <span style={{fontSize: 12.5, color: "var(--text-quiet)"}}>{abEnabled ? t('game.app.settings.on') : t('game.app.settings.off')}</span>
             </label>
           </div>
 
