@@ -222,21 +222,27 @@ class RecordViolationsAudit(unittest.TestCase):
 
 
 class ChatFlowIntegratesGuard(unittest.TestCase):
-    """app.py chat 主流程必须 import + 调用 detect_time_jump_violations。"""
+    """确定性叙事纠错(时间跳跃/套路/星期)已统一到 timeline_narrative_guard.run_narrative_guards;
+    chat_pipeline 两路(async/sync)都调它。此前每种检测在两路各手写一遍 = 散落,已收拢到一个入口。"""
 
     @classmethod
     def setUpClass(cls):
         cls.app_text = (PROJECT / "rpg" / "chat_pipeline.py").read_text(encoding="utf-8")
+        cls.guard_text = (PROJECT / "rpg" / "agents" / "timeline_narrative_guard.py").read_text(encoding="utf-8")
 
-    def test_imports_guard(self):
-        self.assertIn("timeline_narrative_guard import", self.app_text,
-            "chat_pipeline.py 必须 import timeline_narrative_guard")
-        self.assertIn("detect_time_jump_violations", self.app_text)
-        self.assertIn("record_violations_to_audit", self.app_text)
+    def test_chat_pipeline_calls_unified_runner(self):
+        self.assertIn("timeline_narrative_guard import", self.app_text)
+        self.assertEqual(
+            self.app_text.count("run_narrative_guards(response, ctx.message_for_model, state)"), 2,
+            "async/sync 两路都应调统一的 run_narrative_guards")
 
-    def test_emits_sse_warning_event(self):
-        self.assertIn('"phase": "timeline_guard"', self.app_text,
-            "chat handler 应 yield SSE agent 事件 phase=timeline_guard 给前端")
+    def test_unified_runner_covers_all_guards_and_emits_event(self):
+        self.assertIn("def run_narrative_guards", self.guard_text)
+        self.assertIn("detect_time_jump_violations", self.guard_text)
+        self.assertIn("record_violations_to_audit", self.guard_text)
+        self.assertIn('"phase": "timeline_guard"', self.guard_text)
+        self.assertIn("cliche_notice", self.guard_text)
+        self.assertIn("weekday_notice", self.guard_text)
 
 
 if __name__ == "__main__":

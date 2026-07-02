@@ -1013,31 +1013,6 @@ def _log_acceptance_ab(user_id, save_id, turn, unmet, original_text, rewrite_tex
         return None
 
 
-def _weekday_check_events(message_for_model, response, state):
-    """确定性星期验错(客户 abci:LLM 算不对星期)→ 记 audit + 返回 weekday_notice 事件。
-    默认休眠:剧情里没有确切「今天=周X」基准就返回 [](玄幻/修仙/无日历剧本零副作用)。
-    合并玩家本回合输入 + GM 输出做自洽检查:玩家立「今天周日」、GM 把「明天」写成周六 → 查出。
-    只查不改:surface 给玩家(可重新生成),不动正文、不搞状态机。"""
-    try:
-        from agents.timeline_narrative_guard import detect_weekday_violations
-        _wd = detect_weekday_violations((message_for_model or "") + "\n" + (response or ""))
-    except Exception:
-        return []
-    if not _wd:
-        return []
-    errs = [{"rel": v["rel"], "claimed": v["claimed_name"], "expected": v["expected_name"]} for v in _wd[:5]]
-    try:
-        from datetime import datetime as _dt
-        aud = state.data.setdefault("permissions", {}).setdefault("audit_log", [])
-        aud.append({"ts": _dt.now().isoformat(timespec="seconds"), "kind": "weekday_arithmetic_error",
-                    "source": "weekday_check", "turn": int(state.data.get("turn") or 0), "violations": errs})
-        if len(aud) > 200:
-            state.data["permissions"]["audit_log"] = aud[-200:]
-    except Exception:
-        pass
-    return [("weekday_notice", {"base": _wd[0]["base_name"], "errors": errs})]
-
-
 async def run_gm_phase(
     ctx: PipelineContext,
     *,
@@ -1554,42 +1529,14 @@ async def run_gm_phase(
             # 内审计、不 retry(下面 log 标注)。
             log.info("[chat] async postproc: 内联跑确定性后处理(apply/guard),LLM 任务已入队;"
                      "acceptance retry 退化为不重写(仅 worker 审计)")
+            # 统一确定性叙事纠错(时间跳跃禁词 / 套路比喻 / 星期算错 / 未来的):一个入口跑全部,
+            # 与 sync 路径共用同一个 run_narrative_guards,消除「每种检测在两路各手写一遍」的散落。
             try:
-                from agents.timeline_narrative_guard import (
-                    detect_time_jump_violations,
-                    record_violations_to_audit,
-                )
-                _tj_violations = await asyncio.to_thread(
-                    detect_time_jump_violations, response, state,
-                )
-                if _tj_violations:
-                    await asyncio.to_thread(record_violations_to_audit, state, _tj_violations)
-                    yield ("agent", {
-                        "phase": "timeline_guard",
-                        "message": f"GM 时间跳跃叙事检测到 {len(_tj_violations)} 处禁词(穿越/醒来/拨回 等过渡叙事)",
-                        "status": "warning",
-                        "elapsed_ms": 0,
-                        "violations": [
-                            {"label": v.get("pattern_label"), "match": v.get("match")}
-                            for v in _tj_violations
-                        ],
-                    })
-            except Exception as _tg_err:
-                log.warning(f"[chat] async timeline_guard 跳过: {_tg_err}")
-
-            try:
-                from agents.timeline_narrative_guard import detect_cliche_violations
-                _cliche = detect_cliche_violations(response)
-            except Exception:
-                _cliche = []
-            if _cliche:
-                yield ("cliche_notice", {
-                    "phrases": [v.get("match") for v in _cliche][:5],
-                    "labels": sorted({v.get("pattern_label") for v in _cliche}),
-                })
-            # 确定性星期验错(客户 abci:LLM 算不对星期)—— 剧情有确切日期在推进时才查。
-            for _wd_ev in _weekday_check_events(ctx.message_for_model, response, state):
-                yield _wd_ev
+                from agents.timeline_narrative_guard import run_narrative_guards
+                for _guard_ev in run_narrative_guards(response, ctx.message_for_model, state):
+                    yield _guard_ev
+            except Exception as _g_err:
+                log.warning(f"[chat] async narrative_guards 跳过: {_g_err}")
 
             # Q Phase 2 史官三合一(flag on):一次 recorder LLM 调用同时产 ops + 锚点判定,
             # 替代「独立 extractor + 独立 anchor_reconcile LLM」两次调用。off 时走原路径。
@@ -1680,35 +1627,14 @@ async def run_gm_phase(
         is_black_swan_enabled=is_black_swan_enabled,
     )
 
-    # 按固定顺序 yield 三组 SSE step(保前端时间线稳定)
-    _tj_violations = _post_results.get("timeline_violations") or []
-    if _tj_violations:
-        yield ("agent", {
-            "phase": "timeline_guard",
-            "message": f"GM 时间跳跃叙事检测到 {len(_tj_violations)} 处禁词(穿越/醒来/拨回 等过渡叙事)",
-            "status": "warning",
-            "elapsed_ms": 0,
-            "violations": [
-                {"label": v.get("pattern_label"), "match": v.get("match")}
-                for v in _tj_violations
-            ],
-        })
-
-    # 反馈 #22: 套路比喻检测(每回合,通用,精准只命中比喻句式不碰投石机等字面词)。
-    # harness: 确定性检测 + surface(前端 ConfirmStrip notice + 重生成),绝不 strip。
+    # 统一确定性叙事纠错(时间跳跃禁词 / 套路比喻 / 星期算错 / 未来的):与 async 路径共用同一个
+    # run_narrative_guards(消除散落)。按固定顺序 yield,保前端时间线稳定。
     try:
-        from agents.timeline_narrative_guard import detect_cliche_violations
-        _cliche = detect_cliche_violations(response)
-    except Exception:
-        _cliche = []
-    if _cliche:
-        yield ("cliche_notice", {
-            "phrases": [v.get("match") for v in _cliche][:5],
-            "labels": sorted({v.get("pattern_label") for v in _cliche}),
-        })
-    # 确定性星期验错(客户 abci:LLM 算不对星期)—— 剧情有确切日期在推进时才查。
-    for _wd_ev in _weekday_check_events(ctx.message_for_model, response, state):
-        yield _wd_ev
+        from agents.timeline_narrative_guard import run_narrative_guards
+        for _guard_ev in run_narrative_guards(response, ctx.message_for_model, state):
+            yield _guard_ev
+    except Exception as _g_err:
+        log.warning(f"[chat] sync narrative_guards 跳过: {_g_err}")
 
     response_with_ops = _post_results.get("response_with_ops") or response
 
@@ -1826,32 +1752,17 @@ async def _run_post_gm_parallel(
     is_extractor_enabled: Callable[[dict[str, Any] | None], bool],
     is_black_swan_enabled: Callable[[dict[str, Any] | None], bool] | None = None,
 ) -> dict[str, Any]:
-    """并行跑 GM 后处理三项,返回 {timeline_violations, response_with_ops, extractor_active}。
+    """并行跑 GM 后处理(黑天鹅 + extractor),返回 {response_with_ops, extractor_active}。
+    时间跳跃/套路/星期等确定性叙事纠错已统一到 timeline_narrative_guard.run_narrative_guards
+    (async/sync 两路共用,见 run_gm_phase),不再在此并行跑。
 
-    三项均只读 GM 完整 response + state(不修改),所以 asyncio.gather 安全。
-    State mutation(audit_log append)在 worker 内部完成,但每个 worker 写不同
-    audit kind,无冲突;Python GIL 保护单条 append 原子性。
-
+    只读 GM 完整 response + state(不修改),所以 asyncio.gather 安全。
     任何 worker 抛异常 → log + 返回该 worker 的中性值,不影响其它 worker。
     """
     if not response.strip():
-        return {"timeline_violations": [], "response_with_ops": response, "extractor_active": False}
+        return {"response_with_ops": response, "extractor_active": False}
 
     user_id_int = int(api_user.get("id")) if api_user else None
-
-    async def _worker_timeline_guard() -> list[dict[str, Any]]:
-        try:
-            from agents.timeline_narrative_guard import (
-                detect_time_jump_violations,
-                record_violations_to_audit,
-            )
-            violations = await asyncio.to_thread(detect_time_jump_violations, response, state)
-            if violations:
-                await asyncio.to_thread(record_violations_to_audit, state, violations)
-            return violations
-        except Exception as exc:
-            log.warning(f"[chat] timeline_narrative_guard 检测失败: {exc}")
-            return []
 
     async def _worker_black_swan() -> None:
         try:
@@ -1929,14 +1840,12 @@ async def _run_post_gm_parallel(
             return False, response
 
     # 并行执行,gather return_exceptions=False 但每个 worker 内部已 try/except,不会抛
-    tg_result, _swan_unused, ex_result = await asyncio.gather(
-        _worker_timeline_guard(),
+    _swan_unused, ex_result = await asyncio.gather(
         _worker_black_swan(),
         _worker_extractor(),
     )
     extractor_active, response_with_ops = ex_result
     return {
-        "timeline_violations": tg_result,
         "response_with_ops": response_with_ops,
         "extractor_active": extractor_active,
     }

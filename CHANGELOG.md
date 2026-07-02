@@ -9,6 +9,17 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.35.1] - 2026-07-02 (@ a80ef39d8)
+
+### Changed
+- **确定性叙事纠错收拢到一个入口(去 fork)**:时间跳跃禁词 / 套路比喻 / 星期算错此前**各自在
+  chat_pipeline 的 async 与 sync 两路手写一遍**(时间跳跃甚至第 3 处在 `_run_post_gm_parallel`),
+  = 6+ 处孤立接线(1.35.0 的星期验错又新增一处 = 屎山)。统一到
+  `timeline_narrative_guard.run_narrative_guards(response, player_message, state)` 单一入口:检测 →
+  写 audit → 返回待 yield 的 SSE 事件;async/sync 两路各调**一次**,`_run_post_gm_parallel` 只留黑天鹅 +
+  extractor。**行为零变化**(同样的 timeline_guard/cliche_notice/weekday_notice 事件)。以后加新的确定性
+  叙事纠错只改这一个函数。
+
 ## [1.35.0] - 2026-07-02 (@ c60225ce9)
 
 ### Added

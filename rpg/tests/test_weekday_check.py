@@ -65,11 +65,23 @@ def test_parse_today_weekday():
     assert today("明天周六") is None  # 只认「今天」,不拿相对日当基准
 
 
+def test_unified_into_narrative_guards():
+    """星期验错必须走【统一的 run_narrative_guards】(和时间跳跃/套路比喻同一个入口),不是孤立接线。"""
+    from agents.timeline_narrative_guard import run_narrative_guards
+    # run_narrative_guards 内部覆盖星期
+    evs = run_narrative_guards("今天周日，明天周六", "", {"turn": 1})
+    kinds = [name for name, _ in evs]
+    assert "weekday_notice" in kinds
+    wd = next(p for name, p in evs if name == "weekday_notice")
+    assert any(e["expected"] == "周一" for e in wd["errors"])
+    # 无日历剧本:统一入口也零副作用
+    assert run_narrative_guards("他御剑飞行三日,明日便是论剑之期。", "", {"turn": 1}) == []
+
+
 def test_wired_into_pipeline_and_frontend():
     cp = (REPO / "chat_pipeline.py").read_text(encoding="utf-8")
-    assert "def _weekday_check_events" in cp
-    assert "weekday_notice" in cp
-    # async + sync 两路都接上(合并玩家输入 + GM 输出)
-    assert cp.count("_weekday_check_events(ctx.message_for_model, response, state)") == 2
+    # 消除散落:不再有孤立的 _weekday_check_events;两路都调统一 run_narrative_guards
+    assert "_weekday_check_events" not in cp
+    assert cp.count("run_narrative_guards(response, ctx.message_for_model, state)") == 2
     gc = (REPO.parent / "frontend" / "src" / "entries" / "game-console.jsx").read_text(encoding="utf-8")
     assert "on_weekday_notice" in gc

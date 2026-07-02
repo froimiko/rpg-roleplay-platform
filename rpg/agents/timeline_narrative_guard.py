@@ -16,8 +16,11 @@ GM 把它叙事成"穿越/醒来/拨回时钟/时间被拉回"等过渡剧情。
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 # 禁词模式 — 涵盖"穿越/重置/醒来发现/时间倒流"类过渡叙事的常见表达。
 # 用 regex 而非纯字符串,捕获各种变体(『时间被一双看不见的手拨回』『时钟被拨回最初』...)。
@@ -245,7 +248,67 @@ def detect_weekday_violations(text: str, base_weekday: int | None = None) -> lis
     return out
 
 
+def _record_weekday_audit(state: Any, errs: list[dict[str, Any]]) -> None:
+    try:
+        from datetime import datetime
+        data = getattr(state, "data", state) or {}
+        aud = data.setdefault("permissions", {}).setdefault("audit_log", [])
+        aud.append({
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "kind": "weekday_arithmetic_error", "source": "weekday_check",
+            "turn": int(data.get("turn") or 0), "violations": errs,
+        })
+        if len(aud) > 200:
+            data["permissions"]["audit_log"] = aud[-200:]
+    except Exception:
+        pass
+
+
+def run_narrative_guards(response: str, player_message: str, state: Any) -> list[tuple[str, dict[str, Any]]]:
+    """**统一确定性叙事纠错入口**(消除散落:此前时间跳跃禁词/套路比喻/星期算错各自在 async 与 sync
+    两路手写一遍 = 6+ 处孤立)。新增的确定性叙事纠错都加在这里,别再各写一套。
+
+    每项:检测 → 命中则内部写 audit(各 kind)→ 追加待 yield 的 SSE 事件。返回 [(event_name, payload)]。
+    纯只读 response/message + 写 audit;调用方(async/sync 两路)统一 `for ev in ...: yield ev`。
+    """
+    events: list[tuple[str, dict[str, Any]]] = []
+    text = response or ""
+    # ① 时间跳跃过渡叙事禁词(detect 内部按 user_set 跳跃当回合门控,非跳跃回合自然返回空)
+    try:
+        tj = detect_time_jump_violations(text, state)
+        if tj:
+            record_violations_to_audit(state, tj)
+            events.append(("agent", {
+                "phase": "timeline_guard",
+                "message": f"GM 时间跳跃叙事检测到 {len(tj)} 处禁词(穿越/醒来/拨回 等过渡叙事)",
+                "status": "warning", "elapsed_ms": 0,
+                "violations": [{"label": v.get("pattern_label"), "match": v.get("match")} for v in tj],
+            }))
+    except Exception as exc:
+        _log.warning(f"[guards] time_jump 跳过: {exc}")
+    # ② 套路比喻(每回合通用)
+    try:
+        cl = detect_cliche_violations(text)
+        if cl:
+            events.append(("cliche_notice", {
+                "phrases": [v.get("match") for v in cl][:5],
+                "labels": sorted({v.get("pattern_label") for v in cl}),
+            }))
+    except Exception as exc:
+        _log.warning(f"[guards] cliche 跳过: {exc}")
+    # ③ 星期算错(合并玩家本回合输入 + GM 输出自洽检查;无确切「今天=周X」基准则休眠)
+    try:
+        wd = detect_weekday_violations((player_message or "") + "\n" + text)
+        if wd:
+            errs = [{"rel": v["rel"], "claimed": v["claimed_name"], "expected": v["expected_name"]} for v in wd[:5]]
+            _record_weekday_audit(state, errs)
+            events.append(("weekday_notice", {"base": wd[0]["base_name"], "errors": errs}))
+    except Exception as exc:
+        _log.warning(f"[guards] weekday 跳过: {exc}")
+    return events
+
+
 __all__ = [
     "detect_time_jump_violations", "detect_cliche_violations", "record_violations_to_audit",
-    "detect_weekday_violations", "parse_today_weekday",
+    "detect_weekday_violations", "parse_today_weekday", "run_narrative_guards",
 ]
