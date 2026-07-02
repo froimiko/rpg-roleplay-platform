@@ -1534,7 +1534,7 @@ def _stage_worldbook(ctl: JobController, user_id: int, script_id: int) -> int:
             for entry in entries[:20]:
                 if not isinstance(entry, dict) or not entry.get("name"):
                     continue
-                db.execute(
+                _cur = db.execute(
                     """
                     insert into worldbook_entries(
                       book_id, script_id, title, keys, content, priority, enabled, metadata
@@ -1556,8 +1556,10 @@ def _stage_worldbook(ctl: JobController, user_id: int, script_id: int) -> int:
                         Jsonb({"source": "llm_pipeline"}),
                     ),
                 )
-                # rowcount=1 表示插入或更新成功;冲突且 where 不满足(editor 条目)时 rowcount=0
-                count += db.rowcount
+                # rowcount=1 表示插入或更新成功;冲突且 where 不满足(editor 条目)时 rowcount=0。
+                # psycopg3:rowcount 在 execute() 返回的 cursor 上,不在 Connection 上
+                # (旧代码 `db.rowcount` → AttributeError,整个 worldbook LLM 抽取阶段崩、条目没入库)。
+                count += (getattr(_cur, "rowcount", 0) or 0)
         ctl.update(stage_progress=1)
         # phase_backend: 标记 worldbook 阶段写了多少条 — 0 当作 partial 让上层标 done_with_errors
         setattr(_stage_worldbook, "_last_count", count)

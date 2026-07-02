@@ -9,6 +9,16 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.34.4] - 2026-07-02 (@ 4de3ceb5e)
+
+### Fixed
+- **导入小说时世界书 LLM 抽取阶段崩溃、条目近乎不入库**(生产日志排查发现,script 248/user 188):
+  `import_pipeline._stage_worldbook` 用 `count += db.rowcount`,但 psycopg3 的 `rowcount` 在
+  `execute()` 返回的 **cursor** 上、不在 **Connection** 上 → 插入第一条后即 `AttributeError:
+  'Connection' object has no attribute 'rowcount'` → 整个 LLM 抽取阶段被 except 吞成
+  `[worldbook] LLM extract failed`、后续条目全不入库。改为从 `db.execute(...)` 返回的 cursor 取
+  `rowcount`。含回归测试 + psycopg3 契约测试。
+
 ## [1.34.3] - 2026-07-02 (@ c47db1690)
 
 ### Fixed
