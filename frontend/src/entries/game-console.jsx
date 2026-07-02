@@ -1100,6 +1100,17 @@ function App() {
           logEvent('cliche_notice', data);
           if (data && Array.isArray(data.phrases) && data.phrases.length) setClicheNotice(data);
         },
+        on_weekday_notice: (data) => {
+          if (!isCurrentRun()) return;
+          // 客户 abci: 确定性星期验错查出 LLM 算错的星期 → toast 明示,玩家可重新生成。
+          logEvent('weekday_notice', data);
+          const errs = (data && Array.isArray(data.errors)) ? data.errors : [];
+          if (!errs.length) return;
+          const detail = errs.map((e) => `${e.rel}应为${e.expected}(写成了${e.claimed})`).join('；');
+          window.__apiToast?.(`本轮星期算错了(今天${(data && data.base) || ''})`, {
+            kind: 'warn', detail: `${detail}。可点「重新生成」。`, duration: 8000,
+          });
+        },
         on_usage: (data) => {
           if (!isCurrentRun()) return;
           // #11: 后端在 done 前发独立 usage 事件(input/output/cached/reasoning tokens

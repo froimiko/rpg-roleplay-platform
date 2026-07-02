@@ -1013,6 +1013,31 @@ def _log_acceptance_ab(user_id, save_id, turn, unmet, original_text, rewrite_tex
         return None
 
 
+def _weekday_check_events(message_for_model, response, state):
+    """确定性星期验错(客户 abci:LLM 算不对星期)→ 记 audit + 返回 weekday_notice 事件。
+    默认休眠:剧情里没有确切「今天=周X」基准就返回 [](玄幻/修仙/无日历剧本零副作用)。
+    合并玩家本回合输入 + GM 输出做自洽检查:玩家立「今天周日」、GM 把「明天」写成周六 → 查出。
+    只查不改:surface 给玩家(可重新生成),不动正文、不搞状态机。"""
+    try:
+        from agents.timeline_narrative_guard import detect_weekday_violations
+        _wd = detect_weekday_violations((message_for_model or "") + "\n" + (response or ""))
+    except Exception:
+        return []
+    if not _wd:
+        return []
+    errs = [{"rel": v["rel"], "claimed": v["claimed_name"], "expected": v["expected_name"]} for v in _wd[:5]]
+    try:
+        from datetime import datetime as _dt
+        aud = state.data.setdefault("permissions", {}).setdefault("audit_log", [])
+        aud.append({"ts": _dt.now().isoformat(timespec="seconds"), "kind": "weekday_arithmetic_error",
+                    "source": "weekday_check", "turn": int(state.data.get("turn") or 0), "violations": errs})
+        if len(aud) > 200:
+            state.data["permissions"]["audit_log"] = aud[-200:]
+    except Exception:
+        pass
+    return [("weekday_notice", {"base": _wd[0]["base_name"], "errors": errs})]
+
+
 async def run_gm_phase(
     ctx: PipelineContext,
     *,
@@ -1562,6 +1587,9 @@ async def run_gm_phase(
                     "phrases": [v.get("match") for v in _cliche][:5],
                     "labels": sorted({v.get("pattern_label") for v in _cliche}),
                 })
+            # 确定性星期验错(客户 abci:LLM 算不对星期)—— 剧情有确切日期在推进时才查。
+            for _wd_ev in _weekday_check_events(ctx.message_for_model, response, state):
+                yield _wd_ev
 
             # Q Phase 2 史官三合一(flag on):一次 recorder LLM 调用同时产 ops + 锚点判定,
             # 替代「独立 extractor + 独立 anchor_reconcile LLM」两次调用。off 时走原路径。
@@ -1678,6 +1706,9 @@ async def run_gm_phase(
             "phrases": [v.get("match") for v in _cliche][:5],
             "labels": sorted({v.get("pattern_label") for v in _cliche}),
         })
+    # 确定性星期验错(客户 abci:LLM 算不对星期)—— 剧情有确切日期在推进时才查。
+    for _wd_ev in _weekday_check_events(ctx.message_for_model, response, state):
+        yield _wd_ev
 
     response_with_ops = _post_results.get("response_with_ops") or response
 

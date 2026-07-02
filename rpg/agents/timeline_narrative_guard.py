@@ -165,4 +165,87 @@ def record_violations_to_audit(state: Any, violations: list[dict[str, Any]]) -> 
         permissions["audit_log"] = audit[-200:]
 
 
-__all__ = ["detect_time_jump_violations", "detect_cliche_violations", "record_violations_to_audit"]
+# ── 星期确定性验错(客户 abci 反馈:LLM 算不对星期,「今天周日→明天却写成周六」)───────
+# 剧情正在推进确切日期时(有确切「今天=周X」+ 相对日「明天/后天/…」),用算法算出正确星期,
+# 查出 LLM 写错的。**纯确定性检测,不注入、不改写、不搞状态机**。默认休眠:文本里没有确切
+# 「今天=周X」基准就返回空 → 玄幻/修仙/无日历剧本零副作用。
+_WD_IDX = {  # 星期字 → index(周一=0 .. 周日=6)
+    "一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6,
+    "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6,
+}
+_WD_NAME = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+_REL_DAY_DELTA = {  # 相对日 → 相对「今天」的天数偏移
+    "今天": 0, "今日": 0, "当天": 0, "本日": 0,
+    "明天": 1, "明日": 1, "次日": 1, "翌日": 1, "第二天": 1, "隔天": 1,
+    "后天": 2, "大后天": 3, "外后天": 3,
+    "昨天": -1, "昨日": -1, "前天": -2, "大前天": -3,
+}
+_WD_TOKEN = r"(?:周|星期|礼拜)\s*([一二三四五六日天1-7])"
+# 匹配「<相对日>(可选 那天/是/为/：)<周/星期/礼拜><X>」:明天周六 / 后天是星期日 / 今天礼拜天
+_REL_WD_RE = re.compile(
+    "(" + "|".join(sorted(_REL_DAY_DELTA, key=len, reverse=True)) + ")"
+    r"(?:那天|这天|当天)?\s*(?:是|为|,|，|:|：)?\s*" + _WD_TOKEN
+)
+# 单独的「今天(是)周X」基准声明(即便没有相对日配对也用来定基准)
+_TODAY_WD_RE = re.compile(r"(?:今天|今日|当天|本日)(?:那天|这天)?\s*(?:是|为|,|，|:|：)?\s*" + _WD_TOKEN)
+
+
+def _wd_name(idx: int) -> str:
+    return _WD_NAME[idx % 7]
+
+
+def parse_today_weekday(text: str) -> int | None:
+    """从文本里抓「今天=周X」的确切基准星期(0..6),没有返回 None。"""
+    m = _TODAY_WD_RE.search(text or "")
+    return _WD_IDX.get(m.group(1)) if m else None
+
+
+def detect_weekday_violations(text: str, base_weekday: int | None = None) -> list[dict[str, Any]]:
+    """确定性星期验错:给相对日(今天/明天/后天/…)配了错星期的地方查出来。
+
+    base_weekday:文本外(玩家输入/近期剧情)已确立的「今天」星期;None 时退回文本内自洽
+    (文本自己出现「今天=周X」就用它当基准)。**没有任何确切「今天」基准 → 返回空(休眠)**。
+    返回 [{rel, match, claimed, expected, claimed_name, expected_name, base_name}]。
+    """
+    t = text or ""
+    if not isinstance(t, str):
+        return []
+    pairs = []  # (delta, claimed_idx, rel_word, matched_str)
+    for m in _REL_WD_RE.finditer(t):
+        wd = _WD_IDX.get(m.group(2))
+        if wd is not None:
+            pairs.append((_REL_DAY_DELTA[m.group(1)], wd, m.group(1), m.group(0)))
+    if not pairs:
+        return []
+    text_today = next((wd for delta, wd, _, _ in pairs if delta == 0), None)
+    if text_today is None:
+        text_today = parse_today_weekday(t)
+    # 外部权威基准优先(玩家/剧情确立的今天);否则用文本自己的今天。
+    base = base_weekday if base_weekday is not None else text_today
+    if base is None:
+        return []  # 无确切基准 → 不查
+    out: list[dict[str, Any]] = []
+    seen: set[tuple] = set()
+    for delta, wd, rel, matched in pairs:
+        # 基准来自文本内 today-claim 时,跳过 today 自身(自洽无意义);外部基准时连今天一起查。
+        if base_weekday is None and delta == 0:
+            continue
+        expected = (base + delta) % 7
+        if wd != expected:
+            key = (rel, wd, delta)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({
+                "rel": rel, "match": matched,
+                "claimed": wd, "expected": expected,
+                "claimed_name": _wd_name(wd), "expected_name": _wd_name(expected),
+                "base_name": _wd_name(base),
+            })
+    return out
+
+
+__all__ = [
+    "detect_time_jump_violations", "detect_cliche_violations", "record_violations_to_audit",
+    "detect_weekday_violations", "parse_today_weekday",
+]
