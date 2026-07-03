@@ -9,7 +9,8 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
-## [1.37.0] - 2026-07-03 (@ 1d17112b0)
+### Fixed
+- **供应商 5xx / 网关宕机时错误文案含糊,被误当平台故障**(行者无疆报「生成失败(错误码 Ecxxxx)」,实为其中转站 `opencode.ai/zen` 返回 502 Bad Gateway / Cloudflare origin 过载):`classify_provider_error` 新增 `upstream` 类——HTTP 5xx 或 message 命中网关特征(cloudflare / bad gateway / service unavailable / origin_bad_gateway)时,给明确一句「你的模型服务暂时不可用(返回 5xx 网关错误,多为供应商/中转站过载或宕机),不是平台或存档的问题。请稍等重试或换个模型/供应商」。放在 4xx 各类之后,普通 400 / 未知仍走原兜底(不误吞)。单测覆盖 502/503/msg-only 命中 + 4xx 各类无回归。
 
 ### Added
 - **正则脚本(SillyTavern regex parity,反馈#93 之三)**:全新用户自定义正则,对 **AI 输出**做确定性 find→replace(v1 仅输出/显示作用域;输入作用域与指令解析纠缠,留 v2,故 UI 不给假开关)。`/api/regex/scripts`(增删查,存 `user_preferences.regex_scripts`,服务端校验正则可编译)+ `state/regex_scripts.apply_output_regex`(chat_pipeline 清洗后应用)+ 可复用组件 `RegexScriptsSection`(酒馆抽屉新增「正则」页签)。替换串用 SillyTavern/JS 风格 `$1`/`$&`(手动展开,避 Python 反斜杠陷阱),flags 支持 i/m/s。**ReDoS 安全**:嵌套无界量词(如 `(a+)+`)启发式在**保存 + 应用**双端拒绝 + daemon 线程 wall-clock 超时(0.5s)兜底 + 输入长度上限,绝不断轮/不挂进程。真库 e2e:捕获组/删除/flags/停用/无效跳过/ReDoS 拦截 全通。

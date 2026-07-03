@@ -71,7 +71,7 @@ def _http_status(exc: Exception) -> int | None:
 def classify_provider_error(exc: Exception) -> tuple[str, str] | None:
     """已知提供商错误 → (category, 客户端安全文案);未知返回 None(调用方走各自兜底)。
 
-    category ∈ {"balance", "auth", "ratelimit", "context"}。文案不含 error_id,调用方自行追加。
+    category ∈ {"balance", "auth", "ratelimit", "context", "upstream"}。文案不含 error_id,调用方自行追加。
     """
     raw_lower = str(exc).strip().lower()
     status = _http_status(exc)
@@ -93,4 +93,14 @@ def classify_provider_error(exc: Exception) -> tuple[str, str] | None:
                 "本回合的剧情上下文（历史 + 世界书 + 设定）超过了所选模型的上下文长度上限，"
                 "重试也无法恢复。请到「设置 → 模型 / API 设置」换用上下文窗口更大的模型"
                 "（例如百万级上下文的 Gemini 2.5 Flash / Pro 等），或精简世界书 / 历史注入后再试。")
+    # 提供商服务器侧 5xx / 网关错误(502/503/504/520-524,含 Cloudflare origin 故障):供应商 / 中转站
+    # 过载或宕机,与请求内容、平台、存档都无关,是对面服务器暂时没响应。放最后:前面 4xx 已排除。
+    # 双判:HTTP 5xx 状态,或 message 命中网关特征(状态码被 SDK 吞掉时兜住)。
+    if (status is not None and 500 <= status <= 599) or any(
+        m in raw_lower for m in ("cloudflare", "bad gateway", "gateway time", "service unavailable", "origin_bad_gateway")
+    ):
+        code = str(status) if status else "5xx"
+        return ("upstream",
+                f"你的模型服务暂时不可用（服务器返回 {code} 网关错误，多为供应商 / 中转站过载或宕机），"
+                "不是平台或存档的问题。请稍等片刻重试，或到「设置 → 模型 / API 设置」换用其他模型 / 供应商。")
     return None
