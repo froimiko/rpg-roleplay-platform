@@ -702,11 +702,13 @@ def _reconcile_impl(
     # 3. Bug B 有界叙事章估计上下文。只在【真实默认判定器】路径备料(只读自连接);注入式 _judge
     #    (离线测试)不备料、不连库,估章值由注入判定器自带。备料失败 → est_ctx=None → 本回合关估章
     #    (避免 prev 基线失真还参与落库)。
-    # P4(S6):退役猜章器 —— 不做全局默认翻转(避免影响所有现存档),而是【前沿系统对本档启用时】
-    # 关掉估章:此时进度改由前沿派生(derived_progress_chapter,S7)推进,估章是 over-shoot 旧源。
-    # flag off → est_on 维持今日行为(有界估章);RPG_PROGRESS_NARRATIVE_ESTIMATE=0 仍可全局强关。
-    from kb.reveal import _frontier_on as _frontier_on_save
-    est_on = _estimate_enabled() and not _frontier_on_save(save_id)
+    # 修正(违背「确定性不得绕过三贤者」的回退):此前【前沿启用时关掉估章】,进度改由纯确定性
+    # 「已到达锚点」派生 → 发散局(锚点命中不了)进度冻死(行者无疆 268 号档:turn 503 还卡在第 7 章)。
+    # 恢复:前沿模式下史官的进度判断照常跑 ——「本回合有没有前进」是史官(LLM)的判断(progress_motion /
+    # 估章),确定性只做累计 / clamp / 单调护栏(_apply_pace_fallback / _apply_estimate 均有界,pace_cap=2/回合、
+    # ceiling=prev+CAP,不会 catastrophic 乱跳)。前沿退回只当【揭示护栏】(reached 地板防剧透),不再当
+    # 唯一进度源、不再绕过史官。RPG_PROGRESS_NARRATIVE_ESTIMATE=0 仍可全局强关。
+    est_on = _estimate_enabled()
     est_ctx: dict[str, Any] | None = None
     # 无论 _judge 是否由 recorder_bridge 注入,只要 est_on 就加载 est_ctx —— 它提供估章的 prev 基线。
     # 原 `and _judge is None` 让生产路径(recorder_bridge 总注入 _judge)恒不加载 → est_prev 恒为 1 →

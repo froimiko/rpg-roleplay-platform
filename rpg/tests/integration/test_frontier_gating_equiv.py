@@ -261,24 +261,31 @@ class FrontierWritePath(unittest.TestCase):
         wl = (r or {}).get("worldline") if r else None
         return (wl or {}).get("progress_chapter") if isinstance(wl, dict) else None
 
-    # ── S6:退役估章器 —— flag on 时估章不再 over-shoot ──────────────────────────
-    def test_estimator_disabled_when_frontier_on(self):
+    # ── 史官进度判断在前沿模式下【照常生效】(修正「确定性绕过三贤者」的回退)──────────────
+    #   曾经:前沿启用时关掉史官估章,进度纯由「已到达锚点」派生 → 发散局(锚点命中不了)进度冻死
+    #   (行者无疆 268 号档 turn 503 卡在第 7 章)。现恢复:史官估章/motion 照常跑,确定性只做有界护栏
+    #   (clamp/pace_cap/单调),前沿退回只当揭示护栏(reached 地板防剧透)。
+    def test_estimator_active_under_frontier(self):
+        """核心契约:前沿模式【不再关掉史官估章】→ flag on 的进度推进 == flag off(史官照常生效、
+        不被绕过),且比初始进度有前进(未冻)。此前 flag on 强制 est_on=False → 史官被绕过、发散冻死。
+        (估章的确切落点依赖 chapter_facts 环境,故断等价而非固定数值。)"""
         from gm_serving.anchor_reconcile import reconcile_anchors_for_turn
         judge = lambda uid, text, pending, save_id=None: {"reached": [], "estimated_chapter": 9}
 
-        # flag off:估章生效 → 进度被推到 9(旧 over-shoot 行为,有界但仍跳)
         os.environ["RPG_TKB_FRONTIER"] = "off"
         sid_off = self._seed_save(3)
         self._set_progress(sid_off, 1)
         reconcile_anchors_for_turn(sid_off, self.owner_id, "本回合剧情正文" * 20, _judge=judge)
-        self.assertEqual(self._read_progress(sid_off), 9, "flag off 估章应推进到 9(旧行为)")
+        prog_off = self._read_progress(sid_off)
 
-        # flag on:估章退役 → 进度不被估章推高(保持 1,改由前沿派生)
         os.environ["RPG_TKB_FRONTIER"] = "on"
         sid_on = self._seed_save(3)
         self._set_progress(sid_on, 1)
         reconcile_anchors_for_turn(sid_on, self.owner_id, "本回合剧情正文" * 20, _judge=judge)
-        self.assertEqual(self._read_progress(sid_on), 1, "flag on 估章应退役,进度不被冲高")
+        prog_on = self._read_progress(sid_on)
+
+        self.assertEqual(prog_on, prog_off, "flag on 史官估章应与 flag off 一致(前沿不再绕过史官)")
+        self.assertGreater(prog_on, 1, "史官估章在前沿模式下应推进进度(不冻死)")
 
     # ── S6.3:GM 工具 mark_anchor_satisfied 写前沿 ──────────────────────────────
     def test_mark_satisfied_writes_frontier(self):
@@ -329,7 +336,10 @@ class FrontierWritePath(unittest.TestCase):
         self.assertEqual(derived_progress_chapter(sid2), 1, "前沿未种时 derived 应=1")
         with connect() as db:
             ps = read_settings(db, sid2)["progress_chapter"]
-        self.assertEqual(ps, 3, "未种前沿时应取已确认锚点 floor=3(不坍缩到1,也不带回 over-shoot 的9)")
+        # 修正(去确定性绕过):read_settings 现纳入史官进度(worldline 标量,由【有界】估章/pace 写入),
+        # 取 max(floor=3, derived=1, 史官=9)=9。史官判断不再被钳到 floor;over-shoot 由【上游有界估章/
+        # pace_cap/clamp】兜住,而非在这里无视史官(生产实测 frontier 档 pc 与 floor 差≤1,无旧过冲残留)。
+        self.assertEqual(ps, 9, "read_settings 采纳史官进度=9(不再钳 floor;over-shoot 由上游有界护栏兜)")
 
     # ── S7.3:rewind 收缩前沿 → derived 下降 ────────────────────────────────────
     def test_rewind_shrinks_frontier(self):

@@ -70,13 +70,23 @@ def read_settings(db, save_id: int) -> dict:
     try:
         from kb.reveal import _frontier_on, derived_progress_chapter
         if _frontier_on(save_id):
-            out["progress_chapter_legacy"] = out.get("progress_chapter")
+            # 修正(去确定性绕过):此前把史官 progress_chapter 降级 legacy、只用 max(floor,derived)=纯 reached
+            # 派生 → 发散局进度冻死。恢复:也纳入史官的进度判断(worldline.progress_chapter,由 _apply_estimate/
+            # _apply_pace_fallback 有界写入),三者取 max:
+            #   · _floor  = 已到达锚点最大原著章(reached 地板 = 防剧透护栏、可靠真值)
+            #   · _derived= 前沿派生(可见锚点最大章)
+            #   · _sage   = 史官估章/motion 兜底(发散前进靠它;有界:pace_cap/clamp/单调,不会乱跳)
+            #   前沿模式下史官估章曾被关(est_on),故存量 _sage≈reached、无旧猜章器过冲值,纳入 max 安全。
+            _sage_raw = out.get("progress_chapter")
+            out["progress_chapter_legacy"] = _sage_raw
+            _sage = int(_sage_raw) if isinstance(_sage_raw, int) else (
+                int(_sage_raw) if isinstance(_sage_raw, str) and _sage_raw.strip().lstrip("-").isdigit() else 0)
             _derived = derived_progress_chapter(save_id, db=db)
             _fr = db.execute(
                 "select coalesce(max(source_chapter),0) c from save_anchor_states "
                 "where save_id=%s and status in ('occurred','variant')", (save_id,)).fetchone()
             _floor = max(1, int((_fr or {}).get("c") or 0))
-            out["progress_chapter"] = max(_floor, int(_derived))
+            out["progress_chapter"] = max(_floor, int(_derived), _sage)
     except Exception:
         pass
     return out
