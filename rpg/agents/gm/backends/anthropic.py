@@ -111,6 +111,22 @@ class _AnthropicBackend:
             log.warning(f"[anthropic] _thinking_param resolve failed: {exc}")
             return None
 
+    def _sampling_extra(self, has_thinking: bool) -> dict:
+        """反馈#93:用户生成参数预设(temperature/top_p/top_k)。只带用户显式设过的键。
+        Extended Thinking 开启时 Anthropic 限制采样参数(temperature 须为默认)→ 全跳过最稳。"""
+        if has_thinking:
+            return {}
+        try:
+            from ._gen_params import resolve_gen_params
+            gen = resolve_gen_params(self.user_id)
+        except Exception:
+            return {}
+        out: dict = {}
+        for k in ("temperature", "top_p", "top_k"):
+            if k in gen:
+                out[k] = gen[k]
+        return out
+
     def call(self, system: str, messages: list[dict], max_tokens: int) -> str:
         last_exc: Exception | None = None
         # task 141: thinking 模型 max_tokens 要 ≥ budget_tokens + 输出预算,否则 SDK 报错
@@ -118,6 +134,7 @@ class _AnthropicBackend:
         if _thinking:
             max_tokens = max(max_tokens, int(_thinking["budget_tokens"]) + 1024)
         _extra = {"thinking": _thinking} if _thinking else {}
+        _extra.update(self._sampling_extra(bool(_thinking)))  # 反馈#93:接入生成参数预设
         for attempt in range(_MAX_RETRIES + 1):
             try:
                 resp = self.client.messages.create(
@@ -179,6 +196,7 @@ class _AnthropicBackend:
         if _thinking:
             max_tokens = max(max_tokens, int(_thinking["budget_tokens"]) + 1024)
         _extra = {"thinking": _thinking} if _thinking else {}
+        _extra.update(self._sampling_extra(bool(_thinking)))  # 反馈#93:接入生成参数预设
         with self.client.messages.stream(
             model=self.model_name,
             max_tokens=max_tokens,

@@ -187,6 +187,15 @@ class _VertexBackend:
             ),
             "http_options": types.HttpOptions(timeout=_VERTEX_TIMEOUT_SECONDS * 1000),
         }
+        # 反馈#93:接入用户生成参数预设(只覆盖设过的键;未设沿用默认 0.9,零行为变化)。
+        try:
+            from ._gen_params import resolve_gen_params
+            _gen = resolve_gen_params(self.user_id)
+        except Exception:
+            _gen = {}
+        for _gk in ("temperature", "top_p", "top_k"):
+            if _gk in _gen:
+                _cfg[_gk] = _gen[_gk]
         # 显式缓存:命中则以 cached_content 引用前缀(system 在 cache 内,request 不再带 system_instruction)
         if _cache_name:
             _cfg["cached_content"] = _cache_name

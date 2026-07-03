@@ -43,6 +43,28 @@ def _is_temperature_rejected(exc: Exception) -> bool:
     return "temperature" in str(exc).lower()
 
 
+_SAMPLING_PARAM_NAMES = ("temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "repetition_penalty")
+
+
+def _is_sampling_rejected(exc: Exception) -> bool:
+    """provider 拒绝任一自定义采样参数(temperature/top_p/penalties/top_k/repetition_penalty)——
+    400 BadRequest 且报错点名其中之一。据此自愈:剥掉全部采样参数用模型默认重试(反馈#93 预设接线兜底)。"""
+    try:
+        from openai import BadRequestError
+        if not isinstance(exc, BadRequestError):
+            return False
+    except ImportError:
+        return False
+    s = str(exc).lower()
+    return any(p in s for p in _SAMPLING_PARAM_NAMES)
+
+
+def _strip_sampling(kwargs: dict) -> None:
+    """就地剥掉所有采样参数(含 extra_body 内的 top_k/repetition_penalty)→ 退回模型默认。"""
+    for _sp in ("temperature", "top_p", "frequency_penalty", "presence_penalty", "extra_body"):
+        kwargs.pop(_sp, None)
+
+
 def _is_tools_unsupported(exc: Exception) -> bool:
     """仅「400 BadRequest」才视为 provider 不支持 tools 参数 → 降级 text marker。
     429 限流 / 401 鉴权 / 5xx / 超时 等是瞬时/配置错误,**不可**据此把 (api,model) 永久标记为
@@ -84,16 +106,38 @@ class _OpenAICompatBackend:
         """
         combo = (self.api_id, self.model_name, self.user_id)
         if combo in self._fixed_temp_combos:
-            kwargs.pop("temperature", None)
+            _strip_sampling(kwargs)  # 本进程已知该 combo 拒采样参数 → 直接剥掉不再发
         try:
             return self.client.chat.completions.create(**kwargs)
         except Exception as exc:
-            if "temperature" in kwargs and _is_temperature_rejected(exc):
+            # provider 拒绝任一采样参数(temperature/top_p/penalties/extra_body 里的 top_k/repetition_penalty)
+            # → 剥掉全部采样参数用模型默认重试 + 记忆。保证「预设接线」不会让任何 provider 400 断轮。
+            if _is_sampling_rejected(exc) and any(k in kwargs for k in ("temperature", "top_p", "frequency_penalty", "presence_penalty", "extra_body")):
                 self._fixed_temp_combos.add(combo)
-                kwargs.pop("temperature", None)
-                log.info(f"[GM] {self.api_id}/{self.model_name} 拒绝自定义 temperature → 用模型默认重试")
+                _strip_sampling(kwargs)
+                log.info(f"[GM] {self.api_id}/{self.model_name} 拒绝自定义采样参数 → 用模型默认重试")
                 return self.client.chat.completions.create(**kwargs)
             raise
+
+    def _sampling_kwargs(self, default_temperature: float) -> dict[str, Any]:
+        """叙事调用的采样参数 = 用户预设(只覆盖设过的键)叠加在后端默认 temperature 上。
+        JSON/结构化调用不走此方法(保持低温 0.1)。反馈#93:让生成参数预设真正生效。"""
+        try:
+            from ._gen_params import resolve_gen_params
+            gen = resolve_gen_params(self.user_id)
+        except Exception:
+            gen = {}
+        out: dict[str, Any] = {"temperature": gen.get("temperature", default_temperature)}
+        for k in ("top_p", "frequency_penalty", "presence_penalty"):
+            if k in gen:
+                out[k] = gen[k]
+        extra: dict[str, Any] = {}
+        for k in ("top_k", "repetition_penalty"):
+            if k in gen:
+                extra[k] = gen[k]
+        if extra:
+            out["extra_body"] = extra
+        return out
 
     def __init__(self, model: str, base_url: str, env_key: str, display_kind: str = "openai_compat",
                  user_id: int | None = None, api_id: str | None = None):
@@ -194,7 +238,7 @@ class _OpenAICompatBackend:
                     model=self.model_name,
                     messages=self._to_messages(system, messages),
                     max_tokens=max_tokens,
-                    temperature=0.9,
+                    **self._sampling_kwargs(0.9),
                     **_reasoning,
                 )
                 break
@@ -287,7 +331,7 @@ class _OpenAICompatBackend:
             model=self.model_name,
             messages=self._to_messages(system, messages),
             max_tokens=max_tokens,
-            temperature=0.9,
+            **self._sampling_kwargs(0.9),
             stream=True,
             stream_options={"include_usage": True},  # 末尾 chunk 带 usage
             **_reasoning,
@@ -430,7 +474,7 @@ class _OpenAICompatBackend:
                     model=self.model_name,
                     messages=oai_messages,
                     max_tokens=max_tokens,
-                    temperature=0.9,
+                    **self._sampling_kwargs(0.9),
                     tools=openai_tools,
                     tool_choice="auto",
                     stream=True,
