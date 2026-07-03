@@ -9,6 +9,8 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+### Fixed
+- **酒馆系统提示词无法保存(反馈#94)**:`POST /api/tavern/chats/{id}/system-prompt` 仅写 `game_saves.state_snapshot`,但主读源是 `runtime_checkouts.state_snapshot`(`load_active_state` 优先读它),且 kb_native 档经 `_kb_backed_state`→`materialize` 从 `kb_worldline_vars` 重建 `tavern` 覆盖该写 → 系统提示词保存后回退。**两处根因修复**(均沿用既有范式):①端点在本对话即活跃档时把 `system_prompt` 写进 working-tree state + `_persist_runtime_checkpoint`(runtime + `snapshot_hash` bump,跨 worker 失效),与 worldline 变量端点同款;②`_kb_backed_state` 对 `tavern` 子树做 blob 覆盖(同 `session_model`,out-of-turn 编辑不随回合 import 进 KB)。真库 e2e 往返验证(kb_native 档 set→reload 持久化 + 证伪旧路径);tavern/materialize/kb 测试 13 passed。
 ## [1.36.0] - 2026-07-02 (@ 81bb5f986)
 
 ### Added / Changed

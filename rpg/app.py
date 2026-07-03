@@ -821,6 +821,12 @@ def _kb_backed_state(state: "GameState", save_id: int, commit_id: int) -> "GameS
     _blob_sm = (getattr(state, "data", {}) or {}).get("session_model") or {}
     if isinstance(_blob_sm, dict) and _blob_sm.get("model_id"):
         data["session_model"] = _blob_sm
+    # 同 session_model:酒馆 tavern 子树(卡快照/persona/system_prompt/绑定剧本/沉浸模式)是 out-of-turn
+    # 编辑的 working-tree 状态,不随回合 import 进 kb_worldline_vars → materialize 拿到的是上次回合旧值,
+    # 会把刚编辑的 system_prompt 打回(反馈#94「酒馆系统提示词无法保存」)。以 blob(runtime 优先级1)为准。
+    _blob_tav = (getattr(state, "data", {}) or {}).get("tavern")
+    if isinstance(_blob_tav, dict) and _blob_tav:
+        data["tavern"] = _blob_tav
     data["_active_save_id"] = save_id  # materialize 丢瞬态指针,这里补回
     return GameState(data)
 

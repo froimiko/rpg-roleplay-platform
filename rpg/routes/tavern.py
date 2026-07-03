@@ -434,6 +434,7 @@ async def api_tavern_set_system_prompt(
         if not _require_tavern_save(db, chat_id, user_id):
             return _bad("无权操作该对话", 403)
         # tavern 存档的 state_snapshot.tavern 一定存在(create_tavern_save 建好),jsonb_set 直接落键。
+        # 这是【读侧兜底 + 管理面板可见】;kb_native 档真正生效靠下方 runtime 写穿(见 F#94 说明)。
         db.execute(
             "update game_saves set "
             "state_snapshot = jsonb_set(coalesce(state_snapshot, '{}'::jsonb), "
@@ -441,6 +442,26 @@ async def api_tavern_set_system_prompt(
             "where id = %s and user_id = %s and save_kind = 'tavern'",
             (sp, chat_id, user_id),
         )
+    # F#94「酒馆系统提示词无法保存」根因:主读源是 runtime_checkouts.state_snapshot(load_active_state 优先
+    # 读它),kb_native 档还会经 _kb_backed_state/materialize 从 kb_worldline_vars 重建 tavern 覆盖 game_saves
+    # 写。若本对话即当前活跃档,把 system_prompt 写进 working-tree state 并 persist(runtime + snapshot_hash
+    # bump 跨 worker 失效),与 worldline 变量端点同款路径;配合 _kb_backed_state 对 tavern 的 blob 覆盖,
+    # kb_native 档也生效。
+    try:
+        import app as _ui
+
+        _pu, _active = _ui._resolve_persist_target(api_user)
+        if _active and int(_active) == int(chat_id):
+            _state = _ui._ensure_loaded(api_user)
+            _tav = _state.data.setdefault("tavern", {})
+            if isinstance(_tav, dict):
+                _tav["system_prompt"] = sp
+                _state.save()
+                _ui._persist_runtime_checkpoint(_state, api_user)
+    except Exception as _exc:  # 兜底:game_saves 写已落,runtime 写穿失败不阻断返回
+        import logging
+
+        logging.getLogger("rpg.routes.tavern").warning("[system-prompt] runtime persist 跳过: %s", _exc)
     _invalidate_cache(api_user)
     return _json({"ok": True, "system_prompt": sp})
 
