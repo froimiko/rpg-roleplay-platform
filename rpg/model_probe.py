@@ -408,6 +408,22 @@ def _list_openai_compat_models(api: dict[str, Any], user_id: int | None = None) 
             except Exception:
                 data = None
         if data is None:
+            # 区分「base_url 错」与「key 错/权限不足」—— 原来一律甩锅 base_url,把 Google 400
+            # "Please pass a valid API key"(URL 正确、是 key 无效)的用户送去改本就正确的 URL。
+            _msg = str(exc)
+            _low = _msg.lower()
+            _code = getattr(exc, "status_code", None) or getattr(
+                getattr(exc, "response", None), "status_code", None)
+            _key_err = (_code in (401, 403)
+                        or "api key" in _low or "api_key" in _low
+                        or "unauthorized" in _low or "permission" in _low
+                        or "invalid_argument" in _low or "invalid argument" in _low)
+            if _key_err:
+                raise RuntimeError(
+                    f"provider 拒绝列模型:API key 无效 / 被拒 / 权限不足(HTTP {_code or '400'})。"
+                    f"URL 没问题——请核对该 provider 的 API key 是否正确、未过期,对应 API 已启用,"
+                    f"且没有 IP/来源限制挡住服务器。原始错误:{_msg}"
+                ) from exc
             raise RuntimeError(
                 f"provider 拒绝列模型(base_url 可能缺 /v1 版本段,或该 provider 不支持 /v1/models): {exc}"
             ) from exc
