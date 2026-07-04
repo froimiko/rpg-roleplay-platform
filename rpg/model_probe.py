@@ -414,6 +414,17 @@ def _list_openai_compat_models(api: dict[str, Any], user_id: int | None = None) 
             _low = _msg.lower()
             _code = getattr(exc, "status_code", None) or getattr(
                 getattr(exc, "response", None), "status_code", None)
+            # Google AI Studio 对机房/VPS/非住宅 IP 的地区封禁:400 "User location is not
+            # supported" / FAILED_PRECONDITION。与 key/URL 无关,别让用户瞎改 key。
+            _geo_err = ("location is not supported" in _low or "user location" in _low
+                        or "failed_precondition" in _low or "failed precondition" in _low)
+            if _geo_err:
+                raise RuntimeError(
+                    f"provider 拒绝:Google 封禁了服务器所在地区/数据中心 IP(HTTP {_code or '400'} "
+                    f"「User location is not supported」)。与你的 API key、base_url 都无关 —— Google AI "
+                    f"Studio 会封机房/VPS IP。解法:给 Google 出站配支持地区的代理,或改用 Vertex AI"
+                    f"(服务账号鉴权、面向服务器,不受此限)。原始:{_msg}"
+                ) from exc
             _key_err = (_code in (401, 403)
                         or "api key" in _low or "api_key" in _low
                         or "unauthorized" in _low or "permission" in _low
