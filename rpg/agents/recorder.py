@@ -648,27 +648,28 @@ def _call_recorder(
         )
         return text, usage
 
-    # OpenAI 兼容：复用 _harness._openai_compat_json_mode（不 strip ops 字段，
-    # 保留整个 JSON 对象供 _parse_recorder_output 解析全部字段）。
-    # 注意：extractor._call_openai_compat_json_mode 末尾会把 {"ops":[...]} strip
-    # 成裸数组，会丢掉 reached/unmet 字段。因此直接用 _harness 的版本。
-    from agents._harness import _openai_compat_json_mode as _harness_compat
-    # 追加 json_hint 到 system prompt。**关键**:hint 必须展示 list ITEM 的结构,
-    # 否则弱模型(flash 等)json_mode 下会把 ops 输出成裸字符串 ["练突刺"] → _safe_ops
-    # 按非 dict 正确丢弃 → 静默空提取(实测 deepseek-v4-flash 时有时无)。展示全字段形状,
-    # 未启用 task 的字段由 _parse_recorder_output 按 active_tasks 过滤,留着无害。
-    json_hint = ('{"ops":[{"op":"set","path":"player.current_location","value":"…"}],'
-                 '"reached":[{"anchor_key":"…","drift_score":0.0}],'
-                 '"current_chapter":null,"unmet":["验收条款原文"]}')
-    system_with_hint = system_prompt + (
-        f"\n\n输出必须是严格符合此形状的 JSON 对象(每个数组元素都是对象,绝不能是裸字符串):{json_hint}。"
-        "不要输出任何解释文字或 markdown 代码围栏。"
-    )
-    text, usage = _harness_compat(
+    # OpenAI 兼容：走 native function-calling（forced tool_choice，schema 强校验），
+    # 与 anthropic native tool_use / vertex function-call **同源于 tool_schema** ——
+    # 三通道结构化返回要求从此单一来源。progress_motion / reached / current_chapter 等
+    # 必答字段由 schema.required 强制,弱模型(flash 等)也漏不掉。
+    #
+    # 【历史根因】此前这条通道是唯一手写第三份 shape(json_hint)的分支,而那份 hint 漏了
+    # progress_motion(批次1 只补进 tool_schema + _build_system_prompt,漏了这里),且末尾
+    # 「严格符合此形状」把它当权威 → 便宜模型据此永不吐 progress_motion → _safe_progress_motion(None)
+    # → pace fallback 永不触发 → 发散局进度冻死(行者无疆实测)。删掉手写 hint,消除漂移。
+    #
+    # _openai_function_call 内部对「中转拒绝 tools 形态」(403/400/404/405/422,群反馈实锤 op/xf
+    # 等中转)自动降级到 json_object 兼容模式,降级时用的正是这里传入的 base system_prompt
+    # (_build_system_prompt 的 schema_fields 已含 progress_motion + ops item 形状,json_object
+    # 下弱模型也不会把 ops 输出成裸字符串)。直接调(不经 call_agent_json)避免与下方 record_turn
+    # 的 record_usage 双计。
+    from agents._harness import _openai_function_call
+    text, usage = _openai_function_call(
         api_id=api_id,
         model=model,
-        system_prompt=system_with_hint,
+        system_prompt=system_prompt,
         user_prompt=user_prompt,
+        tool_schema=tool_schema,
         user_id=user_id,
         timeout_sec=timeout_sec,
         max_tokens=1200,
