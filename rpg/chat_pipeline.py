@@ -1410,10 +1410,23 @@ async def run_gm_phase(
                 _alt_id = await asyncio.to_thread(
                     _log_acceptance_ab, _auid, _save_id, _turn_now, _unmet[:5], _orig_clean, _r2)
                 if _alt_id and _auid:
+                    # 权威 message_index:此刻 record_turn 已落库,按首稿全文内容匹配算展示序 index,随事件
+                    # 下发前端(面板 original + 乐观替换 + 选择都用它),不靠前端「最后一条 assistant」启发式
+                    # —— 异步候选到达时该启发式会指到相邻回合(行者无疆:改写改到前一个回合)。
+                    def _compute_idx():
+                        try:
+                            from platform_app.db import connect as _c
+                            from routes.game import _resolve_message_index_by_content as _rmi
+                            with _c() as _db:
+                                return _rmi(_db, int(_save_id), _orig_clean, role="assistant")
+                        except Exception:
+                            return None
+                    _msg_idx = await asyncio.to_thread(_compute_idx)
                     from state_event_bus import emit as _emit
                     _emit(int(_auid), "acceptance_alt", "ready", {
                         "save_id": int(_save_id or 0), "alt_id": int(_alt_id),
-                        "turn": int(_turn_now), "rewrite": _r2, "unmet": _unmet[:5]})
+                        "turn": int(_turn_now), "rewrite": _r2, "unmet": _unmet[:5],
+                        "message_index": _msg_idx})
         except Exception as _bg:
             log.warning(f"[acceptance] 后台改写候选失败(仅首稿,已记 audit): {_bg}")
 

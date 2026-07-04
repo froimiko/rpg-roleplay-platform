@@ -763,6 +763,9 @@ function App() {
         alt_id: payload.alt_id, turn: payload.turn,
         rewrite: String(payload.rewrite || ''),
         unmet: Array.isArray(payload.unmet) ? payload.unmet : [],
+        // 后端按首稿全文算的权威展示序 index(可能 null=旧档/未命中);优先用它定位改写目标,
+        // 避免异步候选下前端「最后一条 assistant」指到相邻回合(改到前一个回合)。
+        message_index: (payload.message_index != null && payload.message_index >= 0) ? Number(payload.message_index) : null,
       });
     };
     window.addEventListener('rpg-acceptance_alt-updated', handler);
@@ -1774,8 +1777,14 @@ function App() {
         )}
         <div className="gc-foot-wrap">
           {rewriteAlt && (() => {
+            // 优先用后端下发的权威 message_index(按首稿全文算,不受异步竞态影响);无则回退
+            // 「最后一条 assistant」启发式(旧档/未命中)。这修「改写改到前一个回合」。
             let idx = -1;
-            for (let i = history.length - 1; i >= 0; i--) { if (history[i] && history[i].role === 'assistant') { idx = i; break; } }
+            if (rewriteAlt.message_index != null && rewriteAlt.message_index >= 0 && rewriteAlt.message_index < history.length) {
+              idx = rewriteAlt.message_index;
+            } else {
+              for (let i = history.length - 1; i >= 0; i--) { if (history[i] && history[i].role === 'assistant') { idx = i; break; } }
+            }
             const original = idx >= 0 ? String(history[idx].content || '') : '';
             const doChoose = async (choice) => {
               setAbBusy(true);

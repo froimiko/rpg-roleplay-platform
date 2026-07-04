@@ -1074,6 +1074,44 @@ def _amend_history_message(db, save_id: int, message_index: int, new_content: st
     return True, original
 
 
+def _resolve_message_index_by_content(db, save_id: int, content: str, *, role: str | None = None) -> int | None:
+    """按【全文内容 + 角色】算出展示序(滤空)message_index。权威源同 _amend_history_message:
+    活跃 commit 快照 history;无则 messages 表兜底。找不到 → None。
+
+    用途:acceptance 改写候选异步到达,前端「最后一条 assistant」启发式在玩家已推进/相邻回合时
+    会指错(行者无疆:改写改到前一个回合)。候选 log 里存了 original_text 全文,直接拿它内容匹配算出
+    权威 index,绕开前端竞态。展示序(滤空)与 _hist_at 一致;新回合的消息追加在后、不移动旧 index。"""
+    import json as _json
+    target = str(content or "")
+    if not target.strip():
+        return None
+    srow = db.execute("select active_commit_id from game_saves where id = %s", (save_id,)).fetchone()
+    commit_id = int((srow or {}).get("active_commit_id") or 0) if srow else 0
+    seq: list[tuple[str, str]] = []
+    if commit_id:
+        crow = db.execute(
+            "select state_snapshot from branch_commits where id = %s and save_id = %s",
+            (commit_id, save_id),
+        ).fetchone()
+        snap = (crow or {}).get("state_snapshot") if crow else None
+        if isinstance(snap, str):
+            snap = _json.loads(snap)
+        if isinstance(snap, dict) and isinstance(snap.get("history"), list):
+            seq = [(m.get("role"), m.get("content")) for m in snap["history"] if isinstance(m, dict)]
+    if not seq:
+        rows = db.execute(
+            "select role, content from messages where save_id = %s order by turn, id", (save_id,)
+        ).fetchall()
+        seq = [(r["role"], r["content"]) for r in rows]
+    disp = [(rl, ct) for (rl, ct) in seq if str(ct or "").strip()]  # 展示序 = 滤空
+    # 从后往前:改写针对最近那条同文(通常同 save 内该 assistant 全文唯一)。
+    for i in range(len(disp) - 1, -1, -1):
+        rl, ct = disp[i]
+        if ct == target and (role is None or rl == role):
+            return i
+    return None
+
+
 @router.post("/api/acceptance/choice", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_acceptance_choice(
     body: dict[str, Any],
@@ -1106,7 +1144,7 @@ async def api_acceptance_choice(
     try:
         with connect() as db:
             row = db.execute(
-                "select id, user_id, save_id, rewrite_text, chosen from acceptance_ab_log where id = %s",
+                "select id, user_id, save_id, original_text, rewrite_text, chosen from acceptance_ab_log where id = %s",
                 (alt_id,),
             ).fetchone()
             if not row:
@@ -1115,6 +1153,7 @@ async def api_acceptance_choice(
             if int(row["user_id"] or 0) != uid:
                 return JSONResponse({"ok": False, "error": "无权操作该候选"}, status_code=403)
             save_id = int(row["save_id"] or 0)
+            original_text = str(row["original_text"] or "")
             rewrite_text = str(row["rewrite_text"] or "")
             # 记录选择(幂等:重复点同一选择只更新时间戳)。
             db.execute(
@@ -1123,11 +1162,16 @@ async def api_acceptance_choice(
             )
             db.commit()
 
-            if choice == "rewrite" and rewrite_text and msg_index is not None and save_id:
-                try:
-                    mi = int(msg_index)
-                except (TypeError, ValueError):
-                    mi = -1
+            if choice == "rewrite" and rewrite_text and save_id:
+                # 权威定位:用候选 log 里存的 original_text 全文内容匹配算出 message_index —— 不信任前端
+                # 传的(异步候选 + 前端「最后一条 assistant」启发式会指到相邻回合 = 行者无疆「改到前一个
+                # 回合」的根)。内容没命中(清洗差异/旧档)才回退前端 message_index。
+                mi = _resolve_message_index_by_content(db, save_id, original_text, role="assistant")
+                if mi is None:
+                    try:
+                        mi = int(msg_index) if msg_index is not None else -1
+                    except (TypeError, ValueError):
+                        mi = -1
                 if mi >= 0 and owns_save(db, save_id, uid):
                     # 自包含写穿所有存储(commit 快照 + 工作树 blob + snapshot_hash bump + messages)。
                     swapped, _orig = _amend_history_message(db, save_id, mi, rewrite_text, require_role="assistant")
