@@ -120,6 +120,13 @@ def _normalize_openai_base_url(url: str) -> str:
     s = (url or "").strip().rstrip("/")
     if s.lower().endswith("/chat/completions"):
         s = s[: -len("/chat/completions")].rstrip("/")
+    # Google AI Studio 的 OpenAI 兼容端点在 `/v1beta/openai`。用户常只填到 `/v1beta`(原生 Gemini base)
+    # → SDK 拼 `.../v1beta/chat/completions`(原生无此端点→404)与 `.../v1beta/models`(原生列模型端点
+    # 拒 Bearer、要 ?key= → 401「provider 拒绝列模型」)。自愈:generativelanguage host 且以 /v1beta 结尾
+    # (非 /v1beta/openai)→ 补 /openai。行者无疆(u115)误填 `.../v1beta`,谷歌并未改 base。
+    _low = s.lower()
+    if "generativelanguage.googleapis.com" in _low and _low.endswith("/v1beta"):
+        s = s + "/openai"
     return s
 
 
@@ -341,7 +348,10 @@ def resolve_api_key(user_id: int | None, api_id: str, env_fallback: str = "") ->
         except Exception:
             cred = get_credential(user_id, api_id)
         if cred and cred.get("key"):
-            return {"key": cred["key"], "source": "user_db", "base_url_override": cred.get("base_url_override", ""), "proxy": cred.get("proxy", "")}
+            # 读时也过一遍规整(补 Google /openai、剥 /chat/completions)→ 存量误填的凭据自愈,用户无需重存。
+            return {"key": cred["key"], "source": "user_db",
+                    "base_url_override": _normalize_openai_base_url(cred.get("base_url_override", "")),
+                    "proxy": cred.get("proxy", "")}
 
     # 仅未强制鉴权时允许环境变量回退
     from core.config import require_auth as _require_auth
