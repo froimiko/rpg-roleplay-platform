@@ -252,6 +252,26 @@ COMMAND_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "advance_story_progress",
+        "description": (
+            "把玩家进度推进到指定原著章号(progress_chapter,单调只增、绝不回退)。"
+            "用于玩家【已经玩过】某段剧情、但系统进度没跟上 —— 典型:自插入/发散流(如无限流副本)"
+            "剧情不命中原著锚点,进度卡在早章。由玩家显式追平。"
+            "影响:防剧透天花板下限、检索窗口、软引导「下一拍」的起点章。"
+            "玩家说「推进到第X章 / 我已经过了第X章了 / 进度跳到第X章 / 已经玩到十几章了还卡在七八章」时调。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "to_chapter": {
+                    "type": "integer",
+                    "description": "目标原著章号(≥1)。低于当前进度会被忽略(单调只增不减)。",
+                },
+            },
+            "required": ["to_chapter"],
+        },
+    },
+    {
         "name": "add_memory",
         "description": (
             '【推荐入口·合并版】往 memory 任意一个桶追加一条。bucket enum 决定桶:\n'
@@ -543,6 +563,30 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
                 return "set_current_objective 失败: text 为空"
             state.data.setdefault("memory", {})["current_objective"] = v
             return f"当前目标 → {v}"
+        if name == "advance_story_progress":
+            raw = args.get("to_chapter")
+            try:
+                to_ch = int(raw)
+            except (TypeError, ValueError):
+                return "advance_story_progress 失败: to_chapter 必须是整数章号"
+            if to_ch < 1:
+                return "advance_story_progress 失败: to_chapter 必须 ≥ 1"
+            # save_id 由 dispatcher 无条件注入 args(服务端绑定、防跨档),不信任 state。
+            sid = args.get("save_id")
+            if not sid:
+                return "advance_story_progress 失败: 无 active save(存档未就绪)"
+            try:
+                from platform_app.db import connect
+                from gm_serving.settings import advance_progress, read_settings
+                with connect() as db:
+                    before = (read_settings(db, int(sid)) or {}).get("progress_chapter")
+                    advance_progress(db, int(sid), to_ch)  # max-only,单调只增
+                    after = (read_settings(db, int(sid)) or {}).get("progress_chapter")
+            except Exception as exc:
+                return f"advance_story_progress 失败: {type(exc).__name__}: {exc}"
+            if before is not None and after is not None and int(after) == int(before):
+                return f"进度未变:已在第 {after} 章(目标第 {to_ch} 章 ≤ 当前,单调不回退)"
+            return f"进度推进:第 {before} 章 → 第 {after} 章"
         if name in ("add_memory_fact", "add_memory_resource", "add_memory_ability",
                      "pin_memory", "add_memory_note"):
             bucket = {
