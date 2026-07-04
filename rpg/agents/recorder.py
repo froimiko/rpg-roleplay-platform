@@ -566,7 +566,8 @@ def record_turn(
         log.debug("[recorder] LLM 调用失败，返回空结果: %s", exc)
         return _empty_result()
 
-    # 记 usage（不影响主流程，异常静默）
+    # 记 usage（史官三通道唯一记账点，不影响主流程，异常静默）。
+    # dispatch 层不再自动记账,故这里记一次即准确、不双计。
     try:
         if user_id and usage and (usage.get("input_tokens") or usage.get("output_tokens")):
             from platform_app.usage import record_usage as _rec
@@ -611,8 +612,9 @@ def _call_recorder(
     2. Vertex AI + function calling（ANY 模式强制必调）
     3. OpenAI 兼容 → 复用 extractor._call_openai_compat_json_mode，传合并 json_hint
 
-    Anthropic 和 Vertex 走 _harness（已包含 BYOK 守卫 + usage 采集）。
-    OpenAI 兼容走 extractor._call_openai_compat_json_mode（共享维护）。
+    三通道都从同一份 tool_schema 取「必答字段」(schema 强制),不再手写第三份 shape。
+    usage 三通道都不在此层记账(anthropic/vertex 不传 agent_kind、openai_compat 直接调
+    _openai_function_call),统一由 record_turn 记一次(scenario="extract"),避免双计。
     """
     from agents._harness import call_agent_json as _call_json
 
@@ -627,7 +629,8 @@ def _call_recorder(
             tool_schema=tool_schema,
             max_tokens=1200,
             timeout_sec=timeout_sec,
-            agent_kind="recorder",
+            # 不传 agent_kind：usage 由下方 record_turn 统一记一次(scenario="extract"+tasks)。
+            # 传了 agent_kind call_agent_json 会自动再记一次(scenario="tool")→ 史官用量双计。
         )
         # harness Anthropic tool_use 返回 tool.input 的 JSON（整个 dict），
         # 直接解析用
@@ -644,7 +647,8 @@ def _call_recorder(
             tool_schema=tool_schema,
             max_tokens=1200,
             timeout_sec=timeout_sec,
-            agent_kind="recorder",
+            # 不传 agent_kind：usage 由下方 record_turn 统一记一次(scenario="extract"+tasks)。
+            # 传了 agent_kind call_agent_json 会自动再记一次(scenario="tool")→ 史官用量双计。
         )
         return text, usage
 
