@@ -76,6 +76,20 @@ _SYSTEM_OPS = """\
 如果叙事里完全没有状态变化，ops 输出 []。
 """
 
+# 后果账本 v1(feature_enabled("consequence_ledger") 时启用,docs/design/consequence_ledger_v1.md)。
+# recorder_unified 下史官是唯一权威 ops 通道(GM 自带 fence 会被剥弃,见 chat_pipeline 史官三合一段),
+# 所以 consequence 必须由史官提取,否则 GM 侧登记会被静默丢弃(「提示词在≠生效」同款陷阱)。
+_SYSTEM_OPS_CONSEQUENCE = """\
+【任务 OPS · 附加 — 后果登记(consequence)】
+叙事里出现「此刻种下、日后必有回响的因」时,额外输出 consequence op 登记到后果账本:
+- 何时登记:玩家许下承诺/欠下人情或债务/结仇树敌/救人留恩/与人约定期限/放走危险人物。
+- 何时不登记:即时兑现的小事、纯氛围描写、不确定的推测(推测用 hypothesis)。宁缺勿滥,每轮最多 2 条。
+- 形态(二选一):
+  {"op":"consequence","text":"答应雷纳德查清林中兽伤,明早带证据回村","due_turns":4}
+  {"op":"consequence","text":"在莉妮面前暴露非人身份,她进城赶集时可能说漏","due_location":"玛瓦尔特"}
+- due_turns 建议 2-8(近期回响),重大伏笔可 10-15;due_location 填地点关键词,玩家到达含该词的地点时到期。
+"""
+
 _SYSTEM_ANCHORS = """\
 【任务 ANCHORS — 世界线锚点判定 · 极度保守，宁漏勿误】
 读本回合 GM 叙事，完成：
@@ -119,11 +133,13 @@ _SYSTEM_OUTPUT_FORMAT = """\
 """
 
 
-def _build_system_prompt(tasks: frozenset[str]) -> str:
+def _build_system_prompt(tasks: frozenset[str], consequence_enabled: bool = False) -> str:
     """根据启用的任务集合组装 system prompt。"""
     parts = [_SYSTEM_OUTPUT_HEADER.strip()]
     if "ops" in tasks:
         parts.append(_SYSTEM_OPS.strip())
+        if consequence_enabled:
+            parts.append(_SYSTEM_OPS_CONSEQUENCE.strip())
     if "anchors" in tasks:
         parts.append(_SYSTEM_ANCHORS.strip())
     if "acceptance" in tasks:
@@ -132,7 +148,10 @@ def _build_system_prompt(tasks: frozenset[str]) -> str:
     # 输出格式说明
     schema_fields: list[str] = []
     if "ops" in tasks:
-        schema_fields.append('"ops": [{"op":"set|append|overwrite|question","path":"player.xxx","value":"..."}]')
+        if consequence_enabled:
+            schema_fields.append('"ops": [{"op":"set|append|overwrite|question|consequence","path":"player.xxx","value":"...","due_turns":4}]')
+        else:
+            schema_fields.append('"ops": [{"op":"set|append|overwrite|question","path":"player.xxx","value":"..."}]')
     if "anchors" in tasks:
         schema_fields.append('"reached": [{"anchor_key":"<来自列表>","drift_score":0.0}]')
         schema_fields.append('"current_chapter": <章号整数 或 null>')
@@ -241,32 +260,50 @@ def _build_user_prompt(
 
 # ── merged tool schema（Anthropic native tool_use）──────────────────
 
-def _build_tool_schema(tasks: frozenset[str], acceptance_clauses: list[str] | None) -> dict:
-    """构造合并后的 emit_record 工具 schema，只包含已启用任务对应的字段。"""
+def _build_tool_schema(tasks: frozenset[str], acceptance_clauses: list[str] | None,
+                       consequence_enabled: bool = False) -> dict:
+    """构造合并后的 emit_record 工具 schema，只包含已启用任务对应的字段。
+
+    consequence_enabled 必须与 _build_system_prompt 同源传入 —— 三通道(anthropic/vertex/
+    openai_compat)都从这一份 schema 取形状,漏这里=原生 tool-use 通道吐不出 consequence
+    (progress_motion 漏进 tool-schema 的 parity 事故同款,勿重蹈)。
+    """
     properties: dict[str, Any] = {}
     required: list[str] = []
 
     if "ops" in tasks:
+        _op_enum = ["set", "append", "overwrite", "question",
+                    "hypothesis", "confirm_hypothesis", "reject_hypothesis"]
+        _op_item_props: dict[str, Any] = {
+            "op": {
+                "type": "string",
+                "enum": _op_enum,
+            },
+            "path": {"type": "string", "description": "state 路径；op=question/hypothesis/* 时可省"},
+            "value": {"description": "要写入的值"},
+            "question": {"type": "string", "description": "op=question 时用"},
+            "options": {"type": "array", "items": {"type": "string"}, "description": "op=question 时用"},
+            "text": {"type": "string", "description": "op=hypothesis/consequence 时用"},
+            "id": {"type": "string", "description": "op=confirm_hypothesis/reject_hypothesis 时用"},
+            "characters": {"type": "array", "items": {"type": "string"}, "description": "op=hypothesis 时用"},
+            "time_label": {"type": "string", "description": "op=hypothesis 时可选"},
+        }
+        if consequence_enabled:
+            _op_enum.append("consequence")
+            _op_item_props["due_turns"] = {
+                "type": "integer",
+                "description": "op=consequence:N 回合后到期(建议 2-8,重大伏笔 10-15)",
+            }
+            _op_item_props["due_location"] = {
+                "type": "string",
+                "description": "op=consequence:玩家到达含该关键词的地点时到期",
+            }
         properties["ops"] = {
             "type": "array",
             "description": "状态变化 op 列表。没有变化时传 []。",
             "items": {
                 "type": "object",
-                "properties": {
-                    "op": {
-                        "type": "string",
-                        "enum": ["set", "append", "overwrite", "question",
-                                 "hypothesis", "confirm_hypothesis", "reject_hypothesis"],
-                    },
-                    "path": {"type": "string", "description": "state 路径；op=question/hypothesis/* 时可省"},
-                    "value": {"description": "要写入的值"},
-                    "question": {"type": "string", "description": "op=question 时用"},
-                    "options": {"type": "array", "items": {"type": "string"}, "description": "op=question 时用"},
-                    "text": {"type": "string", "description": "op=hypothesis 时用"},
-                    "id": {"type": "string", "description": "op=confirm_hypothesis/reject_hypothesis 时用"},
-                    "characters": {"type": "array", "items": {"type": "string"}, "description": "op=hypothesis 时用"},
-                    "time_label": {"type": "string", "description": "op=hypothesis 时可选"},
-                },
+                "properties": _op_item_props,
                 "required": ["op"],
             },
         }
@@ -557,12 +594,21 @@ def record_turn(
         log.debug("[recorder] 无可用 api_id/model，跳过")
         return _empty_result()
 
-    system_prompt = _build_system_prompt(active_tasks)
+    # 后果账本(consequence_ledger flag,默认关):史官是 recorder_unified 下唯一权威 ops
+    # 通道,flag 开才教它 consequence op。prompt 与 tool-schema 必须同源同值(parity)。
+    try:
+        from core.feature_flags import feature_enabled as _feat
+        _consequence_on = "ops" in active_tasks and _feat("consequence_ledger", user_id)
+    except Exception:
+        _consequence_on = False
+
+    system_prompt = _build_system_prompt(active_tasks, consequence_enabled=_consequence_on)
     user_prompt = _build_user_prompt(
         gm_prose, state_data, active_tasks,
         pending_anchors, chapter_map, acceptance_clauses,
     )
-    tool_schema = _build_tool_schema(active_tasks, acceptance_clauses)
+    tool_schema = _build_tool_schema(active_tasks, acceptance_clauses,
+                                     consequence_enabled=_consequence_on)
 
     # 三通道 dispatch（优先 native tool_use / function calling）
     try:
