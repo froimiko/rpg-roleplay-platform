@@ -7154,6 +7154,8 @@
     "custom_model_option": "自定义…（手动填写模型名）",
     "custom_model_short": "自定义…",
     "default_header": "模型",
+    "degraded_select_warning": "所选渠道近 5 分钟内多次故障，可能不稳定",
+    "degraded_suffix": "(近 5 分钟多次故障)",
     "go_config_key": "去配 key",
     "inherit_label": "跟随主 GM",
     "model_disabled_suffix": "(禁用)",

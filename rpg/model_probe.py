@@ -182,6 +182,88 @@ def get_health(api_id: str, real_name: str) -> dict[str, Any] | None:
 def all_health() -> dict[str, dict[str, Any]]:
     """全量返回当前 cache 状态,UI 调试用。"""
     return {f"{a}::{m}": v for (a, m), v in _HEALTH_CACHE.items()}
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  韧性战役 · 被动失败计数(渠道健康门控)
+# ══════════════════════════════════════════════════════════════════════
+# 生产事故形态:某中转站网关连环 502 期间,模型选择器照样把挂掉的渠道端给每个用户,
+# 人人各撞一次。这里不做主动探测(不花用户 BYOK 的钱),只是把 routes/game.py 里
+# classify_provider_error 已经分类出的 upstream/ratelimit 失败**被动记下来**,滑动窗口
+# 内失败次数达到阈值时,把该 api_id 标记为 degraded,供 GET /api/models 展示 + 前端提示。
+#
+# 存储:按 (user_id, api_id) 记录失败时间戳列表(滑动窗口,超出 _FAILURE_WINDOW_SEC 的
+# 记录懒惰丢弃)。是否 degraded 按 api_id 聚合所有 user 的失败事件——事故场景是"多个不同
+# 用户各自都撞一次同一渠道",单个用户口径会漏判(该用户可能只撞了 1 次就换模型了,
+# 但另外 5 个用户也各撞了 1 次,渠道其实已经挂了)。
+#
+# 进程内 dict,不引入 redis。workers=2 下每个 worker 独立计数——同一渠道故障期间两个
+# worker 各自的请求会分别累计,阈值达成时间可能略有先后,是刻意接受的保守近似
+# (最坏情况只是"某个 worker 判定 degraded 稍晚几次失败",不影响功能正确性,换 redis
+# 共享计数是明确出圈项,见任务备注)。
+_FAILURE_WINDOW_SEC = 300.0  # 5 分钟
+_FAILURE_THRESHOLD = 3       # 窗口内 ≥3 次 → degraded
+
+# key: (user_id_or_0, api_id) -> list[timestamp]
+_FAILURE_EVENTS: dict[tuple[int, str], list[float]] = {}
+
+
+def _prune_window(events: list[float], now: float) -> list[float]:
+    """丢弃超出滑动窗口的旧时间戳,返回窗口内仍有效的列表。"""
+    cutoff = now - _FAILURE_WINDOW_SEC
+    return [ts for ts in events if ts > cutoff]
+
+
+def note_channel_failure(
+    api_id: str,
+    user_id: int | None = None,
+    clock: Any = time.time,
+) -> None:
+    """记一次 (user_id, api_id) 的 upstream/ratelimit 失败。
+
+    调用侧(routes/game.py _client_safe_error 分类为 upstream/ratelimit 时)传入
+    api_id;user_id 传当前请求用户(未登录传 None,归到 0 桶)。
+
+    clock: 可注入的时间函数,默认 time.time;测试传假 clock 避免真 sleep。
+    """
+    if not api_id:
+        return
+    now = clock()
+    key = (int(user_id or 0), api_id)
+    events = _prune_window(_FAILURE_EVENTS.get(key, []), now)
+    events.append(now)
+    _FAILURE_EVENTS[key] = events
+
+
+def note_channel_success(api_id: str, user_id: int | None = None) -> None:
+    """流式成功完成时调用,清零该 (user_id, api_id) 的失败计数。
+
+    只清当前 user 的桶(其他 user 若仍在经历故障,不应被这次成功掩盖)。
+    """
+    if not api_id:
+        return
+    key = (int(user_id or 0), api_id)
+    _FAILURE_EVENTS.pop(key, None)
+
+
+def channel_failure_count(api_id: str, clock: Any = time.time) -> int:
+    """该 api_id 在滑动窗口内的失败总数(聚合所有 user 桶)。"""
+    if not api_id:
+        return 0
+    now = clock()
+    total = 0
+    for (_uid, aid), events in list(_FAILURE_EVENTS.items()):
+        if aid != api_id:
+            continue
+        total += len(_prune_window(events, now))
+    return total
+
+
+def is_channel_degraded(api_id: str, clock: Any = time.time) -> bool:
+    """该 api_id 是否达到 degraded 阈值(窗口内 ≥3 次失败,聚合全部 user)。"""
+    return channel_failure_count(api_id, clock=clock) >= _FAILURE_THRESHOLD
+
+
 _CACHE_TTL = 60.0
 
 

@@ -49,10 +49,19 @@ def _inject_pricing(catalog: dict[str, Any]) -> dict[str, Any]:
 
 def _inject_health(catalog: dict[str, Any]) -> dict[str, Any]:
     """task 42: 把 model_probe._HEALTH_CACHE 的状态合并到每个 model.health 字段。
-    UI 据此显示可用/不可达/未校验,picker 灰掉 err 项。"""
+    UI 据此显示可用/不可达/未校验,picker 灰掉 err 项。
+
+    韧性战役(渠道健康门控):额外按 api_id 标记 "degraded" —— 该渠道在过去 5 分钟内
+    被动记录到 ≥3 次 upstream/ratelimit 失败(见 model_probe.note_channel_failure,由
+    routes/game.py 聊天流失败时调用)。目录降权只标记,不隐藏不删除,不影响
+    curation(a.enabled)/凭据可见性等既有逻辑;degraded 与 health(主动探测结果)是
+    两条独立信号,同一模型可以 health=ok 但因最近渠道抖动仍是 degraded。"""
     import model_probe
     for api in catalog.get("apis", []):
         api_id = api.get("id", "")
+        degraded = bool(api_id) and model_probe.is_channel_degraded(api_id)
+        if degraded:
+            api["degraded"] = True
         for m in api.get("models", []):
             real = m.get("real_name") or m.get("id")
             health = model_probe.get_health(api_id, real) if real else None
@@ -65,6 +74,8 @@ def _inject_health(catalog: dict[str, Any]) -> dict[str, Any]:
             else:
                 m["health"] = "untested"
                 m["health_status_detail"] = "untested"
+            if degraded:
+                m["degraded"] = True
     return catalog
 
 

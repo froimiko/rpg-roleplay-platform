@@ -251,6 +251,16 @@ export default function AgentModelPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefPrefix, dictKey, persistShape, saveId, reloadTick]);
 
+  // 该 (aid, m) 当前是否 degraded —— 从 /api/models 响应(apis state,含 _inject_health 注入的
+  // api.degraded / model.degraded)里查,不额外发请求。
+  const isChannelDegraded = (aid, m) => {
+    const a = apiOf(aid);
+    if (!a) return false;
+    if (a.degraded) return true;
+    const mm = (a.models || a.entries || []).find((x) => (x.real_name || x.id) === m);
+    return !!(mm && mm.degraded);
+  };
+
   // 统一落库:按 persistShape 走 flat 双 key / dict 单 key 对象 / POST /api/models/select。
   const persist = async (aid, m) => {
     if (!aid || !m) return;
@@ -271,6 +281,11 @@ export default function AgentModelPicker({
         });
       }
       onChange && onChange(aid, m, 'user');   // 用户真的换了模型 → 浮层据此关闭/刷新
+      // 渠道健康门控:选中的渠道最近多次故障 —— 不阻止选择,只 warn 提示(models_select 路径,
+      // 即游戏内 GM 模型切换;其它 persistShape 维持原静默行为,与既有 reject 分支同范围)。
+      if (persistShape === 'models_select' && isChannelDegraded(aid, m)) {
+        window.__apiToast?.(t('agent_picker.degraded_select_warning'), { kind: 'warn', duration: 4000 });
+      }
     } catch (e) {
       // models_select 路径:后端可能前置拒绝(如 vertex_ai 未上传 SA,needs_model_config)
       // 这类错误必须提示用户,不能像其它 persistShape 一样静默吞掉 —— 否则用户以为切换成功,
@@ -327,6 +342,9 @@ export default function AgentModelPicker({
         && (a.models || a.entries || []).some((m) => (m.capabilities || m.caps || []).includes('embedding'))) return true;
     return false;
   };
+  // 渠道健康门控(韧性战役):degraded provider 不置灰不禁选(用户可能就是要试),
+  // 只在下拉/浮层加警示后缀 —— 与既有 showHealth(popover 专属、置灰 err 项)是两条独立逻辑。
+  const degradedLabel = (label, degraded) => degraded ? `${label} ${t('agent_picker.degraded_suffix')}` : label;
   const providerOptions = React.useMemo(() => {
     const seen = new Set();
     const out = [];
@@ -335,7 +353,7 @@ export default function AgentModelPicker({
       if (!id || seen.has(id)) continue;
       if (!_providerVisible(a)) continue;            // 尊重 a.enabled curation + 凭据
       seen.add(id);
-      out.push({ value: id, label: a.display_name || a.name || id });
+      out.push({ value: id, label: degradedLabel(a.display_name || a.name || id, !!a.degraded) });
     }
     // 自定义 OpenAI-compatible API 可能只有用户凭证,不在全局模型目录里。
     for (const id of credApiIds) {
@@ -356,7 +374,7 @@ export default function AgentModelPicker({
   });
   const modelOptions = filteredModels.map((m) => ({
     value: m.real_name || m.id,
-    label: `${m.display_name || m.real_name || m.id}${m.enabled === false ? ` ${t('agent_picker.model_disabled_suffix')}` : ''}`,
+    label: `${degradedLabel(m.display_name || m.real_name || m.id, !!m.degraded)}${m.enabled === false ? ` ${t('agent_picker.model_disabled_suffix')}` : ''}`,
     disabled: m.enabled === false,
   }));
 
@@ -381,7 +399,7 @@ export default function AgentModelPicker({
       ? { value: CUSTOM_MODEL, label: t('agent_picker.custom_model_short') }
       : (() => {
           const m = modelsOf(apiId).find((x) => (x.real_name || x.id) === model);
-          return m ? { value: model, label: m.display_name || m.real_name || m.id }
+          return m ? { value: model, label: degradedLabel(m.display_name || m.real_name || m.id, !!m.degraded) }
             : (model ? { value: model, label: model } : null);
         })();
 
@@ -399,7 +417,7 @@ export default function AgentModelPicker({
           <CSSelect
             selectedOption={inherit ? null : (() => {
               const a = apiOf(apiId);
-              return a ? { value: apiId, label: a.display_name || a.name || apiId }
+              return a ? { value: apiId, label: degradedLabel(a.display_name || a.name || apiId, !!a.degraded) }
                 : (apiId ? { value: apiId, label: `${apiId} ${t('agent_picker.provider_no_key_suffix')}` } : null);
             })()}
             options={providerOptions}
@@ -498,6 +516,9 @@ export default function AgentModelPicker({
           health: m.health || 'untested',
           health_error: m.health_error || '',
           health_latency_ms: m.health_latency_ms,
+          // 渠道健康门控:与 health(主动探测结果,枚举含未触发的 "degraded" 值)是独立信号——
+          // 这里是被动失败计数触发的渠道级降权,命名 channel_degraded 避免与 health==='degraded' 混淆。
+          channel_degraded: !!(m.degraded || a.degraded),
           price_in: pricing.input != null ? pricing.input : null,
           price_out: pricing.output != null ? pricing.output : null,
           ctx: pricing.context != null ? pricing.context : null,
@@ -562,11 +583,17 @@ export default function AgentModelPicker({
                     <span className="amp-pop-api">{m.api_label}</span>
                     {unavailable && <span className="amp-pop-err">unreachable</span>}
                   </div>
-                  {(m.desc || price || ctx) && (
+                  {(m.desc || price || ctx || m.channel_degraded) && (
                     <span className="amp-pop-meta">
                       {m.desc || null}
                       {price && <span style={{ marginLeft: m.desc ? 6 : 0, opacity: 0.85 }}>{price}</span>}
                       {ctx && <span style={{ marginLeft: (m.desc || price) ? 6 : 0, opacity: 0.7 }}>ctx {ctx}</span>}
+                      {/* 渠道健康门控:degraded 不置灰不禁选,只加警示后缀(用户可能就是要试)。 */}
+                      {m.channel_degraded && (
+                        <span className="amp-pop-err" style={{ marginLeft: (m.desc || price || ctx) ? 6 : 0 }}>
+                          {t('agent_picker.degraded_suffix')}
+                        </span>
+                      )}
                     </span>
                   )}
                 </button>

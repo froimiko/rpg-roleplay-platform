@@ -2076,6 +2076,15 @@ async def persist_turn_phase(
         api_user, state, message_for_model, visible_response,
         persist_user_id=ctx.persist_user_id, active_save_id=ctx.active_save_id,
     )
+    # 渠道健康门控(韧性战役):本回合走到这里 = GM 主响应流式成功完成,清零该
+    # (user_id, api_id) 的被动失败计数,别让早前的暂时性 502/限流继续把渠道钉在 degraded。
+    try:
+        import model_probe
+        model_probe.note_channel_success(
+            getattr(gm, "api_id", ""), user_id=(api_user or {}).get("id"),
+        )
+    except Exception:
+        pass
     usage_payload = build_usage_payload(
         api_user, gm, bundle, message_for_model,
         ctx.persist_user_id, ctx.active_save_id, ctx.context_run_id,

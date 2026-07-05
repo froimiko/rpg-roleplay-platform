@@ -50,6 +50,30 @@ def _client_safe_error(exc: Exception) -> str:
     return f"本轮处理出错,请重试(错误码 {error_id})"
 
 
+def _note_channel_health_failure(exc: Exception, api_id: str, api_user: dict[str, Any] | None) -> None:
+    """渠道健康门控(韧性战役):upstream/ratelimit 分类的失败被动记进 model_probe 滑动窗口。
+
+    只认 classify_provider_error 分类为 "upstream"(5xx/网关)或 "ratelimit" 的失败——
+    这两类是"渠道本身有问题"(供应商/中转站过载或限流),而非 auth/balance/context 等
+    用户自己能一次性解决的问题,不该拖累渠道的健康标记。失败分类/记录本身绝不能让
+    异常冒泡打断 SSE 错误面,全程 best-effort。
+    """
+    if not api_id:
+        return
+    try:
+        from agents.provider_errors import classify_provider_error
+        known = classify_provider_error(exc)
+        if not known:
+            return
+        category = known[0]
+        if category not in ("upstream", "ratelimit"):
+            return
+        import model_probe
+        model_probe.note_channel_failure(api_id, user_id=(api_user or {}).get("id"))
+    except Exception:
+        pass
+
+
 async def _bridge_sync_generator_to_async(gen_factory, stop_event: threading.Event | None = None):
     """跑同步 generator,SSE 取消时设置 stop_event 让 generator 早退。
 
@@ -387,8 +411,15 @@ async def api_opening(
                     _persist_runtime_checkpoint(state, api_user)
             except Exception:
                 _persist_runtime_checkpoint(state, api_user)
+            # 渠道健康门控:开场也走成功即清零(与主 chat 流程 persist_turn_phase 同口径)。
+            try:
+                import model_probe
+                model_probe.note_channel_success(gm.api_id, user_id=(api_user or {}).get("id"))
+            except Exception:
+                pass
             yield _sse("done", {"status": _payload_sse(api_user)})
         except Exception as exc:
+            _note_channel_health_failure(exc, gm.api_id, api_user)
             yield _sse("error", {"message": _client_safe_error(exc), "partial": text})
             yield _sse("done", {"interrupted": True, "status": _payload_sse(api_user)})
 
@@ -874,6 +905,7 @@ async def api_chat(
                 error=str(exc),
                 duration_ms=int((time.time() - _chat_start_time) * 1000),
             )
+            _note_channel_health_failure(exc, gm.api_id, api_user)
             yield _sse("error", {"message": _client_safe_error(exc), "partial": pipeline_ctx.response or response})
             yield _sse("done", {"interrupted": True, "status": _payload_sse(api_user)})
 

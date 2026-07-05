@@ -7157,6 +7157,8 @@
     "custom_model_option": "Custom… (enter model name manually)",
     "custom_model_short": "Custom…",
     "default_header": "Model",
+    "degraded_select_warning": "The selected channel had multiple failures in the last 5 minutes and may be unstable",
+    "degraded_suffix": "(multiple failures in last 5 min)",
     "go_config_key": "Set up API key",
     "inherit_label": "Follow main GM",
     "model_disabled_suffix": "(Disabled)",
