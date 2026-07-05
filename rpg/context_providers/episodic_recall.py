@@ -54,10 +54,6 @@ class EpisodicRecallProvider(ContextProvider):
             except Exception:
                 commit = 0
         from kb.episodic import retrieve_episodic_merged
-        import logging as _lg
-        _lg.getLogger(__name__).info(
-            "[episodic_recall] 输入侧 hist=%d save=%s commit=%s q[:80]=%r",
-            len(hist), save_id, commit, (query or "")[:80])
         hits = retrieve_episodic_merged(
             int(save_id or 0), commit, user_id, query, hist, k=3, exclude_recent=12)
         if not hits:
