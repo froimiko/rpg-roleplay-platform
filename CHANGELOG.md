@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.51.2] - 2026-07-06
+
+### Fixed
+- **情景召回**:向量命中不再挤掉对话历史里的直接答案,两个视角并列注入。
+
 ## [1.51.1] - 2026-07-06
 
 ### Fixed
