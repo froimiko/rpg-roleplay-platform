@@ -2169,6 +2169,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "create index if not exists idx_acceptance_ab_save on acceptance_ab_log(save_id, turn)",
         "create index if not exists idx_acceptance_ab_chosen on acceptance_ab_log(chosen, created_at)",
     ]),
+    (92, "world_key_model_v1_schema", [
+        # 时间线战役·批次 3a(docs/design/world_key_model_v1.md §2)。
+        # world_key 模型地基:原著叙事世界标签(无限流副本/穿越两界/平行位面)。
+        # 全加性可空,旧行 null=主世界=现状,零行为变化(消费侧改造留待批次 3b)。
+        # 复用 reveal_anchors.worldline_key 同名同义(§1 术语统一:绝不造第三套字段名)。
+        "alter table chapter_facts add column if not exists worldline_key text",
+        "alter table chapter_facts add column if not exists in_world_time text",
+        "alter table script_timeline_anchors add column if not exists worldline_key text",
+    ]),
 ]
 
 
