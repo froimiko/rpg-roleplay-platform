@@ -71,13 +71,17 @@ def upsert_agenda(
     goal: str | None = None,
     stance: str | None = None,
     turn: int | None = None,
+    extra_known: set[str] | None = None,
 ) -> tuple[bool, str]:
     """登记/更新一条 NPC 议程。纯函数，直接改 state_data，不做 IO。
 
     返回 (ok, message)。message 是给 updates 列表用的中文说明（成功/拒绝原因）。
 
     校验顺序（设计文档 §1/§3 用例口径）：
-      1. name 必填，且必须已存在于 relationships ∪ active_entities（防 LLM 发明路人）
+      1. name 必填，且必须已存在于 relationships ∪ active_entities ∪ extra_known
+         （防 LLM 发明路人）。extra_known = 本回合 GM 正文里真实出现的名字（测玩
+         实证修复：首次登场的 NPC 此前不在 relationships/active_entities，会被误拒；
+         史官正是从正文里提出议程，正文出现=真实存在，仍挡凭空臆造的路人）。
       2. goal / stance 至少给一个（部分更新合并，不整条覆盖）
       3. 单条截断到 MAX_FIELD_LEN
       4. 上限 MAX_AGENDAS 条 → 剪掉 updated_turn 最旧的（新条目自身不会被自己挤掉）
@@ -92,6 +96,8 @@ def upsert_agenda(
         return False, f"议程登记忽略（{name} 缺 goal 与 stance，至少给一个）"
 
     known = _known_npc_names(state_data)
+    if extra_known:
+        known |= {str(n) for n in extra_known if n}
     if name not in known:
         return False, f"议程登记拒绝（{name} 不在场上已知角色名单，防臆造路人）"
 

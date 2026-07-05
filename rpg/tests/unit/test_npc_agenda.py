@@ -305,9 +305,10 @@ class ApplyOpBranchTests(unittest.TestCase):
         self.assertTrue(updates)  # 有说明,不静默
 
     def test_json_op_unknown_name_rejected_no_crash(self):
-        """名字不在场上已知名单 → 纯函数层拒绝,apply 分支不崩、有说明。"""
+        """名字既不在已知名单、也不在叙事正文 → 拒绝,apply 分支不崩、有说明。"""
         s = _new_state(turn=1)
         gm_response = (
+            "你走在无人的旷野上。\n\n"
             "```json\n"
             '{"op": "agenda", "name": "路人甲", "goal": "随便逛逛"}\n'
             "```\n"
@@ -411,3 +412,51 @@ class NpcAgendaProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_debut_npc_accepted_via_prose_extra_known():
+    """测玩实证:首次登场 NPC 不在 relationships/active_entities,但正文出现→放行。"""
+    from state.npc_agenda import upsert_agenda
+    sd = {"turn": 5, "relationships": {}, "active_entities": []}
+    # 无 extra_known:拒
+    ok, _ = upsert_agenda(sd, name="亨丽埃特", goal="换柴火", turn=5)
+    assert not ok
+    # 正文出现→extra_known 放行
+    ok2, msg2 = upsert_agenda(sd, name="亨丽埃特", goal="换柴火", turn=5,
+                              extra_known={"亨丽埃特"})
+    assert ok2 and "亨丽埃特" in msg2
+
+
+def test_extra_known_still_blocks_invented_ghost():
+    """extra_known 只放行正文真出现的名字,不在正文的仍拒(防臆造)。"""
+    from state.npc_agenda import upsert_agenda
+    sd = {"turn": 5, "relationships": {}, "active_entities": []}
+    ok, _ = upsert_agenda(sd, name="不存在的路人", goal="x", turn=5,
+                          extra_known={"亨丽埃特"})
+    assert not ok
+
+
+def test_debut_npc_in_prose_accepted_via_apply():
+    """apply 层:正文叙述里出现的首登 NPC 被放行(用 text_stripped 非含 op 的 gm_response)。"""
+    s = _new_state(turn=3)
+    gm_response = (
+        "亨丽埃特抱起双臂,打量着你。\n\n"
+        "```json\n"
+        '{"op": "agenda", "name": "亨丽埃特", "goal": "看看你有几分真本事", "stance": "试探"}\n'
+        "```\n"
+    )
+    s.apply_structured_updates(gm_response)
+    assert "亨丽埃特" in s.data.get("npc_agendas", {})
+
+
+def test_ghost_only_in_fence_not_prose_rejected_via_apply():
+    """名字只在 json fence 里(op 自身)、正文没提 → 仍拒(防臆造闸不被 fence 自证绕过)。"""
+    s = _new_state(turn=3)
+    gm_response = (
+        "你独自走在空荡的街道上,四下无人。\n\n"
+        "```json\n"
+        '{"op": "agenda", "name": "神秘人X", "goal": "密谋", "stance": "敌意"}\n'
+        "```\n"
+    )
+    s.apply_structured_updates(gm_response)
+    assert "神秘人X" not in s.data.get("npc_agendas", {})

@@ -74,6 +74,7 @@ class ApplyOpsMixin:
         name: str,
         goal: str | None = None,
         stance: str | None = None,
+        extra_known: set[str] | None = None,
     ) -> tuple[bool, str]:
         from state.npc_agenda import upsert_agenda as _upsert
         return _upsert(
@@ -82,6 +83,7 @@ class ApplyOpsMixin:
             goal=goal,
             stance=stance,
             turn=self.data.get("turn", 0),
+            extra_known=extra_known,
         )
 
     def apply_structured_updates(self, gm_response: str) -> list[str]:
@@ -328,10 +330,18 @@ class ApplyOpsMixin:
                         _log_op_parse_error("agenda op 缺 'name' 字段", op)
                         updates.append(f"JSON op 忽略（议程缺 name）：{op}")
                         continue
+                    # 测玩实证修复:首次登场 NPC 尚未进 relationships/active_entities,会被
+                    # 白名单误拒(最该登议程的「角色初登场」恰恰失败)。放行条件放宽:名字
+                    # 在本回合 GM【叙事正文】里真实出现 → 视为已知(史官正是从正文提议程,
+                    # 正文出现=真实存在;仍挡凭空臆造的路人)。⚠️必须用剥掉 json fence 的
+                    # text_stripped,不能用 gm_response —— 后者含 op 本身,名字恒在里面,
+                    # 会废掉整个防臆造闸。
+                    _agenda_extra = {a_name} if a_name and a_name in text_stripped else None
                     ok, msg = self.upsert_npc_agenda(
                         name=a_name,
                         goal=op.get("goal"),
                         stance=op.get("stance"),
+                        extra_known=_agenda_extra,
                     )
                     updates.append(f"状态写入：{msg}" if ok else msg)
                     continue
