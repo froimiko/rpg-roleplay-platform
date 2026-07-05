@@ -9,6 +9,12 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.42.0] - 2026-07-05
+
+### Added
+- **时间连续性护栏 v0**:world.time 天数倒退确定性检测(第N天,含中文数字),命中在状态写入回执追加警示+audit,解析不出天数即休眠零误伤;不拦截不改写。
+
+
 ## [1.41.2] - 2026-07-05
 
 ### Fixed
