@@ -609,6 +609,24 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
         # 即便开了「贴原著」也会凭训练数据自由发挥开局(用户反馈:序章脱离原著、自设剧情)。
         if anchor_min is None and is_opening and script_id:
             anchor_min, anchor_max = 1, 3
+        # world_key scope(批次3b-2):把锚点原文窗口 clamp 到玩家当前世界的连续章节段,
+        # 防跨副本串味(副本A 的回合不注入副本B 的原著正文)。书未做世界切分时
+        # resolve_world_bounds 返回 None → 不 clamp(现网所有书 worldline_key 全 null
+        # = 数学 no-op,行为逐字节不变);只有 3a 命中或 3b-1 --apply 后的书才生效。
+        if anchor_min and script_id:
+            try:
+                from kb.world_scope import clamp_window_to_world, resolve_world_bounds
+                from platform_app.db import connect as _wc_connect
+                with _wc_connect() as _wc_db:
+                    _wb = resolve_world_bounds(_wc_db, int(script_id), int(_progress_chapter))
+                if _wb is not None:
+                    _am2, _ax2 = clamp_window_to_world(anchor_min, anchor_max, _wb)
+                    if (_am2, _ax2) != (anchor_min, anchor_max):
+                        log.info("[retrieval] world scope: 锚点窗 [%s,%s]→[%s,%s] world_bounds=%s",
+                                 anchor_min, anchor_max, _am2, _ax2, _wb)
+                        anchor_min, anchor_max = _am2, _ax2
+            except Exception as _wc_err:
+                log.warning(f"[retrieval] world scope 跳过(非致命): {_wc_err}")
         if anchor_min and script_id:
             _rail = (_steering_strength == "rail")
             # rail(贴原著)档多给预算,让当前章原著的对话/桥段尽量完整进 GM 上下文。
