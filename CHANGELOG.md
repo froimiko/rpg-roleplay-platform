@@ -9,6 +9,12 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.49.0] - 2026-07-05
+
+### Added
+- **world_key 批次3b-2 跨副本检索隔离(默认安全)**:多世界书(无限流/穿越)玩家在某副本时,原著正文注入被限定在当前世界的章节段,不再串入其它副本的原文;书未做世界切分时零行为变化。
+
+
 ## [1.48.0] - 2026-07-05
 
 ### Added
