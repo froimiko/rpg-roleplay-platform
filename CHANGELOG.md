@@ -9,6 +9,12 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.40.0] - 2026-07-05
+
+### Added
+- **后果账本 LLM 侧接线(仍默认关)**:GM 系统提示词按 flag 追加 consequence 登记指引;史官三合一 prompt+tool-schema 同源启用 consequence 提取(史官是权威 ops 通道,双侧接线防「提示词在≠生效」;三通道 parity 守卫 6 用例)。开启 flag 后账本端到端可用:登记→到期→【后果回响】注入→GM 自然兑现。
+
+
 ## [1.39.0] - 2026-07-05
 
 ### Added
