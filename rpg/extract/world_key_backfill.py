@@ -1,21 +1,32 @@
-"""extract/world_key_backfill.py — world_key 模型批次 3a:结构先验回填。
+"""extract/world_key_backfill.py — world_key 模型批次 3a(结构先验)+ 3b LLM 窄确认(可选)。
 
-设计 docs/design/world_key_model_v1.md §2/§3/§4/§7(3a 行)。
+设计 docs/design/world_key_model_v1.md §2/§3/§4/§7(3a 行 + 3b LLM 确认行)。
 
-只做「第一层·结构先验」(免费、确定性、零 LLM):
+第一层·结构先验(免费、确定性、零 LLM,批次 3a 上线,默认路径不变):
   · 以卷(volume_title)为段粒度,无卷则每 20 章一窗;
   · 逐段相对上一段判 {continuous | time_skip | new_world};
   · new_world 起新 world 标签,continuous/time_skip 沿用上段 world;
   · 过切回退:产出 world 数 ≥ 段数 × 0.8 → 整书退回单世界(null)。
 
 纯函数层(classify_segments)零 DB、零 IO,可单测全覆盖。
+
+第二层·LLM 窄确认(§3 第二层,本次新增,默认不跑 —— use_llm=False 时零行为变化):
+  · 只对结构先验产出的段边界追加确认:相对上一段,本段是
+    continuous / time_skip / new_world?new_world 必须举证(引用 summary 原话),
+    无证据降级 continuous;
+  · 纯函数层(confirm_segments_llm)同样零 DB、零 IO,call_fn 由调用方注入
+    (admin 工具/CLI 传真 LLM 调用,单测传假函数零外网);
+  · 合并结果仍受 §3 第三层过切回退约束(distinct world 数 ≥ 段数 × 0.8 → 全退单世界)。
+
 IO 层(backfill_worldlines)只读 chapter_facts + script_chapters,
 幂等 UPDATE 两列(worldline_key/in_world_time),不碰其它列。
+use_llm=True 时在结构先验之后追加第二层确认(admin 手动触发,BYOK,默认 False)。
 """
 from __future__ import annotations
 
+import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 # 第一层结构先验词表(§3):卷/章标题命中即视为 new_world 候选。
 # 宁漏勿误——词表故意窄,过切有 §3 第三层回退兜底。
@@ -251,11 +262,240 @@ def _segments_to_chapter_map(segments: list[dict]) -> dict[int, str | None]:
     return out
 
 
-def backfill_worldlines(script_id: int, *, dry_run: bool = True) -> dict[str, Any]:
+# ── 第二层·LLM 窄确认(§3 第二层,可选增强,默认不跑)────────────────
+
+_LLM_MAX_SUMMARY_CHAPTERS = 6  # 每段拼摘要最多取段内前 N 章(控 token,够定性判断)
+_LLM_VALID_VERDICTS = ("continuous", "time_skip", "new_world")
+
+
+def _segment_summary_text(seg: dict, chapter_summaries: dict[int, str]) -> str:
+    """从 chapter_facts.summary 拼段内前 _LLM_MAX_SUMMARY_CHAPTERS 章摘要,供 LLM 读证据。"""
+    parts: list[str] = []
+    ch_max = min(seg["ch_max"], seg["ch_min"] + _LLM_MAX_SUMMARY_CHAPTERS - 1)
+    for ci in range(seg["ch_min"], ch_max + 1):
+        s = (chapter_summaries.get(ci) or "").strip()
+        if s:
+            parts.append(f"第{ci}章:{s}")
+    return "\n".join(parts)
+
+
+def _build_confirm_prompt(prev_seg: dict, cur_seg: dict, chapter_summaries: dict[int, str]) -> tuple[str, str]:
+    """构造 (system_prompt, user_prompt),供 call_fn 调用。"""
+    system_prompt = (
+        "你是小说时间线世界边界判定助手。给你上一段和本段的章节摘要,"
+        "判断本段相对上一段是 continuous(延续同一世界)、time_skip(仅时间跳跃,"
+        "世界未变)还是 new_world(进入了不同的世界/副本/位面/穿越目的地)。"
+        "new_world 判定必须给出证据——引用摘要中的原话说明世界确实变了"
+        "(例如场景/规则/身份的根本性转变);找不到这样的原话就不要判 new_world,"
+        "宁可判 continuous。只输出严格 JSON,不要输出任何其它文字,格式:\n"
+        '{"verdict": "continuous|time_skip|new_world", "world_label": "...", "evidence": "..."}'
+    )
+    prev_text = _segment_summary_text(prev_seg, chapter_summaries)
+    cur_text = _segment_summary_text(cur_seg, chapter_summaries)
+    user_prompt = (
+        f"## 上一段(第{prev_seg['ch_min']}-{prev_seg['ch_max']}章,"
+        f"当前世界标签={prev_seg.get('world_label') or '(主世界)'})\n"
+        f"{prev_text or '(无摘要)'}\n\n"
+        f"## 本段(第{cur_seg['ch_min']}-{cur_seg['ch_max']}章)\n"
+        f"{cur_text or '(无摘要)'}\n\n"
+        "请判定本段相对上一段的关系,输出严格 JSON。"
+    )
+    return system_prompt, user_prompt
+
+
+def _parse_llm_verdict(raw_text: str) -> dict | None:
+    """解析 call_fn 返回文本为严格 JSON,校验字段。非法/字段缺失返回 None(调用方降级)。"""
+    if not raw_text or not isinstance(raw_text, str):
+        return None
+    try:
+        obj = json.loads(raw_text)
+    except Exception:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    verdict = obj.get("verdict")
+    if verdict not in _LLM_VALID_VERDICTS:
+        return None
+    return {
+        "verdict": verdict,
+        "world_label": str(obj.get("world_label") or "").strip(),
+        "evidence": str(obj.get("evidence") or "").strip(),
+    }
+
+
+def confirm_segments_llm(
+    segments: list[dict],
+    chapter_summaries: dict[int, str],
+    *,
+    call_fn: Callable[[str, str], str],
+) -> list[dict]:
+    """第二层·LLM 窄确认(§3 第二层)。纯函数,不做 IO——call_fn 由调用方注入。
+
+    输入:
+      segments: 结构先验(classify_segments)产出的段列表,每段至少含
+        {"world_label", "verdict", "ch_min", "ch_max"}(overcut/sparse_signal 等
+        额外键会被忽略,不要求存在)。
+      chapter_summaries: {chapter_index: summary_text},通常从 chapter_facts.summary 拼。
+      call_fn: (system_prompt, user_prompt) -> raw_text 的可注入闭包。
+        约定 raw_text 应是 LLM 原始输出(严格 JSON 字符串);调用方可用
+        agents._harness.call_agent_json 包一层只取其 text 返回值来构造。
+        call_fn 抛异常或返回非法 JSON → 该边界降级 continuous,不崩、不中断其它边界。
+
+    输出:段列表(与输入等长,顺序一致),每段:
+        {"world_label": str | None, "verdict": "continuous"|"time_skip"|"new_world",
+         "ch_min": int, "ch_max": int, "overcut": bool, "llm_evidence": str | None}
+    合并规则:
+      · 第一段(无 prev)无边界可问,原样保留结构先验结果(llm_evidence=None)。
+      · LLM 判 new_world **且 evidence 非空** → 采用 LLM 判定,起新 world
+        (world_label 取 LLM 给的标签,归一化处理同结构先验层;LLM 未给标签则
+         沿用结构先验候选标签,仍为空则退回 "（LLM确认世界）" 占位)。
+      · LLM 判 new_world 但 evidence 为空(未举证)→ 降级 continuous,沿用上段 world。
+      · LLM 判 time_skip → 不起新 world,沿用上段 world(§3:仅时间跳跃,世界未变)。
+      · LLM 判 continuous → 沿用上段 world。
+      · call_fn 异常 / 返回非法 JSON / verdict 不在三态内 → 视同该边界降级 continuous
+        (不采用结构先验的 new_world 候选——LLM 确认层的语义是"复核",复核失败即保守)。
+      · 过切回退(§3 第三层,与结构先验层同一判据):合并后 distinct world 数
+        ≥ 段数 × 0.8 → 整书退单世界(全部 world_label=None, verdict="continuous")。
+    """
+    if not segments:
+        return []
+
+    merged: list[dict] = []
+    prev_out: dict | None = None
+    for idx, seg in enumerate(segments):
+        ch_min, ch_max = seg["ch_min"], seg["ch_max"]
+        if idx == 0 or prev_out is None:
+            # 首段无上一段可比较,原样沿用结构先验结果(不发起 LLM 调用)。
+            out = {
+                "world_label": seg.get("world_label"),
+                "verdict": seg.get("verdict", "continuous"),
+                "ch_min": ch_min,
+                "ch_max": ch_max,
+                "llm_evidence": None,
+            }
+            merged.append(out)
+            prev_out = out
+            continue
+
+        parsed: dict | None = None
+        try:
+            system_prompt, user_prompt = _build_confirm_prompt(prev_out, seg, chapter_summaries)
+            raw_text = call_fn(system_prompt, user_prompt)
+            parsed = _parse_llm_verdict(raw_text)
+        except Exception:
+            parsed = None
+
+        if parsed is None:
+            # call_fn 失败或输出非法 → 降级 continuous,沿用上段 world(不崩其它边界)。
+            out = {
+                "world_label": prev_out["world_label"],
+                "verdict": "continuous",
+                "ch_min": ch_min,
+                "ch_max": ch_max,
+                "llm_evidence": None,
+            }
+        elif parsed["verdict"] == "new_world" and parsed["evidence"]:
+            label = _normalize_world_label(parsed["world_label"] or seg.get("world_label") or parsed["evidence"])
+            out = {
+                "world_label": label or "(LLM确认世界)",
+                "verdict": "new_world",
+                "ch_min": ch_min,
+                "ch_max": ch_max,
+                "llm_evidence": parsed["evidence"],
+            }
+        elif parsed["verdict"] == "new_world":
+            # new_world 未举证 → 降级 continuous(§3:no evidence, no promotion)。
+            out = {
+                "world_label": prev_out["world_label"],
+                "verdict": "continuous",
+                "ch_min": ch_min,
+                "ch_max": ch_max,
+                "llm_evidence": None,
+            }
+        else:
+            # continuous / time_skip 都沿用上段 world(结构先验层同一语义)。
+            out = {
+                "world_label": prev_out["world_label"],
+                "verdict": parsed["verdict"],
+                "ch_min": ch_min,
+                "ch_max": ch_max,
+                "llm_evidence": parsed["evidence"] or None,
+            }
+        merged.append(out)
+        prev_out = out
+
+    overcut = _is_overcut(merged)
+    if overcut:
+        for s in merged:
+            s["world_label"] = None
+            s["verdict"] = "continuous"
+            s["llm_evidence"] = None
+
+    for s in merged:
+        s["overcut"] = overcut
+
+    return merged
+
+
+def _make_llm_call_fn(
+    user_id: int | None,
+    api_id_override: str | None,
+    model_override: str | None,
+) -> Callable[[str, str], str] | None:
+    """构造 confirm_segments_llm 需要的 call_fn,内部走 agents._harness.call_agent_json。
+
+    模型解析复用 agents.recorder._resolve_recorder_api_and_model(严格 BYOK,
+    走 resolve_api_and_model 的 guard_byok_usable 守卫,与史官同一套解析规则)。
+    解析失败(无可用 api_id/model)→ 返回 None,调用方跳过 LLM 层(不崩)。
+    """
+    try:
+        from agents._harness import call_agent_json
+        from agents.recorder import _resolve_recorder_api_and_model
+    except Exception:
+        return None
+
+    try:
+        api_id, model = _resolve_recorder_api_and_model(user_id, api_id_override, model_override)
+    except Exception:
+        return None
+    if not api_id or not model:
+        return None
+
+    def _call(system_prompt: str, user_prompt: str) -> str:
+        text, _usage = call_agent_json(
+            api_id=api_id,
+            model=model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            user_id=user_id,
+            max_tokens=400,
+            timeout_sec=30,
+            agent_kind="world_key_confirm",
+        )
+        return text
+
+    return _call
+
+
+def backfill_worldlines(
+    script_id: int,
+    *,
+    dry_run: bool = True,
+    use_llm: bool = False,
+    user_id: int | None = None,
+    api_id_override: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any]:
     """回填 chapter_facts.worldline_key/in_world_time + script_timeline_anchors.worldline_key。
 
     dry_run=True(默认):只读不写,返回 {"segments": [...], "overcut": bool, "would_write": N}。
     dry_run=False:幂等 UPDATE(纯函数式覆盖两列,可重跑),返回同样的统计 + "written": N。
+
+    use_llm=False(默认):只跑第一层结构先验(批次 3a 行为,零变化)。
+    use_llm=True:结构先验之后追加第二层 LLM 窄确认(§3 第二层,admin 手动触发/BYOK)——
+      模型解析走 agents.recorder._resolve_recorder_api_and_model(api_id_override/
+      model_override 可显式指定,否则走用户偏好 + BYOK 守卫);解析不出可用模型时
+      静默跳过 LLM 层,退回结构先验结果(不因缺凭证而报错中断整个回填)。
 
     真实列名(已核对 platform_app/db/init.py):
       chapter_facts(script_id, chapter, title, summary, story_time_label, worldline_key, in_world_time, ...)
@@ -267,6 +507,13 @@ def backfill_worldlines(script_id: int, *, dry_run: bool = True) -> dict[str, An
         chapters = _load_chapters(db, script_id)
 
     segments = classify_segments(chapters)
+
+    if use_llm:
+        call_fn = _make_llm_call_fn(user_id, api_id_override, model_override)
+        if call_fn is not None:
+            chapter_summaries = {int(c["chapter_index"]): c.get("summary") or "" for c in chapters}
+            segments = confirm_segments_llm(segments, chapter_summaries, call_fn=call_fn)
+
     overcut = bool(segments and segments[0].get("overcut"))
 
     chapter_map = _segments_to_chapter_map(segments)
@@ -365,12 +612,23 @@ def _print_dry_run(script_id: int, result: dict[str, Any]) -> None:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="world_key 结构先验回填(批次 3a)")
+    parser = argparse.ArgumentParser(description="world_key 结构先验回填(批次 3a)+ 可选 LLM 窄确认(批次 3b 第二层)")
     parser.add_argument("script_id", type=int)
     parser.add_argument("--apply", action="store_true", help="默认 dry-run；传此参数才真正写库")
+    parser.add_argument("--llm", action="store_true", help="结构先验后追加 LLM 窄确认(§3 第二层,BYOK,默认不跑)")
+    parser.add_argument("--user-id", type=int, default=None, help="--llm 时用于解析模型偏好/BYOK 凭据的 user_id")
+    parser.add_argument("--api-id", default=None, help="--llm 时显式指定 api_id(覆盖用户偏好)")
+    parser.add_argument("--model", default=None, help="--llm 时显式指定 model(覆盖用户偏好)")
     args = parser.parse_args()
 
-    out = backfill_worldlines(args.script_id, dry_run=not args.apply)
+    out = backfill_worldlines(
+        args.script_id,
+        dry_run=not args.apply,
+        use_llm=args.llm,
+        user_id=args.user_id,
+        api_id_override=args.api_id,
+        model_override=args.model,
+    )
     if args.apply:
         print(f"script_id={args.script_id} 已写入 written={out.get('written')} overcut={out['overcut']}")
     else:
