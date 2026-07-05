@@ -321,6 +321,23 @@ def run_heartbeat_tick(
         from core.json_parse import parse_llm_json
         raw_items = parse_llm_json(text, want=list)
         if raw_items is None:
+            # 便宜模型形态漂移打捞(生产实测:吐成 {"事件一": "事件二"} 键值对/或
+            # {"items": [...]} 包装)。确定性拆出字符串候选,验收器统一把关,不放宽验收。
+            _d = parse_llm_json(text, want=dict)
+            if isinstance(_d, dict):
+                _salvage: list[str] = []
+                for _k, _v in _d.items():
+                    if isinstance(_v, list):
+                        _salvage.extend(x for x in _v if isinstance(x, str))
+                        continue
+                    for _cand in (_k, _v):
+                        # ≥8 字符才算候选:滤掉 "items"/"events" 这类包装键名
+                        if isinstance(_cand, str) and len(_cand) >= 8:
+                            _salvage.append(_cand)
+                if _salvage:
+                    log.info("[world_heartbeat] dict 形态打捞出 %d 条候选", len(_salvage))
+                    raw_items = _salvage
+        if raw_items is None:
             log.info("[world_heartbeat] 输出不是合法 JSON 数组,跳过(raw前120字: %r)", (text or "")[:120])
             return []
 

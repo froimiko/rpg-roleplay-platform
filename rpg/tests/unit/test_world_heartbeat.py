@@ -594,3 +594,33 @@ def test_heartbeat_wired_in_async_and_sync_paths():
     assert async_section.count("await _hb_task") >= 2, "async 两个早退点须都 await 心跳"
     # sync 路径 parity
     assert "run_heartbeat_tick" in sync_section, "sync 路径丢失心跳接线"
+
+
+def test_dict_shape_salvage(monkeypatch):
+    """生产实测:便宜模型把数组吐成 {"事件一":"事件二"} 或 {"items":[...]} —— 确定性打捞。"""
+    import json as _json
+
+    import agents._harness as _harness
+    import agents.recorder as _recorder
+
+    state = _new_state(turn=10)
+    monkeypatch.setattr(_harness, "call_agent_json", lambda **kw: (_json.dumps({
+        "村东磨坊主的驴昨夜挣脱缰绳跑进了麦田": "铁匠铺新到了一批北方矿石,伙计们议论了一早上",
+    }, ensure_ascii=False), {}))
+    monkeypatch.setattr(_recorder, "_resolve_recorder_api_and_model", lambda *a, **k: ("deepseek", "m"))
+    written = run_heartbeat_tick(state, user_id=None)
+    assert len(written) == 2  # 键与值都被打捞并通过验收
+
+
+def test_dict_shape_salvage_items_wrapper(monkeypatch):
+    import json as _json
+
+    import agents._harness as _harness
+    import agents.recorder as _recorder
+
+    state = _new_state(turn=10)
+    monkeypatch.setattr(_harness, "call_agent_json", lambda **kw: (_json.dumps(
+        {"items": ["磨坊的水车轴断了,修好要等三天"]}, ensure_ascii=False), {}))
+    monkeypatch.setattr(_recorder, "_resolve_recorder_api_and_model", lambda *a, **k: ("deepseek", "m"))
+    written = run_heartbeat_tick(state, user_id=None)
+    assert written == ["磨坊的水车轴断了,修好要等三天"]  # 短键名 "items" 被滤掉,列表被取出
