@@ -4137,7 +4137,9 @@ const getCSModules = (t) => [
     ] },
   // RATH·搖光观测台:离线活世界实验,与「酒馆」平级、同在「游玩/Play」分类下
   // (docs/design/rath_observation_deck_v0.md)。页面是 Platform 内嵌子页 #rath。
-  { id: 'rath', label: t('platform.nav.rath', { defaultValue: 'RATH 观测台' }), group: t('platform.nav.group_play'),
+  // 开发期灰度:adminOnly —— 非 admin 不见导航项、直链 #rath 也被 ADMIN_PAGES 守卫挡下
+  // (后端 API 另有 rath_experiment flag 双保险)。对全体开放时删掉这一行即可。
+  { id: 'rath', label: t('platform.nav.rath', { defaultValue: 'RATH 观测台' }), group: t('platform.nav.group_play'), adminOnly: true,
     pages: ['rath'],
     sub: [
       { text: t('platform.nav.rath', { defaultValue: 'RATH 观测台' }), href: '#rath' },
