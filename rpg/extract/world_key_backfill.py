@@ -70,7 +70,7 @@ def _bracket_tag(text: str) -> str:
     return m.group(1).strip() if m else ""
 
 
-def _is_new_world_candidate(seg: dict, prev_seg: dict | None) -> tuple[bool, str]:
+def _is_new_world_candidate(seg: dict, prev_seg: dict | None) -> tuple[bool, str, str]:
     """第一层结构先验(§3):标题/卷名命中词表 或 【】括号编号变化 → new_world 候选。
 
     注意:分段本身已经是"以 volume_title 为粒度"切的(§3"对每个段…判定"——段边界
@@ -83,7 +83,9 @@ def _is_new_world_candidate(seg: dict, prev_seg: dict | None) -> tuple[bool, str
     "第一卷/第二卷"式线性分卷)默认沿用上段 world——留给 §3 第二层 LLM 窄确认兜底
     误判,而不是在零证据时就升级。
 
-    返回 (是否候选, 用于 world_label 的原始短语)。
+    返回 (是否候选, 用于 world_label 的原始短语, 信号种类 "keyword"|"bracket")。
+    信号强度:bracket(【】编号变化)=结构性强信号,单命中可信;keyword(词表)=弱信号,
+    无卷名书上需 ≥2 处佐证(见 classify_segments 稀疏护栏)。
     """
     vt = (seg.get("volume_title") or "").strip()
     title = (seg.get("title") or "").strip()
@@ -93,14 +95,14 @@ def _is_new_world_candidate(seg: dict, prev_seg: dict | None) -> tuple[bool, str
     if hit:
         # world_label 素材优先用命中所在的完整短语(卷名优先于章标题)
         source = vt if _hits_keyword(vt) else title
-        return True, source or hit
+        return True, (source or hit), "keyword"
 
     bracket = _bracket_tag(title)
     prev_bracket = _bracket_tag(prev_title) if prev_seg else ""
     if bracket and bool(prev_seg) and bracket != prev_bracket:
-        return True, bracket
+        return True, bracket, "bracket"
 
-    return False, ""
+    return False, "", ""
 
 
 def _split_raw_segments(ordered: list[dict]) -> list[dict]:
@@ -146,7 +148,7 @@ def _classify_raw_segments(raw_segments: list[dict]) -> list[dict]:
     current_world: str | None = None
     prev_raw: dict | None = None
     for raw in raw_segments:
-        is_candidate, label_source = _is_new_world_candidate(raw, prev_raw)
+        is_candidate, label_source, signal_kind = _is_new_world_candidate(raw, prev_raw)
         if is_candidate:
             verdict = "new_world"
             current_world = _normalize_world_label(label_source) or current_world
@@ -156,6 +158,7 @@ def _classify_raw_segments(raw_segments: list[dict]) -> list[dict]:
         segments.append({
             "world_label": current_world,
             "verdict": verdict,
+            "signal": signal_kind,
             "ch_min": raw["ch_min"],
             "ch_max": raw["ch_max"],
         })
@@ -192,13 +195,27 @@ def classify_segments(chapters: list[dict]) -> list[dict]:
     segments = _classify_raw_segments(raw_segments)
 
     overcut = _is_overcut(segments)
-    if overcut:
+    # 孤立单命中护栏(生产 dry-run 实证,script 133):**仅当书没有卷名结构、分段退化
+    # 为 20 章合成窗时**,词表的孤立单命中(如某章标题带「轮回」)不可信——会产出横跨
+    # 几百章的错误伪世界,比全 null 更糟 → 整书退单世界,留给批次 3b 的 LLM 确认层
+    # 用 summary 证据做正确切分。有真实卷名结构的书不受此护栏影响:单次世界切换是
+    # 合法场景(穿越书恰好一个边界),卷结构本身就是佐证。
+    # 信号强度分级:bracket(【】编号变化)=结构性强信号,单命中可信(如两段式穿越书);
+    # keyword(词表)=弱信号,无卷名合成窗上孤立单命中不可信。
+    _has_volumes = any((c.get("volume_title") or "").strip() for c in ordered)
+    _weak_hits = sum(1 for s in segments
+                     if s.get("verdict") == "new_world" and s.get("signal") == "keyword")
+    _strong_hits = sum(1 for s in segments
+                       if s.get("verdict") == "new_world" and s.get("signal") == "bracket")
+    _too_sparse = (not _has_volumes) and _strong_hits == 0 and 0 < _weak_hits < 2
+    if overcut or _too_sparse:
         for s in segments:
             s["world_label"] = None
             s["verdict"] = "continuous"
 
     for s in segments:
         s["overcut"] = overcut
+        s["sparse_signal"] = _too_sparse
 
     return segments
 

@@ -325,3 +325,33 @@ class BackfillWorldlinesDryRun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_sparse_single_hit_degrades_to_null():
+    """生产 dry-run 实证(script 133):无卷名书退化合成窗后词表孤立单命中 → 横跨
+    几百章的错误伪世界。保守护栏:仅无卷名结构时,命中<2=信号不足,整书退单世界;
+    有卷名结构的单次世界切换(穿越书)不受影响(见既有 volume 系测试)。"""
+    chapters = []
+    for i in range(1, 101):
+        title = "恶魔轮回小队登场" if i == 81 else f"第{i}章 平平无奇"
+        chapters.append({"chapter_index": i, "title": title, "volume_title": "", "summary": ""})
+    segs = classify_segments(chapters)
+    assert all(s["world_label"] is None for s in segs)
+    assert any(s.get("sparse_signal") for s in segs)
+
+
+def test_two_plus_hits_still_segment():
+    """无卷名书 ≥2 处命中=真信号,正常切分不受护栏影响。"""
+    chapters = []
+    for i in range(1, 61):
+        if i == 21:
+            title = "进入副本:生化危机"
+        elif i == 41:
+            title = "进入副本:咒怨"
+        else:
+            title = f"第{i}章 战斗"
+        chapters.append({"chapter_index": i, "title": title, "volume_title": "", "summary": ""})
+    segs = classify_segments(chapters)
+    labels = {s["world_label"] for s in segs if s["world_label"]}
+    assert len(labels) >= 2
+    assert not any(s.get("sparse_signal") for s in segs)
