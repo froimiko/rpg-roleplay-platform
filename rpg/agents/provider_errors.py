@@ -54,6 +54,21 @@ _CONTEXT_MARKERS = (
     "string too long",                   # 个别中转站对超长输入的措辞
 )
 
+# 模型在该账户/服务商下不存在或不可用:换模型才能解决,重试无用。404 或特征短语(中转站
+# 对未知模型名常返 400 而非 404,靠短语兜住)。
+_MODEL_MARKERS = (
+    "model_not_found",                   # OpenAI error code
+    "not found for account",             # 部分中转站对无权限/不存在模型的措辞
+    "does not exist",                    # 通用 "model xxx does not exist"
+)
+
+# 请求所需能力(工具调用/系统指令等)该模型不支持:换模型才能解决,重试无用。目前只见
+# Gemini 的 400 + "is not enabled for"(如 "Developer instruction is not enabled" /
+# "Function calling is not enabled")。
+_FEATURE_MARKERS = (
+    "is not enabled for",
+)
+
 
 def _http_status(exc: Exception) -> int | None:
     """从 SDK 异常上取 HTTP 状态码。
@@ -71,7 +86,8 @@ def _http_status(exc: Exception) -> int | None:
 def classify_provider_error(exc: Exception) -> tuple[str, str] | None:
     """已知提供商错误 → (category, 客户端安全文案);未知返回 None(调用方走各自兜底)。
 
-    category ∈ {"balance", "auth", "ratelimit", "context", "upstream"}。文案不含 error_id,调用方自行追加。
+    category ∈ {"balance", "auth", "ratelimit", "context", "upstream", "model_unavailable",
+    "feature_unsupported"}。文案不含 error_id,调用方自行追加。
     """
     raw_lower = str(exc).strip().lower()
     status = _http_status(exc)
@@ -103,4 +119,14 @@ def classify_provider_error(exc: Exception) -> tuple[str, str] | None:
         return ("upstream",
                 f"你的模型服务暂时不可用（服务器返回 {code} 网关错误，多为供应商 / 中转站过载或宕机），"
                 "不是平台或存档的问题。请稍等片刻重试，或到「设置 → 模型 / API 设置」换用其他模型 / 供应商。")
+    # 模型在该服务商/账户下不可用:404,或中转站对未知模型名的特征短语。重试无法恢复。
+    if status == 404 or any(m in raw_lower for m in _MODEL_MARKERS):
+        return ("model_unavailable",
+                "当前模型在该服务商/账户下不可用，重试无法恢复。"
+                "请到「设置 → API 设置」切换其他模型，或联系你的 API 提供商确认模型名。")
+    # 该模型不支持本次请求所需的功能(工具调用/系统指令等):400 + 特征短语。重试无法恢复。
+    if status == 400 and any(m in raw_lower for m in _FEATURE_MARKERS):
+        return ("feature_unsupported",
+                "该模型不支持本次请求所需的功能(如工具调用/系统指令)，重试无法恢复。"
+                "请切换到支持完整功能的模型。")
     return None
