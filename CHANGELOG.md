@@ -9,6 +9,13 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.46.1] - 2026-07-05
+
+### Fixed
+- **检索延迟与日志噪声**:embedding 命中 Google 地区封禁后进程内记忆 1 小时,不再每次检索白撞一发注定失败的直连(每查询省 ~300ms);「剧本未绑定 embed model」告警降频为每进程一次。
+- cron phase_digest 补摘要两例测试假失败(pytest 启动目录敏感)修为 cwd 无关,生产 cron 确认健康非回归。
+
+
 ## [1.46.0] - 2026-07-05
 
 ### Added
