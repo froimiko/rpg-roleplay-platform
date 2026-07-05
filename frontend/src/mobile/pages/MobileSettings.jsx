@@ -573,7 +573,7 @@ const MODULES = AGENT_MODULES.map((m) => ({ ...m }));
 const _FEAT_LABEL_DEF = {
   ctx_tiered: '分层上下文缓存', recorder_unified: '史官三合一', narrator_slim: '文宗精简(去工具循环)',
   rag_gate: 'RAG 检索闸', anchor_pace: '世界线锚点节奏', kb_state: '存档知识库 DB 化',
-  consequence_ledger: '后果账本',
+  consequence_ledger: '后果账本', world_heartbeat: '世界心跳',
 };
 const _FEAT_DESC_DEF = {
   ctx_tiered: '分层稳定前缀,命中前缀缓存,显著省 token。',
@@ -583,6 +583,7 @@ const _FEAT_DESC_DEF = {
   anchor_pace: '按对话节奏推进锚点、逐个标记、死亡失效 —— 治跳章。',
   kb_state: '存档状态以数据库行存储(单一来源),便于检索维护。',
   consequence_ledger: '承诺/欠债到期或抵达指定地点时,提醒 GM 主动兑现。',
+  world_heartbeat: '每隔几回合生成不在场处的世界小事,之后以传闻方式浮现。',
 };
 function FeatureToggleM({ featureKey, i18nKey, initial }) {
   const { t } = useTranslation();

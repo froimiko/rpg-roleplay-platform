@@ -1791,11 +1791,17 @@ async def _run_post_gm_parallel(
     is_extractor_enabled: Callable[[dict[str, Any] | None], bool],
     is_black_swan_enabled: Callable[[dict[str, Any] | None], bool] | None = None,
 ) -> dict[str, Any]:
-    """并行跑 GM 后处理(黑天鹅 + extractor),返回 {response_with_ops, extractor_active}。
+    """并行跑 GM 后处理(黑天鹅 + extractor + 世界心跳),返回 {response_with_ops, extractor_active}。
     时间跳跃/套路/星期等确定性叙事纠错已统一到 timeline_narrative_guard.run_narrative_guards
     (async/sync 两路共用,见 run_gm_phase),不再在此并行跑。
 
-    只读 GM 完整 response + state(不修改),所以 asyncio.gather 安全。
+    世界心跳(_worker_heartbeat,见 docs/design/world_heartbeat_v0.md)接线在此而非
+    postproc worker 队列:postproc worker 进程侧无法安全访问实时 state(见
+    run_postproc_worker.py:101 的 black_swan handler enable_llm=False 同款理由)。
+
+    extractor/black_swan 只读 response + state;heartbeat 会写 state.data 的
+    background_events / heartbeat_meta 两个专属键(其它 worker 不碰这两键,键级不相交
+    → gather 内并发安全),由本回合 Phase 5 统一持久化。
     任何 worker 抛异常 → log + 返回该 worker 的中性值,不影响其它 worker。
     """
     if not response.strip():
@@ -1878,10 +1884,31 @@ async def _run_post_gm_parallel(
                 pass
             return False, response
 
+    async def _worker_heartbeat() -> None:
+        """世界心跳 v0(活世界·柱子1):should_tick 判定不该跳立即零成本返回;
+        该跳则一次便宜 LLM 调用产 1-2 条世界侧事件,写进 state.data["background_events"]
+        (本回合 Phase 5 统一持久化,与 extractor 同命运)。只读/自写 state.data 的独立
+        字段,与 black_swan/extractor 互不依赖,可安全并行。
+
+        设计文档: docs/design/world_heartbeat_v0.md §5。
+        """
+        try:
+            from agents.world_heartbeat import run_heartbeat_tick, should_tick
+            if not should_tick(state.data, user_id_int):
+                return
+            await asyncio.to_thread(
+                run_heartbeat_tick,
+                state,
+                user_id_int,
+            )
+        except Exception as exc:
+            log.debug(f"[world_heartbeat] worker failed silently: {exc}")
+
     # 并行执行,gather return_exceptions=False 但每个 worker 内部已 try/except,不会抛
-    _swan_unused, ex_result = await asyncio.gather(
+    _swan_unused, ex_result, _heartbeat_unused = await asyncio.gather(
         _worker_black_swan(),
         _worker_extractor(),
+        _worker_heartbeat(),
     )
     extractor_active, response_with_ops = ex_result
     return {

@@ -61,6 +61,8 @@ DEFAULT_NOVEL_MANIFEST: dict = {
         "script_phase_anticipation",
         # 后果账本 v1: 承诺/欠债到期回响(feature gate 内部关闭,默认零输出)
         "consequence_echo",
+        # 世界心跳 v0: 玩家不在场时的世界侧小事回响(feature gate 内部关闭,默认零输出)
+        "world_pulse",
     ],
     "retrieval_policy": {
         "allow_script_retrieval": True,
@@ -113,6 +115,8 @@ DEFAULT_FREEFORM_MANIFEST: dict = {
         "runtime_phase_digests",
         # 后果账本 v1: 承诺/欠债到期回响(feature gate 内部关闭,默认零输出)
         "consequence_echo",
+        # 世界心跳 v0: 玩家不在场时的世界侧小事回响(feature gate 内部关闭,默认零输出)
+        "world_pulse",
     ],
     "retrieval_policy": {
         "allow_script_retrieval": False,

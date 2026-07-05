@@ -343,6 +343,10 @@
       "consequence_ledger": {
         "label": "Consequence ledger",
         "desc": "When a player's promise or debt comes due, or they reach a specified location, nudges the GM to pay it off in the story instead of relying on lucky retrieval hits."
+      },
+      "world_heartbeat": {
+        "label": "World heartbeat",
+        "desc": "Periodically generates small world-side events happening off-screen (village-level, side-character-level), which surface later as rumors or overheard chatter — so the world keeps moving even when you're not watching."
       }
     },
     "memory": {

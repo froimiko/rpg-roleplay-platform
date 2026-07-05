@@ -86,6 +86,7 @@ export const FEATURES = [
   { key: "anchor_pace",      group: "world", i18nKey: "anchor_pace" },      // 世界线锚点节奏
   { key: "kb_state",         group: "world", i18nKey: "kb_state" },         // 存档知识库 DB 化
   { key: "consequence_ledger", group: "world", i18nKey: "consequence_ledger" }, // 后果账本(承诺到期回响)
+  { key: "world_heartbeat",    group: "world", i18nKey: "world_heartbeat" },    // 世界心跳(玩家不在场时的世界侧小事)
 ];
 
 /** prefPrefix → 模块(供 CAP_CONFIG 等子集投影派生 capabilityFilter)。 */
