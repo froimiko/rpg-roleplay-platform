@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.52.1] - 2026-07-06
+
+### Fixed
+- **RATH 观测台(实验)开发期仅管理员可见**:普通用户导航不再显示该分页。
+
 ## [1.52.0] - 2026-07-06
 
 ### Added
