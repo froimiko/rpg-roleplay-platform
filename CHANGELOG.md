@@ -9,6 +9,12 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.41.0] - 2026-07-05
+
+### Added
+- **世界心跳 World Heartbeat v0(活世界·柱子1,默认关)**:回合后与 extractor 并行的便宜 LLM tick 产 1-2 条「玩家不在场处」的世界侧小事(上限/去重/防剧透/节流全确定性),world_pulse provider 以【世界脉动】注入供 GM 以传闻/痕迹自然浮现。开启后世界在玩家过夜/离开时也在动。
+
+
 ## [1.40.1] - 2026-07-05
 
 ### Fixed
