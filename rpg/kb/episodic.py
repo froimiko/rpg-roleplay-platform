@@ -186,6 +186,56 @@ def retrieve_episodic(
         return []
 
 
+def _excerpt_around_match(text: str, query_text: str, *, window: int = 120) -> str:
+    """取匹配点附近 ±window 字摘录(注入预算控制)。找不到匹配点(理论不该发生,
+    因为调用方已按打分筛过)退开头 2*window 字。"""
+    grams = sorted(_query_grams(query_text), key=len, reverse=True)
+    pos = -1
+    for g in grams:
+        pos = text.find(g)
+        if pos >= 0:
+            break
+    if pos < 0:
+        return text[: window * 2]
+    lo = max(0, pos - window)
+    hi = min(len(text), pos + window)
+    prefix = "…" if lo > 0 else ""
+    suffix = "…" if hi < len(text) else ""
+    return prefix + text[lo:hi] + suffix
+
+
+def score_history_messages(
+    query_text: str, history: list[dict], *, exclude_recent: int = 12, k: int = 3,
+) -> list[dict]:
+    """全量对话 history(state.data['history'])上的确定性召回。
+
+    kb_events 语料缺失时的兜底(酒馆 tavern_gm 跳过史官=kb_events 近乎空白是生产常态;
+    75 个酒馆档只有 4 个有事件)。排除最近 exclude_recent 条消息(6轮=12条已由近因
+    窗口原文注入,不重复)。纯函数零 IO。返回 [{turn, role, excerpt, score}]。"""
+    if not (query_text or "").strip() or not history:
+        return []
+    old = history[:-exclude_recent] if exclude_recent > 0 else list(history)
+    events: list[dict] = []
+    for i, m in enumerate(old):
+        if not isinstance(m, dict):
+            continue
+        c = str(m.get("content") or "").strip()
+        if not c:
+            continue
+        events.append({"id": i, "summary": c, "location": "", "participants": [],
+                       "_role": (m.get("role") or "user"), "_idx": i})
+    scored = _score_events(query_text, events)
+    out: list[dict] = []
+    for score, e in scored[: max(1, int(k))]:
+        out.append({
+            "turn": int(e["_idx"]) // 2 + 1,
+            "role": "玩家" if e["_role"] == "user" else "GM",
+            "excerpt": _excerpt_around_match(str(e["summary"]), query_text),
+            "score": score,
+        })
+    return out
+
+
 def retrieve_episodic_keyword(
     save_id: int, commit_id: int, query_text: str, *, k: int = 5,
 ) -> list[dict]:

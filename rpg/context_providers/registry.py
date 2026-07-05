@@ -88,6 +88,8 @@ DEFAULT_MODULE_MANIFEST: dict = {
         "module_worldbook",
         "rules",
         "memory",
+        # 永恒记忆·情景召回(全程历史,feature gate 内部,无命中零输出)
+        "episodic_recall",
         "worldline",
         # #18 复读修复: 历史走 messages[],去掉重复的 recent_chat 文本层。
         # task 107E: 长游戏历史摘要 (剧本预期 module 没有, 不加)
@@ -111,6 +113,8 @@ DEFAULT_FREEFORM_MANIFEST: dict = {
     "ruleset": "none",
     "context_providers": [
         "memory",
+        # 永恒记忆·情景召回(全程历史,feature gate 内部,无命中零输出)
+        "episodic_recall",
         "worldline",
         # #18 复读修复: 历史走 messages[],去掉重复的 recent_chat 文本层。
         # task 107E: 自由模式也启用历史摘要
@@ -143,6 +147,8 @@ DEFAULT_TAVERN_MANIFEST: dict = {
         "tavern_character",
         # 角色带持久记忆(决策4):记忆/关系 op 仍可写
         "memory",
+        # 永恒记忆·情景召回:全程对话历史按当前输入确定性召回(酒馆长对话此前无长程记忆)
+        "episodic_recall",
         # 用户硬约束 / 高优先级引导(/set、user_variables)
         "worldline",
         # 无剧本:不含 script_phase_anticipation / runtime_phase_digests / 任何 script/anchor provider

@@ -1,0 +1,96 @@
+"""episodic_recall.py — 永恒记忆·情景召回 context provider(酒馆/自由/模组模式)。
+
+原著改编档(novel_adaptation)的情景召回走 NovelProvider→retrieve_context 内的注入,
+本 provider **不挂 novel pack**(避免双注入);挂 tavern/freeform/module —— 这些模式
+此前完全没有长程召回(用户实锤:「修的是游戏模式,酒馆没得到修复?」→ 属实,补齐)。
+
+语料优先级:
+  1. kb_events(谱系 CTE 分支隔离,vector→keyword,复用 kb.episodic.retrieve_episodic);
+  2. kb_events 空(酒馆跳过史官=生产常态,75 档仅 4 档有事件)→ state 全量 history
+     确定性打分(score_history_messages),排除近因 6 轮窗口已原文注入的 12 条。
+
+feature gate: episodic_recall(与 novel 路径同一 flag,全局已开);无命中=休眠零注入。
+"""
+from __future__ import annotations
+
+from .base import ContextContribution, ContextProvider
+from .registry import register_provider
+
+PRIORITY = 78  # 略低于 memory(60 之上为先出;此处按既有语义放在记忆层附近、近因窗口之前)
+
+
+class EpisodicRecallProvider(ContextProvider):
+    id = "episodic_recall"
+
+    def collect(self, state, manifest, demand, services) -> ContextContribution:
+        from core.feature_flags import feature_enabled
+        user_id = getattr(services, "user_id", None)
+        if not feature_enabled("episodic_recall", user_id):
+            return ContextContribution.skipped(self.id, "episodic_recall flag 关闭")
+
+        query = (getattr(demand, "retrieval_query", "") or ""
+                 ).strip() or (getattr(demand, "player_intent", "") or "").strip()
+        if not query:
+            return ContextContribution.skipped(self.id, "无查询文本")
+
+        data = getattr(state, "data", None)
+        if not isinstance(data, dict):
+            return ContextContribution.skipped(self.id, "state.data 不可用")
+        save_id = getattr(services, "save_id", None) or data.get("_active_save_id")
+
+        lines: list[str] = []
+        source = ""
+        # 语料1:kb_events(有史官/工具写入的档)
+        if save_id:
+            try:
+                from platform_app.db import connect
+                with connect() as db:
+                    cm = db.execute(
+                        "select active_commit_id from game_saves where id=%s",
+                        (int(save_id),),
+                    ).fetchone()
+                commit = int((cm or {}).get("active_commit_id") or 0)
+                if commit:
+                    from kb.episodic import retrieve_episodic
+                    for i, e in enumerate(retrieve_episodic(int(save_id), commit, user_id, query, k=3), 1):
+                        meta = " · ".join(x for x in [
+                            str(e.get("story_time") or "").strip(),
+                            str(e.get("location") or "").strip()] if x)
+                        lines.append(f"{i}. {e.get('summary') or ''}" + (f"  ({meta})" if meta else ""))
+                    if lines:
+                        source = "kb_events"
+            except Exception:
+                lines = []
+        # 语料2:全量对话 history 兜底(酒馆常态)
+        if not lines:
+            from kb.episodic import score_history_messages
+            hist = data.get("history") or []
+            for i, h in enumerate(score_history_messages(query, hist, exclude_recent=12, k=3), 1):
+                lines.append(f"{i}. [第{h['turn']}回合·{h['role']}] {h['excerpt']}")
+            if lines:
+                source = "history"
+        if not lines:
+            return ContextContribution.skipped(self.id, "无召回(休眠)")
+
+        text = "\n".join(
+            ["以下是按本回合输入从【全程游戏历史】召回的相关往事,当作已发生事实参考,勿复述成新发生:"]
+            + lines
+        )
+        import logging
+        logging.getLogger(__name__).info(
+            "[episodic_recall] 注入 %d 条 (source=%s, save=%s)", len(lines), source, save_id)
+        layer = self.make_layer(
+            "episodic_recall", "相关往事·全程历史召回", text,
+            sticky=False, priority=PRIORITY,
+        )
+        return ContextContribution(
+            provider_id=self.id,
+            kind="episodic_recall",
+            priority=PRIORITY,
+            layers=[layer],
+            tokens_estimate=len(text) // 2,
+            debug={"source": source, "hits": len(lines)},
+        )
+
+
+register_provider(EpisodicRecallProvider())
