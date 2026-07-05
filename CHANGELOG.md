@@ -9,6 +9,12 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.43.0] - 2026-07-05
+
+### Added
+- **流式自动重试**:GM 主流与开场流在首个正文 token/工具调用之前遭遇上游 5xx/429 时自动重试(≤2 次退避),玩家看到「自动重试中」而非「生成失败」;已提交后失败保持原路径防双重副作用。
+
+
 ## [1.42.0] - 2026-07-05
 
 ### Added
