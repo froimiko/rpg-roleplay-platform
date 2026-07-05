@@ -62,19 +62,21 @@ async def _handle_extractor(payload: dict[str, Any]) -> None:
 
 
 async def _handle_phase_digest(payload: dict[str, Any]) -> None:
-    """调 phase_digest 记录本轮摘要到 KB。"""
-    try:
-        from agents import phase_digest_agent as _pda
-        await asyncio.to_thread(
-            _pda.maybe_record_phase_digest,
-            user_id=payload.get("user_id"),
-            save_id=payload.get("save_id"),
-            gm_output=payload.get("gm_output") or "",
-            player_input=payload.get("player_input") or "",
-        )
-    except AttributeError:
-        # phase_digest_agent 可能尚未实现 maybe_record_phase_digest;静默跳过
-        log.debug("[postproc] phase_digest_agent.maybe_record_phase_digest not found, skipping")
+    """no-op 消化存量/兼容行:phase_digest 从未被 enqueue_postproc 写入过
+    (postproc_queue.py 只入队 acceptance_verifier/black_swan/image_gen),且
+    phase_digest_agent 模块也从未有过 maybe_record_phase_digest 这个函数
+    (只有 compact_phase)——之前的实现调的是一个不存在的函数,靠 AttributeError
+    静默吞掉才没崩。真正的阶段摘要权威路径是主进程内联的
+    save_phase_manager._fire_and_forget_compact(自身 fire-and-forget 线程,
+    调 agents.phase_digest_agent.compact_phase),不经过这个 worker。
+    此分支只是为了兼容 DB 里可能残留的历史 phase_digest 任务行(若有),
+    直接标记完成,不做任何 LLM 调用。"""
+    log.debug(
+        "[postproc] phase_digest task is a no-op in this worker (authoritative "
+        "path is inline save_phase_manager._fire_and_forget_compact); "
+        "draining legacy row for user=%s save=%s",
+        payload.get("user_id"), payload.get("save_id"),
+    )
 
 
 async def _handle_acceptance_verifier(payload: dict[str, Any]) -> None:

@@ -1,8 +1,15 @@
 """postproc_queue.py — W1 容量优化: Phase 4 后处理任务入队。
 
-GM 流完后调 enqueue_postproc(),把 extractor / black_swan / phase_digest /
-acceptance_verifier 写入 chat_postproc_tasks 并 NOTIFY chat_postproc_new 唤醒
-独立 worker。主 worker 不再等待这些 LLM 调用,立刻释放 async slot。
+GM 流完后调 enqueue_postproc(),把 acceptance_verifier / black_swan(以及
+image_gen,由 platform_app/image_jobs.py 单独入队)写入 chat_postproc_tasks
+并 NOTIFY chat_postproc_new 唤醒独立 worker。主进程不再等待这些 LLM 调用,
+立刻释放 async slot。
+
+extractor / phase_digest 不经此队列:它们依赖 FastAPI 主进程内的实时
+GameState,worker 是独立进程够不到内存态,故仍由主进程内联路径承担
+(extractor → chat_pipeline._run_post_gm_parallel;phase_digest →
+save_phase_manager._fire_and_forget_compact)。详见 enqueue_postproc() 内
+的说明。
 
 并发回合容量: 25 → ~55 (回合时延 35s → 15s)。
 """
