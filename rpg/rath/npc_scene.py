@@ -60,8 +60,10 @@ def _npc_dossier(state_data: dict, name: str) -> str:
 def build_scene_prompts(
     state_data: dict, npc_a: str, npc_b: str, *,
     elapsed_hint: str = "", recent_events: list[str] | None = None,
+    world_context: str = "",
 ) -> tuple[str, str]:
-    """构造对手戏 prompt。防剧透同心跳口径:只喂快照里已有的信息,不喂原著。"""
+    """构造对手戏 prompt。防剧透同心跳口径:只喂快照里已有的信息 + 世界书要点
+    (world_context,拆书审计后补:离线戏没有世界观材料会滑向平庸写实,战姬味丢失)。"""
     player = (state_data.get("player") or {})
     world = (state_data.get("world") or {})
     location = str(player.get("current_location") or "").strip()
@@ -70,22 +72,26 @@ def build_scene_prompts(
     system_prompt = (
         "你是离线世界模拟器:玩家不在场时,两位 NPC 之间发生一小段真实互动。\n"
         "铁律:\n"
-        "1. 只能使用下面档案与近况中给出的信息,不得发明新的重要人物/地点/物品。\n"
+        "1. 只能使用下面档案、世界观要点与近况中给出的信息,不得发明新的重要人物/地点/物品。\n"
         "2. 地理连贯:场景只能发生在两人当前合理所在之处;远方的人与事只能被谈及,不能到场。\n"
         "3. 玩家不在场:对话中可以提到玩家(用其名字),但玩家绝不出现、绝不说话。\n"
         f"4. 对话不超过 {MAX_TRANSCRIPT_LINES} 行,每行不超过 {MAX_LINE_CHARS} 字;小事即可,不要写重大转折。\n"
-        "5. 只输出严格 JSON(不要代码围栏),schema:\n"
+        "5. **不要复读近期动向里已发生的对话**:写这段时间里【新】的小进展,让世界前进一小步;\n"
+        "   世界观要点里的元素(时局/势力/超常力量的传闻)可以自然进入闲谈,体现这个世界的质感。\n"
+        "6. 只输出严格 JSON(不要代码围栏),schema:\n"
         '{"transcript":[{"speaker":"名字","line":"台词或动作"}],'
         '"scene_summary":"≤120字的第三人称场景纪要(写清两人谈了什么/做了什么)",'
         '"npc_updates":{"名字":{"goal":"可选,若目标有微调","stance":"可选","private_memory":"这个角色私下会记住的一句话"}}}'
     )
+    wc_block = f"【世界观要点】\n{world_context}\n" if (world_context or "").strip() else ""
     user_prompt = (
         f"【NPC甲】{_npc_dossier(state_data, npc_a)}\n"
         f"【NPC乙】{_npc_dossier(state_data, npc_b)}\n"
         f"【玩家最后所在】{location or '(未知)'}\n"
         f"【世界时间】{wtime or '(未知)'}\n"
         f"【离线时长】{elapsed_hint or '(不详)'}\n"
-        f"【近期世界侧动向】\n{ev_lines}\n\n"
+        f"{wc_block}"
+        f"【近期世界侧动向(已发生,不要复读)】\n{ev_lines}\n\n"
         f"请生成 {npc_a} 与 {npc_b} 之间这段离线互动。"
     )
     return system_prompt, user_prompt

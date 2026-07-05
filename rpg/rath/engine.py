@@ -150,8 +150,26 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
             "select summary from rath_events where exp_id=%s order by id desc limit 4",
             (int(exp_id),),
         ).fetchall()
+        # 世界观要点(拆书审计后补):离线戏/心跳没有世界书材料会滑向平庸写实(战姬味丢失实锤)。
+        # 取该剧本高优先级条目压缩成要点,喂进两个 LLM prompt。
+        wb_rows = []
+        try:
+            srow = db.execute(
+                "select script_id from game_saves where id=%s", (save_id,)).fetchone()
+            _sid = int((srow or {}).get("script_id") or 0)
+            if _sid:
+                wb_rows = db.execute(
+                    "select title, content from worldbook_entries where script_id=%s "
+                    "order by priority desc, id asc limit 6",
+                    (_sid,),
+                ).fetchall()
+        except Exception:
+            wb_rows = []
     if not snap or not commit_id:
         return {"ok": False, "reason": "快照不可读"}
+    world_context = "\n".join(
+        f"- {r['title']}: {str(r.get('content') or '')[:140]}" for r in (wb_rows or [])
+    )
     new_clock = int(claim["new_clock"])
     gain_min = max(0, new_clock - int(claim["old_clock"] or 0))
     elapsed_hint = f"世界内约 {gain_min // 60} 小时 {gain_min % 60} 分钟(观测钟 {_clock_label(new_clock)})"
@@ -177,6 +195,8 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
             materials = _build_materials(snap, None)
             sys_p, usr_p = _build_prompts(materials)
             usr_p += f"\n\n【离线时长】玩家已离开,{elapsed_hint}。事件应体现这段时间的自然流逝。"
+            if world_context:
+                usr_p += f"\n【世界观要点(事件应符合此世界质感)】\n{world_context}"
             text, _usage = call_agent_json(
                 api_id=api_id, model=model, system_prompt=sys_p, user_prompt=usr_p,
                 user_id=user_id, tool_schema=None, max_tokens=400, timeout_sec=25,
@@ -196,7 +216,8 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                     from agents._harness import call_agent_json
                     sys_p, usr_p = build_scene_prompts(
                         snap, scene_pair[0], scene_pair[1],
-                        elapsed_hint=elapsed_hint, recent_events=recent + wrote)
+                        elapsed_hint=elapsed_hint, recent_events=recent + wrote,
+                        world_context=world_context)
                     text, _usage = call_agent_json(
                         api_id=api_id, model=model, system_prompt=sys_p, user_prompt=usr_p,
                         user_id=user_id, tool_schema=None, max_tokens=900, timeout_sec=40,
