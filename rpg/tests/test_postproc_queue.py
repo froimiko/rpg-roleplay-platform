@@ -380,9 +380,14 @@ class TestAsyncModeAppliesJsonOps(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.data["player"]["current_location"], "灯塔顶层")
         self.assertEqual(state.data["world"]["time"], "次日清晨")
         self.assertIn("黄铜怀表", state.data.get("memory", {}).get("resources", []))
-        # ctx._updates 反映这些写入(不再只是 directive_updates 的空拷贝)
+        # ctx._updates 反映这些写入(不再只是 directive_updates 的空拷贝)。
+        # 文案有两种合法形态:dispatcher 工具未注册时为裸路径
+        # "状态写入：player.current_location = ..."、已注册(=生产启动态,或同进程
+        # 先跑过触发 ensure_registered 的测试)时为工具路由友好格式
+        # "状态写入: set_player_location → 位置 → ..."。断言写入被反映即可,不锁格式。
         self.assertTrue(
-            any("player.current_location" in u for u in (ctx._updates or [])),
+            any(("player.current_location" in u or "set_player_location" in u)
+                for u in (ctx._updates or [])),
             f"ctx._updates 未含 location 写回: {ctx._updates}",
         )
         # 费时 LLM 任务仍走异步入队(async 容量优化路径未被破坏)

@@ -59,6 +59,8 @@ DEFAULT_NOVEL_MANIFEST: dict = {
         # task 107E: 双时间线 — 历史摘要 + 剧本未来
         "runtime_phase_digests",
         "script_phase_anticipation",
+        # 后果账本 v1: 承诺/欠债到期回响(feature gate 内部关闭,默认零输出)
+        "consequence_echo",
     ],
     "retrieval_policy": {
         "allow_script_retrieval": True,
@@ -109,6 +111,8 @@ DEFAULT_FREEFORM_MANIFEST: dict = {
         # #18 复读修复: 历史走 messages[],去掉重复的 recent_chat 文本层。
         # task 107E: 自由模式也启用历史摘要
         "runtime_phase_digests",
+        # 后果账本 v1: 承诺/欠债到期回响(feature gate 内部关闭,默认零输出)
+        "consequence_echo",
     ],
     "retrieval_policy": {
         "allow_script_retrieval": False,

@@ -21,6 +21,7 @@ _FEATURES: dict[str, tuple[str, str]] = {
     "kb_state": ("RPG_KB_STATE", "1"),              # 存档知识库 DB 化
     "anchor_pace": ("RPG_ANCHOR_PACE", "1"),        # 锚点节奏(限速/窗口/intro/死亡失效)
     "episodic_recall": ("RPG_EPISODIC_RECALL", "0"),  # 永恒记忆·对玩家游戏历史语义召回(默认关,验后开)
+    "consequence_ledger": ("RPG_CONSEQUENCE_LEDGER", "0"),  # 后果账本(承诺/欠债到期回响,默认关,验后开)
 }
 
 _FALSY = ("0", "false", "no", "off", "")

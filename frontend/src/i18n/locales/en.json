@@ -339,6 +339,10 @@
       "kb_state": {
         "label": "DB-resident save knowledge base",
         "desc": "Stores save state as database rows (single source of truth) for precise retrieval and maintenance; off uses the traditional whole-save blob."
+      },
+      "consequence_ledger": {
+        "label": "Consequence ledger",
+        "desc": "When a player's promise or debt comes due, or they reach a specified location, nudges the GM to pay it off in the story instead of relying on lucky retrieval hits."
       }
     },
     "memory": {

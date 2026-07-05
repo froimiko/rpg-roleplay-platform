@@ -415,6 +415,12 @@ def ensure_registered() -> None:
         register_worldbook_tools()
     except Exception as exc:
         log.warning(f"[command_tools_register] worldbook 工具注册失败: {exc}")
+    # 后果账本 v1 (docs/design/consequence_ledger_v1.md): schedule_consequence
+    try:
+        from tools_dsl.command_tools_consequence import register_consequence_tools
+        register_consequence_tools()
+    except Exception as exc:
+        log.warning(f"[command_tools_register] consequence 工具注册失败: {exc}")
     # task 109b: ui action tools (set_field/click via SSE to frontend)
     try:
         from tools_dsl.command_tools_ui_action import register_ui_action_tools

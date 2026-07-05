@@ -46,6 +46,26 @@ from timeline_state import detect_time_directives, is_time_key
 class ApplyOpsMixin:
     """apply_* 系列方法 — GM/玩家/RulesEngine 对 state 的写入入口。"""
 
+    # 后果账本 v1（docs/design/consequence_ledger_v1.md）：薄封装，纯逻辑在
+    # state.consequence_ledger（不做 IO，方便单测）。dispatcher 工具
+    # schedule_consequence 与 JSON op "consequence" 分支都走这一个方法。
+    def register_consequence(
+        self,
+        *,
+        text: str,
+        due_turns: int | None = None,
+        due_location: str | None = None,
+        origin: str = "gm",
+    ) -> tuple[bool, str]:
+        from state.consequence_ledger import register_consequence as _register
+        return _register(
+            self.data,
+            text=text,
+            due_turns=due_turns,
+            due_location=due_location,
+            origin=origin,
+        )
+
     def apply_structured_updates(self, gm_response: str) -> list[str]:
         updates: list[str] = []
         memory = self.data["memory"]
@@ -264,6 +284,22 @@ class ApplyOpsMixin:
                         # task 60：缺 question 文本时不静默
                         _log_op_parse_error("question op 缺 'question' 或 'text' 字段", op)
                         updates.append(f"JSON op 忽略（询问缺文本）：{op}")
+                    continue
+                # 后果账本 v1（docs/design/consequence_ledger_v1.md）：登记一条待兑现的
+                # 后果。触发扫描/注入在 context provider 侧做，这里只负责写入登记。
+                if kind == "consequence":
+                    c_text = op.get("text") or ""
+                    if not c_text:
+                        _log_op_parse_error("consequence op 缺 'text' 字段", op)
+                        updates.append(f"JSON op 忽略（后果缺文本）：{op}")
+                        continue
+                    ok, msg = self.register_consequence(
+                        text=c_text,
+                        due_turns=op.get("due_turns"),
+                        due_location=op.get("due_location"),
+                        origin="gm",
+                    )
+                    updates.append(f"状态写入：{msg}" if ok else msg)
                     continue
                 # task 75：hypothesis op 路由到独立 namespace，不污染 facts
                 if kind == "hypothesis":
