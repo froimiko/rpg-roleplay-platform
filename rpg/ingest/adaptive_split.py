@@ -188,8 +188,10 @@ def split_by_heading_regex(text: str, regex: Pattern[str]) -> list[dict]:
         end = heading_idx[i + 1] if i + 1 < len(heading_idx) else len(lines)
         raw_title = lines[start].strip()
         body_start = start + 1
+        is_divider_promotion = False
         if _DIVIDER_ONLY.match(raw_title):
             # 分隔符行本身不是真标题:跳过随后的空行,把第一行非空内容提为标题
+            is_divider_promotion = True
             while body_start < end and not lines[body_start].strip():
                 body_start += 1
             if body_start < end:
@@ -200,6 +202,11 @@ def split_by_heading_regex(text: str, regex: Pattern[str]) -> list[dict]:
         else:
             title = raw_title[:200]
         body = "\n".join(lines[body_start:end]).strip()
+        if is_divider_promotion and not body:
+            # 提升出的"标题"其实是紧跟分隔符的孤立行(如占位的"正文"二字),
+            # 该章正文为空 → 是幽灵章,不产出。提升行本身是噪声,随分隔符一并丢弃,
+            # 不并入下一真章正文(避免污染下一章开头)。
+            continue
         chapters.append({"title": title, "content": body, "chapter_number": len(chapters) + 1})
     return [c for c in chapters if c["content"] or c["title"]]
 

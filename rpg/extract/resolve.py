@@ -73,6 +73,82 @@ def _cosine(a, b) -> float:
     return num / (na * nb) if na and nb else 0.0
 
 
+# ── gloss 聚合:择优+充实(治『战姬 11 字』——旧版 first-gloss-wins 跨千章从不充实) ─────
+# 病灶:concept.gloss 旧版聚合是"第一次非空就锁死",后续章节哪怕抽到护盾档位/型号编号/
+# 血统分级这些机制细节也永不写回,导致核心设定卡在世界书里始终只有开场那句模板化短句。
+# 修复原则:换成"择优"(信息量更大的胜出)+"充实"(新 gloss 若带旧版没有的机制词,追加
+# 而不是丢弃)。纯函数、零 LLM、可单测。
+
+# 模板化/占位 gloss 的弱信号词——命中越多说明这句话越像随手一填的空话,应优先被更具体的替换。
+_GLOSS_TEMPLATE_WORDS = ("一种", "某种", "相关", "有关", "泛指", "统称", "指代", "简称")
+
+# 机制词信号:数字/型号编号/条件句连词——出现即说明这句 gloss 带了具体机制细节
+# (护盾档位"三级"、型号"MK-II"、代价"需消耗"、限制"仅限"等)。
+_MECH_NUMBER_RE = re.compile(r"[0-9一二三四五六七八九十百千两]+\s*(?:级|档|阶|型|代|层|环|重|品|星|阶段)?")
+_MECH_MODEL_RE = re.compile(r"[A-Za-z]{1,6}[-_]?\d{1,4}")  # 型号编号:MK-II 类含数字才算强信号,纯字母不算
+_MECH_CONDITION_WORDS = (
+    "若", "需", "需要", "须", "必须", "才能", "否则", "消耗", "代价", "限制", "仅限",
+    "上限", "下限", "条件", "前提", "只能", "不可", "禁止", "解锁", "对应", "分为", "分级",
+)
+
+
+def _gloss_template_score(s: str) -> int:
+    """越像模板化空话分越高(仅供比较,不单独使用)。"""
+    return sum(1 for w in _GLOSS_TEMPLATE_WORDS if w in s)
+
+
+def _mech_tokens(s: str) -> set[str]:
+    """提取一句 gloss 里的『机制词』集合:数字型号 + 条件句连词命中项。
+    用于判断"新 gloss 是否带了旧 gloss 没有的机制信息"——纯字符串比较,不做语义理解。
+    """
+    if not s:
+        return set()
+    toks: set[str] = set()
+    toks.update(m.group(0) for m in _MECH_MODEL_RE.finditer(s) if any(ch.isdigit() for ch in m.group(0)))
+    toks.update(m.group(0) for m in _MECH_NUMBER_RE.finditer(s) if m.group(0).strip())
+    toks.update(w for w in _MECH_CONDITION_WORDS if w in s)
+    return toks
+
+
+def merge_gloss(old: str, new: str) -> str:
+    """择优 + 充实合并两条 concept gloss。纯函数,供聚合逐章调用(reduce 式:acc = merge_gloss(acc, new))。
+
+    规则(按优先级):
+      1. 任一为空 → 返回非空的那个(不倒退)。
+      2. 新 gloss 明显信息量更大(更长且非纯模板)→ 新 gloss 直接胜出(择优)。
+      3. 否则:新 gloss 若带旧 gloss 没有的机制词(数字/型号/条件句)→ 合并成
+         "旧;新增:新" 截断到 160 字(充实,不丢旧信息也不丢新机制)。
+      4. 都没有新增机制信息、新也不比旧长 → 保留旧的(避免抖动式反复改写)。
+    """
+    old = (old or "").strip()
+    new = (new or "").strip()
+    if not old:
+        return new
+    if not new:
+        return old
+    if old == new:
+        return old
+
+    old_is_template = _gloss_template_score(old) > 0 and len(old) <= 20
+    new_is_template = _gloss_template_score(new) > 0 and len(new) <= 20
+
+    # 择优:新 gloss 更长且不是模板空话,旧的是模板或明显更短 → 新的直接胜出
+    if not new_is_template and len(new) > len(old) and (old_is_template or len(new) >= len(old) * 1.3):
+        base, extra = new, ""
+    else:
+        base, extra = old, ""
+
+    # 充实:新 gloss 若带旧(此刻 base)没有的机制词 → 追加"新增:"片段
+    new_mech = _mech_tokens(new) - _mech_tokens(base)
+    if new_mech and new != base:
+        extra = new
+
+    if extra:
+        merged = f"{base};新增:{extra}"
+        return merged[:160]
+    return base[:160] if len(base) > 160 else base
+
+
 def _clean_name(s: str) -> str:
     """清洗 LLM 抽出的实体名:去掉误带的所有格/助词尾,避免"博士"与"博士的"被当成两个实体。
     保守:只去英文 's 与中文尾随"的"(角色名不会以"的"结尾;"博士的XX"里误抽出"博士的")。"""
@@ -150,6 +226,42 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
 
 def _norm_name(s: str) -> str:
     return re.sub(r"[\s·_、.\-]", "", _to_simplified(s).strip())
+
+
+# ── 音译变体归一(治『埃尔温·隆美尔』vs『艾尔温·隆美尔』被拆成两卡) ──────────────
+# 病灶:cluster_entities 的次信号(嵌入高相似)要求 ni[0]==nr[0](首字相同)才放行比较,
+# 但音译人名常见"首字用哪个同音字"因译者/LLM 批次而异(埃/艾、诺/娜…),首字不同就直接被
+# 挡在门外、连嵌入相似度都不算,导致同一人被拆成多张卡。
+# 修复:只做"归一后能否进入比较"的放行判断,不直接判定同一人——归一相同只是把 ni[0]==nr[0]
+# 首字门禁换成"音译归一后的首字/整串相同",后续仍必须走既有的子串/别名/嵌入相似度确认。
+# 宁漏勿误:映射表只收极常见、单向无歧义的音译同音异字对,不收可能是真实不同姓氏用字的对
+# (如"李/黎"是常见真实姓氏区分,不放进来)。
+_TRANSLIT_CHAR_MAP: dict[str, str] = {
+    # 每对里,右边是归一目标字(任选其一做标准形,只要函数内自洽)
+    "埃": "艾", "艾": "艾",
+    "丝": "斯", "斯": "斯",
+    "娅": "雅", "雅": "雅",
+    "莉": "丽", "丽": "丽",
+    "克": "科", "科": "科",
+    "姆": "穆", "穆": "穆",
+    "贝": "白", "白": "白",
+    "妮": "尼", "尼": "尼",
+    "薇": "维", "维": "维",
+    "琳": "林", "林": "林",
+    "萝": "罗", "罗": "罗",
+    "露": "鲁", "鲁": "鲁",
+    "瑟": "塞", "塞": "塞",
+    "冯": "凡", "凡": "凡",
+}
+
+
+def _translit_norm(s: str) -> str:
+    """音译同音异字归一:先走常规 _norm_name(简繁/全角/分隔符),再把每个字符按
+    _TRANSLIT_CHAR_MAP 映射到统一目标字。只用于"是否放行进入比较"的候选判断,
+    归一后相同【不直接】判定为同一实体——仍需通过后续子串/别名/嵌入相似度等既有闸门确认。
+    """
+    n = _norm_name(s)
+    return "".join(_TRANSLIT_CHAR_MAP.get(ch, ch) for ch in n)
 
 
 # 通用指代/关系泛称黑名单:这些不是专有姓名,是上下文指代。被便宜 LLM 误塞进 aliases_in_chapter 后,
@@ -267,8 +379,13 @@ def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.
                         same = True            # rep 名是 ni 的子形(ni 含 rep,如 薇欧拉小姐⊃薇欧拉)
                     elif ni in nr_surfaces and len(ni) >= 2 and ni not in _GENERIC_REFERENT_NORMS:
                         same = True            # ni 是 rep 的别名(ni 弱形,如 Mulelia→小蕾)
-                # 次信号:嵌入高相似 且 首字相同(同语言变体如"薇欧拉/薇瑟拉")
-                if not same and vecs is not None and ni and nr and ni[0] == nr[0]:
+                # 次信号:嵌入高相似 且(首字相同 OR 音译归一后相同)——同语言变体如"薇欧拉/薇瑟拉",
+                # 或音译同音异字变体如"埃尔温·隆美尔/艾尔温·隆美尔"(首字"埃"≠"艾" 原本被首字门禁
+                # 挡死,连嵌入相似度都不算)。_translit_norm 只负责"放行进比较",同不同人仍由嵌入
+                # 相似度阈值(默认 0.95)把关,不放松其他闸。
+                if not same and vecs is not None and ni and nr and (
+                    ni[0] == nr[0] or _translit_norm(rec["name"]) == _translit_norm(rep_rec["name"])
+                ):
                     same = _cosine(vecs[i], vecs[cl["rep_idx"]]) >= sim_threshold
                 if same:
                     cl["members"].append(i)
@@ -445,11 +562,12 @@ def resolve_and_write(db, script_id: int, chapter_extracts: list, *, embedder=No
             nm = (c.get("name") or "").strip()
             if not nm:
                 continue
-            r = concept_acc.setdefault(nm, {"count": 0, "first": ex.chapter, "gloss": c.get("gloss", "")})
+            r = concept_acc.setdefault(nm, {"count": 0, "first": ex.chapter, "gloss": ""})
             r["count"] += 1
             r["first"] = min(r["first"], ex.chapter)
-            if not r["gloss"] and c.get("gloss"):
-                r["gloss"] = c.get("gloss")
+            # 择优+充实聚合(治『战姬 11 字』):不再 first-gloss-wins 锁死,
+            # 每章新抽到的 gloss 都参与合并,信息量更大的胜出 / 机制细节被追加。
+            r["gloss"] = merge_gloss(r["gloss"], c.get("gloss", ""))
     for nm, r in concept_acc.items():
         canon.append(CanonEntity(logical_key=_slug(nm) + "_concept", name=nm, type="concept",
                                  first_revealed_chapter=r["first"], importance=r["count"], summary=r["gloss"]))

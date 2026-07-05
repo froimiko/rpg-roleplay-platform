@@ -162,15 +162,28 @@ def _summary_section(db, script_id: int, chapter_index: int | None) -> str:
 
 
 def _is_garbage_summary(s: str) -> bool:
-    """判定摘要是否是垃圾(分隔线/纯标点符号,无实际内容)。删去 CJK/字母/数字后剩的若仍占绝大多数
-    且实义字符极少 → 垃圾(如 '====' / '；===；')。确定性,防把分隔线当前情喂给 GM。"""
+    """判定摘要是否是垃圾/残句,不配当【前情提要】喂 LLM。确定性。
+
+    两类(拆书审计 R4):
+    ① 分隔线/纯标点(原有):实义字符 <4;
+    ② 原文残句指纹(新增):deterministic_import 的 summary 是「；」拼接的原文碎片——
+       以闭引号/标点开头(对话中间截出)、或贴 240 字硬截上限且无句尾标点(断词残尾)。
+       实测 script 11 旧检测 1181 章仅拦 1 条(0.08%),残句几乎全数通过 → GM 把对话
+       碎片当剧情摘要复述。真摘要(llm_refined)是归纳复述,不会命中这些指纹。
+    宁漏勿误:只拦高置信残句形态。"""
     import re
     t = (s or "").strip()
     if len(t) < 4:
         return True
     real = re.sub(r"[^\w一-鿿]", "", t)  # 保留中日韩 + 字母数字下划线
     real = re.sub(r"_", "", real)
-    return len(real) < 4
+    if len(real) < 4:
+        return True
+    if t[0] in "”」’；，。、!?！？…—":
+        return True  # 以闭引号/标点开头 = 句子中间截出来的碎片
+    if len(t) >= 232 and t[-1] not in "。！？”」…":
+        return True  # 贴着 240 字上限且无句尾标点 = 硬截断词
+    return False
 
 
 # ── Q Phase 5：编辑器环境描述符(取代硬编码 section 序列)──────────────────

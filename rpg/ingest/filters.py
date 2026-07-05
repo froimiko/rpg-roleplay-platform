@@ -60,6 +60,13 @@ def filter_non_content(chapters: list[dict]) -> list[dict]:
     for ch in chapters:
         title = (ch.get("title") or "").strip()
         body = ch.get("content") or ""
+        # 硬规则(优先于启发式打分):正文(去空白)为空 → 必是幽灵章(栏目头/分隔符
+        # 提升出的伪标题等),两道启发式对"零正文"都够不到阈值,单独兜底确定性拦下。
+        if not body.strip():
+            ch["is_author_note"] = True
+            ch["exclude_from_extraction"] = True
+            ch["_note_reason"] = "empty_content"
+            continue
         title_strong = bool(AUTHOR_NOTE_TITLE_PATTERNS.search(title))
         struct = _structure_authorish(title, body)
         # 标题弱命中:含"卷"/"话"等但非剧情(粗略),这里用 title 是否含元词

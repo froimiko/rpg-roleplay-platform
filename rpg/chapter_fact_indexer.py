@@ -540,10 +540,24 @@ def _scene_index_for_sentence(sentence: str, scenes: list[str]) -> int:
     return 0
 
 
+def _sentence_truncate(s: str, cap: int = 240) -> str:
+    """句边界感知截断(拆书审计 R2):240 字硬截断会在词中间断尾,GM 拿到断词残句
+    会续写出不连贯语义。截到 cap 内最后一个完整句界;后半段无句界才退回硬截。"""
+    if len(s) <= cap:
+        return s
+    cut = s[:cap]
+    best = max(cut.rfind(p) for p in ("。", "！", "？", "」", "”", "；"))
+    if best >= cap // 2:
+        return cut[: best + 1]
+    return cut
+
+
 def _summary_from_events(events: list[dict[str, Any]], sentences: list[str]) -> str:
+    # 注意:此为确定性占位(metadata.source=deterministic_import,本质是原文残句而非摘要)。
+    # 真摘要由 extract/facts_refine.py 的 LLM 精炼层按需覆盖(source=llm_refined)。
     if events:
-        return "；".join(event["event"] for event in events[:3])[:240]
-    return "；".join(sentences[:3])[:240]
+        return _sentence_truncate("；".join(event["event"] for event in events[:3]))
+    return _sentence_truncate("；".join(sentences[:3]))
 
 
 def _story_phase(chapter: int, text: str, script_key: str | None = None) -> str:

@@ -761,7 +761,16 @@ def resplit_script(
     """换规则重切已导入剧本。
 
     保留 scripts/game_saves 不动，重新生成 script_chapters 行。
-    知识库（chapter_facts/character_cards/worldbook）不动，需要时调一次 sync。
+
+    ⚠️ 知识库联动（不是"不动"，是会被清空）：documents / document_chunks /
+    chapter_facts 三张表都对 script_chapters(id) 设了 on delete cascade 外键，
+    下面 `delete from script_chapters` 一执行，挂在旧章节下的这三表行会被数据库
+    级联物理删除，不是"过时"而是"已删空"。本函数会在 resplit 提交后，
+    在同一调用内自动重建 document_chunks 与 chapter_facts（零 LLM、确定性、
+    从新的 script_chapters 重新切块/重新抽取），让三表行数与新章节重新对齐；
+    character_cards/worldbook 不受 script_chapters 级联影响，不在本函数重建范围内，
+    仍按旧契约"需要时调一次 sync"。若自动重建失败（见返回体 facts_rebuilt），
+    调用方仍可手动触发 /rebuild/chunks、/rebuild/chapter-facts 兜底。
     """
     init_db()
     with connect() as db:
@@ -828,11 +837,45 @@ def resplit_script(
         except Exception:
             db.execute("ROLLBACK TO SAVEPOINT resplit_save")
             raise
+
+    # resplit 的 delete+reinsert 已在上面的 `with connect()` 块内提交完成。
+    # documents/document_chunks/chapter_facts 挂在旧 script_chapters 行下的数据
+    # 已被外键级联清空（不是"过时"，是物理删除），这里立即用零 LLM 的确定性
+    # 重建函数把它们对齐到新的 script_chapters。重建失败只降级、绝不让 resplit
+    # 本身报错——resplit 的核心操作（换章节结构）已经成功了。
+    facts_rebuilt = False
+    chunks_rebuilt = False
+    rebuild_error = ""
+    try:
+        from . import import_pipeline
+        chunks_result = import_pipeline.rebuild_chunks_from_db(user_id, script_id)
+        chunks_rebuilt = bool(chunks_result.get("ok"))
+        facts_result = import_pipeline.rebuild_facts_from_db(user_id, script_id)
+        facts_rebuilt = bool(facts_result.get("ok"))
+        if not (chunks_rebuilt and facts_rebuilt):
+            rebuild_error = (
+                f"chunks.ok={chunks_result.get('ok')} facts.ok={facts_result.get('ok')}"
+            )
+    except Exception as exc:
+        rebuild_error = f"{type(exc).__name__}: {exc}"
+        logger.warning(
+            "resplit_script: 自动重建 document_chunks/chapter_facts 失败 "
+            "(script_id=%s): %s", script_id, exc, exc_info=True,
+        )
+
     return {
         "ok": True, "script_id": script_id,
         "chapter_count": len(chapters), "word_count": total_words,
         "report": report,
-        "knowledge_stale": True,  # 提示前端需要再触发一次 sync
+        # knowledge_stale 是旧字段名,语义具有误导性(暗示"数据还在只是过时"，
+        # 实际是"数据已被外键级联删空后又自动重建")。没有发现任何调用方读取
+        # 这个字段(grep 全仓库只有本文件在写),但保留它以防未知/外部消费方，
+        # 新增 knowledge_cleared 才是准确描述当下发生的事。
+        "knowledge_stale": True,
+        "knowledge_cleared": True,  # 诚实字段: 三表旧行已被级联删空,而非只是"过时"
+        "chunks_rebuilt": chunks_rebuilt,
+        "facts_rebuilt": facts_rebuilt,
+        "rebuild_error": rebuild_error,
         "review_status": "unreviewed",
     }
 

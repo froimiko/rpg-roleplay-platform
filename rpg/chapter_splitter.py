@@ -622,7 +622,9 @@ class ChapterSplitter:
             title = str(chapter.get("title") or "").strip()[:200]
             content = str(chapter.get("content") or "").strip()
             volume_title = str(chapter.get("volume_title") or "").strip()
-            if not title and not content:
+            if not content.strip():
+                # 零正文即丢弃(不管有没有标题):有标题无正文的幽灵章(如栏目头/
+                # 分隔符提升出的伪标题)之前靠 title 非空躲过丢弃,是幽灵空章根因之一。
                 continue
             if content and len(content) > 50000:
                 for idx, sub_chapter in enumerate(self._fallback_split(content, min_window=6000, max_window=9000), start=1):
