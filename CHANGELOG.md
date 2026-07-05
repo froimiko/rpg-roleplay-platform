@@ -9,6 +9,15 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.39.0] - 2026-07-05
+
+### Added
+- **后果账本 Consequence Ledger v1(活世界·柱子2,默认关)**:玩家的选择在 N 回合后主动回响。确定性核心(登记/触发/注入三纯函数,上限20+指纹去重)+ JSON op `consequence` + dispatcher 工具 `schedule_consequence` + `consequence_echo` context provider(priority 85,兑现窗口3回合)+ 前端设置开关(中英)。GM 提示词/史官接线下批做,本批零行为变化。
+
+### Fixed
+- **postproc worker phase_digest 死调用收口**:该分支调用从未存在的函数且从未被 enqueue(真实路径在主进程内联/独立线程),死调用改显式 no-op,docstring 纠偏,enqueue 链路零改动。
+
+
 ## [1.38.1] - 2026-07-05
 
 ### Fixed
