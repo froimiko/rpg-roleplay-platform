@@ -1236,23 +1236,57 @@ async def run_gm_phase(
     # response 累积不受影响(史官/落库/acceptance 仍读完整文本)。
     _fence_guard = StreamFenceGuard()
 
-    # 流式重试(韧性战役):首个已提交事件(正文token/工具调用)之前的 upstream/ratelimit
-    # 失败自动重建重放(≤2次退避),之后的失败保持原错误路径(partial 保留,防工具双重副作用)。
-    from agents.gm.stream_retry import stream_with_pretoken_retry as _st_retry
+    # 流式重试+跨渠道 fallback(韧性战役):首个已提交事件(正文token/工具调用)之前的
+    # upstream/ratelimit 失败先同渠道重试(≤2次退避);仍失败且 flag channel_fallback 开
+    # → 切换用户自己的备用凭据渠道重新生成(严格 BYOK,每回合最多一次,fallback_notice
+    # 事件告知玩家)。已提交后的失败保持原错误路径(partial 保留,防工具双重副作用)。
+    from agents.gm.stream_retry import stream_with_channel_fallback as _st_fallback
 
-    def _gm_stream_factory():
-        return gm.respond_stream_with_tools(
-            message_for_model, bundle["prompt"], state,
-            tools=_gm_tools, max_iterations=_gm_max_iters(),
-            max_tokens=_max_tokens,
-            tool_call_router=gm_tool_router,
-            stop_event=_gm_stop,
-            prompt_segments=bundle.get("prompt_segments"),
-            dynamic_prefix="\n\n".join(_dynamic_prefix_parts),
+    def _make_gm_stream_factory(_g):
+        def _factory():
+            return _g.respond_stream_with_tools(
+                message_for_model, bundle["prompt"], state,
+                tools=_gm_tools, max_iterations=_gm_max_iters(),
+                max_tokens=_max_tokens,
+                tool_call_router=gm_tool_router,
+                stop_event=_gm_stop,
+                prompt_segments=bundle.get("prompt_segments"),
+                dynamic_prefix="\n\n".join(_dynamic_prefix_parts),
+            )
+        return _factory
+
+    def _make_backup_factory(_cand_api: str, _cand_model: str):
+        # 在切换点才构造备用 GameMaster(worker 线程内调用;凭据解密/构造失败会被
+        # 包装器捕获并回落原错误)。usage 记账 v0 已知取舍:收尾 last_usage 读 ctx.gm
+        # (主渠道),备用轮的用量在 backend 层照记、chat 行可能低估——可接受,注释备查。
+        from agents.gm import GameMaster
+        _bgm = GameMaster(model=_cand_model, api_id=_cand_api,
+                          user_id=(api_user or {}).get("id"))
+        for _attr in ("_active_state", "_immersive_mode"):
+            try:
+                setattr(_bgm, _attr, getattr(gm, _attr))
+            except Exception:
+                pass
+        try:
+            import model_probe
+            model_probe.note_channel_failure(getattr(gm, "api_id", ""),
+                                             user_id=(api_user or {}).get("id"))
+        except Exception:
+            pass
+        ctx.fallback_note = (
+            f"本回合由备用模型生成:{_cand_api}/{_cand_model}(主渠道 "
+            f"{getattr(gm, 'api_id', '?')} 持续故障)"
         )
+        return _make_gm_stream_factory(_bgm)
 
     async for event in _bridge_sync_generator_to_async(
-        lambda: _st_retry(_gm_stream_factory, stop_event=_gm_stop),
+        lambda: _st_fallback(
+            _make_gm_stream_factory(gm),
+            user_id=(api_user or {}).get("id"),
+            primary_api_id=str(getattr(gm, "api_id", "") or ""),
+            make_backup_factory=_make_backup_factory,
+            stop_event=_gm_stop,
+        ),
         stop_event=_gm_stop,
     ):
         if stop_event.is_set() or run_id != current_run_id_fn(api_user) or is_stop_requested_global(api_user, run_id):
@@ -1306,6 +1340,16 @@ async def run_gm_phase(
                 "message": (
                     f"模型服务暂时不可用({event.get('category', 'upstream')}),"
                     f"正在自动重试 {event.get('attempt')}/{event.get('max_retries')}…"
+                ),
+                "status": "running", "elapsed_ms": 0,
+            })
+        elif etype == "fallback_notice":
+            # 跨渠道 fallback 包装器发出:主渠道重试耗尽,已切换玩家自己的备用凭据渠道。
+            yield ("agent", {
+                "phase": "gm_fallback",
+                "message": (
+                    f"主渠道 {event.get('from_api_id', '?')} 持续故障,"
+                    f"已切换备用模型 {event.get('api_id')}/{event.get('model')},重新生成中…"
                 ),
                 "status": "running", "elapsed_ms": 0,
             })
@@ -2094,5 +2138,8 @@ async def persist_turn_phase(
     )
     if usage_payload:
         yield ("usage", usage_payload)
+    # 跨渠道 fallback 发生过 → 玩家必须知情(模型质量可能有差异),附进本回合 updates。
+    if getattr(ctx, "fallback_note", ""):
+        updates = list(updates or []) + [str(ctx.fallback_note)]
     yield ("updates", {"items": updates})
     yield ("done", {"status": payload_fn(api_user), "interrupted": False, "usage": usage_payload})

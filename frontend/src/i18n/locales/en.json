@@ -347,6 +347,10 @@
       "world_heartbeat": {
         "label": "World heartbeat",
         "desc": "Periodically generates small world-side events happening off-screen (village-level, side-character-level), which surface later as rumors or overheard chatter — so the world keeps moving even when you're not watching."
+      },
+      "channel_fallback": {
+        "label": "Channel fallback",
+        "desc": "When the primary model channel keeps failing, automatically switch to another channel you configured to finish the turn (with a clear notice)."
       }
     },
     "memory": {

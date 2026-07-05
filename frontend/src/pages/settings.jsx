@@ -2497,7 +2497,7 @@ function ModuleModelsSection() {
   const FEAT_LABELS = {
     ctx_tiered: "分层上下文缓存", recorder_unified: "史官三合一", narrator_slim: "文宗精简(去工具循环)",
     rag_gate: "RAG 检索闸", anchor_pace: "世界线锚点节奏", kb_state: "存档知识库 DB 化",
-    consequence_ledger: "后果账本", world_heartbeat: "世界心跳",
+    consequence_ledger: "后果账本", world_heartbeat: "世界心跳", channel_fallback: "跨渠道自动备援",
   };
   const FEAT_DESCS = {
     ctx_tiered: "把稳定前缀与动态内容分层,命中模型前缀缓存,显著省 token。",
@@ -2508,6 +2508,7 @@ function ModuleModelsSection() {
     kb_state: "存档状态以数据库行存储(单一来源),便于精确检索与维护;关闭则用传统整档存储。",
     consequence_ledger: "玩家的承诺/欠债到期或抵达指定地点时,提醒 GM 在剧情中主动兑现。",
     world_heartbeat: "每隔几回合生成玩家不在场处发生的世界侧小事,之后以传闻方式自然浮现。",
+    channel_fallback: "主模型渠道持续故障时,自动切换到你配置的其他渠道把本回合讲完(切换会明确提示)。",
   };
   const GROUP_DESC = {
     core: "三贤者流水线:文宗叙事、司命规划、史官记录,以及核心 GM 辅助模型。",
