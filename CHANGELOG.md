@@ -9,6 +9,12 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.41.2] - 2026-07-05
+
+### Fixed
+- **心跳 LLM 输出 dict 形态确定性打捞**:便宜模型把 JSON 数组吐成键值对/items 包装时不再整 tick 作废,拆出候选后仍走全套确定性验收。
+
+
 ## [1.41.1] - 2026-07-05
 
 ### Fixed
