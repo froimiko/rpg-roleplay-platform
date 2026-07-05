@@ -820,6 +820,25 @@
       exportJsonl: (id) => BASE + `/api/tavern/chats/${id}/export-jsonl`,
     },
 
+    // ---------- RATH·搖光观测台(离线活世界实验,docs/design/rath_observation_deck_v0.md)----------
+    // 注意:挂在 /api/rath/*(无 /v1 前缀),与上面的 ${API_PREFIX} 不同。全端点 require_user +
+    // feature flag rath_experiment(默认关);未开放时后端 403 {ok:false,error}。
+    rath: {
+      // 本用户 running/paused 实验列表(≤10 条)
+      list: () => GET(`/api/rath/experiments`),
+      // 绑定已有存档新建实验 body {save_id}
+      create: (body) => POST(`/api/rath/experiments`, body),
+      // 实验详情(含 fluctlights + events);后端顺带 bump last_viewed_at
+      detail: (id) => GET(`/api/rath/experiments/${id}`),
+      // 手动立即演算一拍(计入每日预算;409=未到期或预算已尽)
+      tick: (id) => POST(`/api/rath/experiments/${id}/tick`, {}),
+      pause: (id) => POST(`/api/rath/experiments/${id}/pause`, {}),
+      resume: (id) => POST(`/api/rath/experiments/${id}/resume`, {}),
+      archive: (id) => POST(`/api/rath/experiments/${id}/archive`, {}),
+      // 加速档 body {accel: 1|60|240}
+      accel: (id, accel) => POST(`/api/rath/experiments/${id}/accel`, { accel }),
+    },
+
     // ---------- Library / files ----------
     // W3-C1: S5 文件库在线服务化(只读管理,不支持手动上传)。
     // GET /api/library?kind=X → {items:[{id,kind,url,source,ref_kind,ref_id,size,created_at,...}]}

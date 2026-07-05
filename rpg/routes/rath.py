@@ -1,0 +1,161 @@
+"""routes/rath.py — RATH·搖光观测台 API(docs/design/rath_observation_deck_v0.md §2)。
+
+全端点 require user + feature flag `rath_experiment`(默认关,灰度验后开)。
+GET 详情 bump last_viewed_at(72h 无人看自动 pause 的依据)。
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
+
+from routes._deps_fastapi import get_current_user
+
+router = APIRouter()
+
+
+def _flag_ok(user) -> bool:
+    from core.feature_flags import feature_enabled
+    return feature_enabled("rath_experiment", int(user["id"]))
+
+
+def _deny() -> JSONResponse:
+    return JSONResponse({"ok": False, "error": "RATH 实验未对当前账号开放"}, status_code=403)
+
+
+@router.get("/api/rath/experiments")
+async def api_rath_list(user=Depends(get_current_user)):
+    if not _flag_ok(user):
+        return _deny()
+    from platform_app.db import connect, init_db
+    from rath.engine import _expose
+    init_db()
+    with connect() as db:
+        rows = db.execute(
+            "select * from rath_experiments where user_id=%s and status in ('running','paused') "
+            "order by id desc limit 10",
+            (int(user["id"]),),
+        ).fetchall()
+    return {"ok": True, "experiments": [_expose(dict(r)) for r in (rows or [])]}
+
+
+@router.post("/api/rath/experiments")
+async def api_rath_create(request: Request, user=Depends(get_current_user)):
+    if not _flag_ok(user):
+        return _deny()
+    body = await request.json()
+    save_id = int(body.get("save_id") or 0)
+    if not save_id:
+        return JSONResponse({"ok": False, "error": "缺 save_id"}, status_code=400)
+    from rath.engine import create_experiment
+    out = create_experiment(int(user["id"]), save_id)
+    return out if out.get("ok") else JSONResponse(out, status_code=400)
+
+
+def _own_exp(db, exp_id: int, user_id: int):
+    return db.execute(
+        "select * from rath_experiments where id=%s and user_id=%s",
+        (int(exp_id), int(user_id)),
+    ).fetchone()
+
+
+@router.get("/api/rath/experiments/{exp_id}")
+async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
+    if not _flag_ok(user):
+        return _deny()
+    from platform_app.db import connect, init_db
+    from rath.engine import _expose, _read_snapshot
+    init_db()
+    with connect() as db:
+        exp = _own_exp(db, exp_id, user["id"])
+        if not exp:
+            return JSONResponse({"ok": False, "error": "实验不存在"}, status_code=404)
+        db.execute(
+            "update rath_experiments set last_viewed_at=now() where id=%s", (int(exp_id),))
+        events = db.execute(
+            "select id, kind, summary, payload, world_clock_min, created_at from rath_events "
+            "where exp_id=%s order by id desc limit 30",
+            (int(exp_id),),
+        ).fetchall()
+        snap, _commit = _read_snapshot(db, int(exp["save_id"]))
+        if hasattr(db, "commit"):
+            db.commit()
+    agendas = snap.get("npc_agendas") or {}
+    # 搖光单元板:议程 NPC + 对手戏私记(来自 rath_events payload,按 NPC 聚合,最近優先)
+    private_memories: dict[str, list[str]] = {}
+    ev_out = []
+    from rath.engine import _clock_label
+    for r in (events or []):
+        payload = r.get("payload") or {}
+        if isinstance(payload, str):
+            try:
+                import json as _json
+                payload = _json.loads(payload)
+            except Exception:
+                payload = {}
+        for name, u in ((payload.get("npc_updates") or {}) if isinstance(payload, dict) else {}).items():
+            pm = (u or {}).get("private_memory")
+            if pm and len(private_memories.setdefault(str(name), [])) < 8:
+                private_memories[str(name)].append(str(pm))
+        ev_out.append({
+            "id": int(r["id"]), "kind": r.get("kind"), "summary": r.get("summary"),
+            "payload": payload if isinstance(payload, dict) else {},
+            "world_clock_label": _clock_label(int(r.get("world_clock_min") or 0)),
+            "created_at": str(r.get("created_at") or ""),
+        })
+    fluctlights = [
+        {"name": n,
+         "goal": (a or {}).get("goal") or "",
+         "stance": (a or {}).get("stance") or "",
+         "private_memories": private_memories.get(n, [])}
+        for n, a in agendas.items() if isinstance(n, str)
+    ]
+    return {"ok": True, "experiment": _expose(dict(exp)), "events": ev_out,
+            "fluctlights": fluctlights}
+
+
+@router.post("/api/rath/experiments/{exp_id}/tick")
+async def api_rath_tick(exp_id: int, user=Depends(get_current_user)):
+    if not _flag_ok(user):
+        return _deny()
+    from platform_app.db import connect, init_db
+    init_db()
+    with connect() as db:
+        if not _own_exp(db, exp_id, user["id"]):
+            return JSONResponse({"ok": False, "error": "实验不存在"}, status_code=404)
+    import asyncio
+    from rath.engine import tick_experiment
+    out = await asyncio.to_thread(tick_experiment, int(exp_id), manual=True)
+    return out if out.get("ok") else JSONResponse(out, status_code=409)
+
+
+@router.post("/api/rath/experiments/{exp_id}/{action}")
+async def api_rath_action(exp_id: int, action: str, request: Request, user=Depends(get_current_user)):
+    if not _flag_ok(user):
+        return _deny()
+    if action not in ("pause", "resume", "archive", "accel"):
+        return JSONResponse({"ok": False, "error": "未知操作"}, status_code=400)
+    from platform_app.db import connect, init_db
+    from rath.engine import ACCEL_CHOICES, _expose
+    init_db()
+    with connect() as db:
+        exp = _own_exp(db, exp_id, user["id"])
+        if not exp:
+            return JSONResponse({"ok": False, "error": "实验不存在"}, status_code=404)
+        if action == "accel":
+            body = await request.json()
+            accel = int(body.get("accel") or 0)
+            if accel not in ACCEL_CHOICES:
+                return JSONResponse({"ok": False, "error": f"accel 只能是 {ACCEL_CHOICES}"}, status_code=400)
+            row = db.execute(
+                "update rath_experiments set accel=%s where id=%s returning *",
+                (accel, int(exp_id)),
+            ).fetchone()
+        else:
+            status = {"pause": "paused", "resume": "running", "archive": "archived"}[action]
+            row = db.execute(
+                "update rath_experiments set status=%s, last_viewed_at=now() where id=%s returning *",
+                (status, int(exp_id)),
+            ).fetchone()
+        if hasattr(db, "commit"):
+            db.commit()
+    return {"ok": True, "experiment": _expose(dict(row))}

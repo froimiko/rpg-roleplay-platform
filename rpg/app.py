@@ -459,6 +459,7 @@ from routes.console_assistant import router as console_assistant_router
 from routes.game import router as game_router
 from routes.mcp import router as mcp_router
 from routes.models import router as models_router
+from routes.rath import router as rath_router
 from routes.rules import router as rules_router
 from routes.sidebar import router as sidebar_router
 from routes.skills import router as skills_router
@@ -470,6 +471,7 @@ from routes.worldbook_overlay import router as worldbook_overlay_router
 from routes.worldline import router as worldline_router
 
 app.include_router(game_router)
+app.include_router(rath_router)
 app.include_router(models_router)
 app.include_router(mcp_router)
 app.include_router(skills_router)

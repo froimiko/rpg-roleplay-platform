@@ -307,12 +307,43 @@ async def lifespan(app: FastAPI):
     except Exception:
         log.exception("[startup] redis event listener 启动失败(降级进程内)")
 
+    # 6. RATH·搖光观测台 ticker(离线世界钟,docs/design/rath_observation_deck_v0.md)。
+    #    每 60s 一次廉价 DB 扫描(无实验时零 LLM 开销);实验产物只落 kb_events + rath 表,
+    #    绝不写游戏 state。双 worker 双 ticker 无害(engine 的 CAS 认领天然去重)。
+    _rath_ticker_task = None
+
+    async def _rath_ticker():
+        import asyncio as _aio
+        while True:
+            try:
+                await _aio.sleep(60)
+                from rath.engine import run_due_ticks
+                n = await _aio.to_thread(run_due_ticks)
+                if n:
+                    log.info("[rath] ticker 本轮推进 %d 个实验", n)
+            except _aio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("[rath] ticker 轮询失败(非致命): %s", exc)
+
+    try:
+        import asyncio as _asyncio2
+        _rath_ticker_task = _asyncio2.create_task(_rath_ticker())
+        app.state._rath_ticker_task = _rath_ticker_task
+    except Exception:
+        log.exception("[startup] rath ticker 启动失败(不影响主服务)")
+
     yield
 
     # ── shutdown ──────────────────────────────────────────────────────────
     if _redis_listener_task is not None:
         try:
             _redis_listener_task.cancel()
+        except Exception:
+            pass
+    if _rath_ticker_task is not None:
+        try:
+            _rath_ticker_task.cancel()
         except Exception:
             pass
     try:

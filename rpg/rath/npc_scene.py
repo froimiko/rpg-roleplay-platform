@@ -1,0 +1,145 @@
+"""rath/npc_scene.py — NPC-NPC 离线对手戏(搖光轴②:玩家不在场时角色互演)。
+
+纯函数层(select_scene_pair / build_scene_prompts / validate_scene)零 IO 可单测;
+LLM 调用与落库在 engine.tick_experiment 编排。铁律:绝不写游戏 state——
+scene_summary 落 kb_events(情景召回天然可见),transcript 落 rath_events(观测台展示)。
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+
+log = logging.getLogger(__name__)
+
+MAX_TRANSCRIPT_LINES = 8
+MAX_LINE_CHARS = 120
+MAX_SUMMARY_CHARS = 160
+MAX_PRIVATE_MEMORY_CHARS = 80
+
+
+def select_scene_pair(state_data: dict) -> tuple[str, str] | None:
+    """从快照选两个对手戏 NPC:议程 NPC 优先(有 goal/stance 才演得像),
+    不足两个则从 relationships 补位。选不出两个 → None(本 tick 不演,正常)。"""
+    if not isinstance(state_data, dict):
+        return None
+    agendas = state_data.get("npc_agendas") or {}
+    names = [n for n in agendas if isinstance(n, str) and n.strip()]
+    if len(names) < 2:
+        rels = state_data.get("relationships") or {}
+        for n in rels:
+            if isinstance(n, str) and n.strip() and n not in names:
+                names.append(n)
+            if len(names) >= 2:
+                break
+    if len(names) < 2:
+        return None
+    # 确定性选择:议程最近更新的两位(updated_turn 大在前;无议程的排后但保持字典序稳定)
+    def _key(n: str):
+        a = agendas.get(n) or {}
+        return (-int(a.get("updated_turn") or 0), n)
+    names.sort(key=_key)
+    return names[0], names[1]
+
+
+def _npc_dossier(state_data: dict, name: str) -> str:
+    agendas = state_data.get("npc_agendas") or {}
+    rels = state_data.get("relationships") or {}
+    a = agendas.get(name) or {}
+    parts = [f"姓名:{name}"]
+    if a.get("goal"):
+        parts.append(f"当前目标:{a['goal']}")
+    if a.get("stance"):
+        parts.append(f"当前态度:{a['stance']}")
+    r = rels.get(name)
+    if isinstance(r, str) and r.strip():
+        parts.append(f"与玩家关系:{r.strip()[:40]}")
+    return ";".join(parts)
+
+
+def build_scene_prompts(
+    state_data: dict, npc_a: str, npc_b: str, *,
+    elapsed_hint: str = "", recent_events: list[str] | None = None,
+) -> tuple[str, str]:
+    """构造对手戏 prompt。防剧透同心跳口径:只喂快照里已有的信息,不喂原著。"""
+    player = (state_data.get("player") or {})
+    world = (state_data.get("world") or {})
+    location = str(player.get("current_location") or "").strip()
+    wtime = str(world.get("time") or "").strip()
+    ev_lines = "\n".join(f"- {e}" for e in (recent_events or [])[:4]) or "(暂无)"
+    system_prompt = (
+        "你是离线世界模拟器:玩家不在场时,两位 NPC 之间发生一小段真实互动。\n"
+        "铁律:\n"
+        "1. 只能使用下面档案与近况中给出的信息,不得发明新的重要人物/地点/物品。\n"
+        "2. 地理连贯:场景只能发生在两人当前合理所在之处;远方的人与事只能被谈及,不能到场。\n"
+        "3. 玩家不在场:对话中可以提到玩家(用其名字),但玩家绝不出现、绝不说话。\n"
+        f"4. 对话不超过 {MAX_TRANSCRIPT_LINES} 行,每行不超过 {MAX_LINE_CHARS} 字;小事即可,不要写重大转折。\n"
+        "5. 只输出严格 JSON(不要代码围栏),schema:\n"
+        '{"transcript":[{"speaker":"名字","line":"台词或动作"}],'
+        '"scene_summary":"≤120字的第三人称场景纪要(写清两人谈了什么/做了什么)",'
+        '"npc_updates":{"名字":{"goal":"可选,若目标有微调","stance":"可选","private_memory":"这个角色私下会记住的一句话"}}}'
+    )
+    user_prompt = (
+        f"【NPC甲】{_npc_dossier(state_data, npc_a)}\n"
+        f"【NPC乙】{_npc_dossier(state_data, npc_b)}\n"
+        f"【玩家最后所在】{location or '(未知)'}\n"
+        f"【世界时间】{wtime or '(未知)'}\n"
+        f"【离线时长】{elapsed_hint or '(不详)'}\n"
+        f"【近期世界侧动向】\n{ev_lines}\n\n"
+        f"请生成 {npc_a} 与 {npc_b} 之间这段离线互动。"
+    )
+    return system_prompt, user_prompt
+
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
+
+
+def validate_scene(raw_text: str, npc_a: str, npc_b: str) -> dict | None:
+    """解析+验收 LLM 场景输出。返回规整 dict 或 None(拒收,本 tick 无戏,正常)。
+
+    防臆造闸(同柱子3口径):transcript speaker 与 npc_updates 键都必须 ∈ {npc_a, npc_b}。
+    """
+    if not raw_text:
+        return None
+    text = raw_text.strip()
+    m = _FENCE_RE.search(text)
+    if m:
+        text = m.group(1).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        data = json.loads(text[start:end + 1])
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    allowed = {npc_a, npc_b}
+    transcript = []
+    for row in (data.get("transcript") or [])[:MAX_TRANSCRIPT_LINES]:
+        if not isinstance(row, dict):
+            continue
+        speaker = str(row.get("speaker") or "").strip()
+        line = str(row.get("line") or "").strip()[:MAX_LINE_CHARS]
+        if speaker in allowed and line:
+            transcript.append({"speaker": speaker, "line": line})
+    summary = str(data.get("scene_summary") or "").strip()[:MAX_SUMMARY_CHARS]
+    if not transcript or not summary:
+        return None
+    updates: dict[str, dict] = {}
+    raw_updates = data.get("npc_updates") or {}
+    if isinstance(raw_updates, dict):
+        for name, u in raw_updates.items():
+            if str(name).strip() not in allowed or not isinstance(u, dict):
+                continue
+            clean: dict[str, str] = {}
+            for k in ("goal", "stance"):
+                v = str(u.get(k) or "").strip()
+                if v:
+                    clean[k] = v[:80]
+            pm = str(u.get("private_memory") or "").strip()
+            if pm:
+                clean["private_memory"] = pm[:MAX_PRIVATE_MEMORY_CHARS]
+            if clean:
+                updates[str(name).strip()] = clean
+    return {"transcript": transcript, "scene_summary": summary, "npc_updates": updates}

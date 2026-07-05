@@ -2178,6 +2178,43 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "alter table chapter_facts add column if not exists in_world_time text",
         "alter table script_timeline_anchors add column if not exists worldline_key text",
     ]),
+    (93, "rath_observation_deck_v0", [
+        # RATH·搖光观测台(docs/design/rath_observation_deck_v0.md)。
+        # 铁律§1:离线 tick 绝不写游戏 state;产物只落 kb_events(COW/谱系隔离,情景召回
+        # 天然可见)+ 本组纯展示/元数据表。全新增表,零现有行为变化。
+        """
+        create table if not exists rath_experiments (
+            id bigserial primary key,
+            user_id bigint not null,
+            save_id bigint not null,
+            script_id bigint,
+            status text not null default 'running',
+            accel integer not null default 60,
+            tick_interval_sec integer not null default 1800,
+            world_clock_min bigint not null default 0,
+            last_tick_at timestamptz,
+            last_viewed_at timestamptz default now(),
+            ticks_today integer not null default 0,
+            scenes_today integer not null default 0,
+            day_key date default current_date,
+            created_at timestamptz default now()
+        )
+        """,
+        "create index if not exists idx_rath_exp_user on rath_experiments(user_id, status)",
+        "create unique index if not exists idx_rath_exp_save_running on rath_experiments(save_id) where status in ('running','paused')",
+        """
+        create table if not exists rath_events (
+            id bigserial primary key,
+            exp_id bigint not null references rath_experiments(id) on delete cascade,
+            kind text not null,
+            summary text not null default '',
+            payload jsonb not null default '{}'::jsonb,
+            world_clock_min bigint not null default 0,
+            created_at timestamptz default now()
+        )
+        """,
+        "create index if not exists idx_rath_events_exp on rath_events(exp_id, id desc)",
+    ]),
 ]
 
 

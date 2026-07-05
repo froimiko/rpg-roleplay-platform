@@ -4135,6 +4135,13 @@ const getCSModules = (t) => [
     sub: [
       { text: t('platform.nav.tavern', { defaultValue: '酒馆' }), href: '#tavern' },
     ] },
+  // RATH·搖光观测台:离线活世界实验,与「酒馆」平级、同在「游玩/Play」分类下
+  // (docs/design/rath_observation_deck_v0.md)。页面是 Platform 内嵌子页 #rath。
+  { id: 'rath', label: t('platform.nav.rath', { defaultValue: 'RATH 观测台' }), group: t('platform.nav.group_play'),
+    pages: ['rath'],
+    sub: [
+      { text: t('platform.nav.rath', { defaultValue: 'RATH 观测台' }), href: '#rath' },
+    ] },
   { id: 'account', label: t('platform.nav.account'), group: t('platform.nav.group_system'),
     pages: ['me', 'me-edit', 'me-settings', 'settings', 'settings-models',
       'settings-modelparams', 'settings-modules', 'settings-memory', 'settings-permissions',
