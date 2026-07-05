@@ -271,7 +271,14 @@ export default function AgentModelPicker({
         });
       }
       onChange && onChange(aid, m, 'user');   // 用户真的换了模型 → 浮层据此关闭/刷新
-    } catch (_) { /* 静默 */ } finally { setSaving(false); }
+    } catch (e) {
+      // models_select 路径:后端可能前置拒绝(如 vertex_ai 未上传 SA,needs_model_config)
+      // 这类错误必须提示用户,不能像其它 persistShape 一样静默吞掉 —— 否则用户以为切换成功,
+      // 实际下一轮对话仍用旧模型/直接报错。其余 persistShape 维持原静默行为。
+      if (persistShape === 'models_select') {
+        window.__apiToast?.(e?.message || t('agent_picker.select_save_failed'), { kind: 'warn', duration: 4000 });
+      }
+    } finally { setSaving(false); }
   };
 
   // allowInherit:清空本功能偏好 → 后端解析回退主 GM / 系统默认。

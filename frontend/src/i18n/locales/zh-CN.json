@@ -7164,7 +7164,8 @@
     "provider_label": "供应商",
     "provider_no_key_suffix": "(未配 key)",
     "provider_placeholder": "选择 provider",
-    "provider_placeholder_no_key": "请先配 API key"
+    "provider_placeholder_no_key": "请先配 API key",
+    "select_save_failed": "模型切换失败"
   },
   "card_hero": {
     "change_avatar": "更换形象",

@@ -7167,7 +7167,8 @@
     "provider_label": "Provider",
     "provider_no_key_suffix": "(no key)",
     "provider_placeholder": "Select provider",
-    "provider_placeholder_no_key": "Configure an API key first"
+    "provider_placeholder_no_key": "Configure an API key first",
+    "select_save_failed": "Failed to switch model"
   },
   "card_hero": {
     "change_avatar": "Change Image",

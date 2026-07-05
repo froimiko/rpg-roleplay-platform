@@ -214,6 +214,25 @@ async def api_models_select(
     model_id = body_dict.get("model_id", "")
     save_id = body.save_id  # int | None
 
+    # 前置校验:目标 provider 归一后是 vertex_ai(Agent Platform)且该用户在生产鉴权模式下
+    # 没有上传 SA → 此次切换必然在下一次真正调用 LLM 时炸「未找到 Service Account」。
+    # 提前拦截,别等玩家写完人设、发第一条消息才报错。admin 配平台默认(不论 scope=global
+    # 还是 admin 自己账号的 per-save/per-user 切换)不受此拦截 —— 与 app.py._redact_catalog
+    # 「admin 可走平台兜底,不标记 needs_model_config」同一约定,admin 账号状态不该被
+    # 个人凭据挡住配置动作。
+    from model_registry import normalize_api_id
+    _norm_api_id = normalize_api_id(api_id) if api_id else ""
+    _is_admin_caller = ((api_user.get("role") if api_user else "") or "").lower() == "admin"
+    if _norm_api_id == "vertex_ai" and not _is_admin_caller:
+        from core.vertex_sa import vertex_selection_blocked
+        _uid_for_check = int(api_user["id"]) if api_user and api_user.get("id") else None
+        _block_reason = vertex_selection_blocked(_uid_for_check)
+        if _block_reason:
+            return JSONResponse(
+                {"ok": False, "error": _block_reason, "needs_model_config": True},
+                status_code=400,
+            )
+
     # A1: 存档级 session_model — 只写当前用户的 state，不动全局 catalog，不清其他用户 GM 缓存
     if save_id is not None:
         uid = _user_key(api_user)

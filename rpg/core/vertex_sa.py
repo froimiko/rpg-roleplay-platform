@@ -120,3 +120,31 @@ def has_user_sa(user_id: int | None, api_id: str = "AgentPlatform") -> bool:
         return bool(cred and cred.get("key"))
     except Exception:
         return False
+
+
+VERTEX_SA_MISSING_MESSAGE = (
+    "使用 Agent Platform(Vertex)模型需要先上传 Service Account JSON。"
+    "请到「设置 → API & 模型 → Agent Platform」上传后再试。"
+)
+
+
+def vertex_selection_blocked(user_id: int | None) -> str | None:
+    """选模型/建存档前置校验:该用户选 vertex_ai 是否会在真正调用 LLM 时失败。
+
+    返回 None = 放行；返回 str = 拒绝原因(直接展示给用户)。
+
+    只在生产鉴权模式 (require_auth()=True) 下启用 —— 本地/匿名开发模式允许全局 SA
+    兜底(load_sa_credentials 同一条件),这里必须与之同步,否则会把本地模式误挡死。
+    """
+    try:
+        from core.config import require_auth as _require_auth
+        if not _require_auth():
+            return None
+    except Exception:
+        # 配置读取失败时不拦截(保守放行,避免因配置异常误伤所有用户)。
+        return None
+
+    if has_user_sa(user_id):
+        return None
+
+    return VERTEX_SA_MISSING_MESSAGE

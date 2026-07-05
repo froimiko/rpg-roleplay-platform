@@ -177,6 +177,34 @@ async def api_create_save(request: Request, user=Depends(require_user)):
     with connect() as db:
         if not script_readable(db, script_id, user["id"]):
             return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+    # 前置校验:新存档实际会用哪个 api_id(与 app.py._ensure_loaded 同一优先级链:
+    # gm.* 用户偏好 → 该用户已配凭据的第一个模型 → 全局 catalog 默认),若解析到
+    # vertex_ai 且该用户在生产鉴权模式下没上传 SA → 现在就拒,别等玩家写完人设、
+    # 发第一条消息才在 GM 构造时炸「未找到 Service Account」。解析不出(极端情况)
+    # 时放行,不误伤。
+    try:
+        _uid_new_save = int(user["id"])
+        from core.llm_backend import first_user_model, resolve_preferred_api
+        _resolved_api_id = resolve_preferred_api(_uid_new_save, "gm.api_id")
+        if not _resolved_api_id:
+            _user_default = first_user_model(_uid_new_save)
+            if _user_default:
+                _resolved_api_id = _user_default[0]
+        if not _resolved_api_id:
+            from app import selected_model
+            _resolved_api_id = (selected_model() or {}).get("api_id")
+        if _resolved_api_id:
+            from model_registry import normalize_api_id
+            if normalize_api_id(_resolved_api_id) == "vertex_ai":
+                from core.vertex_sa import vertex_selection_blocked
+                _block_reason = vertex_selection_blocked(_uid_new_save)
+                if _block_reason:
+                    return json_response(
+                        {"ok": False, "error": _block_reason, "needs_model_config": True},
+                        status_code=400,
+                    )
+    except Exception:
+        log.warning("[api_create_save] vertex 前置校验异常,放行", exc_info=True)
     # task 29：把 UI 填的 new_card / character 传到 create_save，让初始 state_snapshot
     # 真的反映用户输入的姓名/身份/设定，否则 NewGameModal 的角色卡字段就被丢了。
     new_card = body.get("new_card") if isinstance(body.get("new_card"), dict) else None
