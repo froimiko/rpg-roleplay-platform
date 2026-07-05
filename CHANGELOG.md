@@ -9,6 +9,13 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.38.1] - 2026-07-05
+
+### Fixed
+- **流式期间 \`\`\`json ops 围栏裸奔给玩家(生产基线局 5 回合漏 2 次,「打出来又消失」)**:token 转发层新增 StreamFenceGuard 跨 chunk 状态机,检测 ops 围栏起点即停转发、闭合恢复;chat 主循环+开场流两处接线;response 累积/落库/史官不受影响。
+- **史官三合一与 GM 自带 fence 双源头 → 同批 ops 双 apply(updates 双报)**:史官有产出时剥掉 GM 正文自带 fence 只留史官权威 ops;apply_structured_updates 前同批指纹去重兜底(set 幂等暂无害,防未来数值类 op 真损坏)。
+
+
 ## [1.38.0] - 2026-07-05
 
 ### Added
