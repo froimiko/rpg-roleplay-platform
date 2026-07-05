@@ -38,9 +38,10 @@ class EpisodicRecallProvider(ContextProvider):
             return ContextContribution.skipped(self.id, "state.data 不可用")
         save_id = getattr(services, "save_id", None) or data.get("_active_save_id")
 
-        lines: list[str] = []
-        source = ""
-        # 语料1:kb_events(有史官/工具写入的档)
+        # 合并同池打分:kb_events + 全量 history 单一排序(酒馆 e2e 实锤教训:两级
+        # 短路会让一条弱相关 kb 事件压掉 history 里的真答案,模型只好编造)。
+        hist = data.get("history") or []
+        commit = 0
         if save_id:
             try:
                 from platform_app.db import connect
@@ -50,27 +51,21 @@ class EpisodicRecallProvider(ContextProvider):
                         (int(save_id),),
                     ).fetchone()
                 commit = int((cm or {}).get("active_commit_id") or 0)
-                if commit:
-                    from kb.episodic import retrieve_episodic
-                    for i, e in enumerate(retrieve_episodic(int(save_id), commit, user_id, query, k=3), 1):
-                        meta = " · ".join(x for x in [
-                            str(e.get("story_time") or "").strip(),
-                            str(e.get("location") or "").strip()] if x)
-                        lines.append(f"{i}. {e.get('summary') or ''}" + (f"  ({meta})" if meta else ""))
-                    if lines:
-                        source = "kb_events"
             except Exception:
-                lines = []
-        # 语料2:全量对话 history 兜底(酒馆常态)
-        if not lines:
-            from kb.episodic import score_history_messages
-            hist = data.get("history") or []
-            for i, h in enumerate(score_history_messages(query, hist, exclude_recent=12, k=3), 1):
-                lines.append(f"{i}. [第{h['turn']}回合·{h['role']}] {h['excerpt']}")
-            if lines:
-                source = "history"
-        if not lines:
+                commit = 0
+        from kb.episodic import retrieve_episodic_merged
+        hits = retrieve_episodic_merged(
+            int(save_id or 0), commit, user_id, query, hist, k=3, exclude_recent=12)
+        if not hits:
             return ContextContribution.skipped(self.id, "无召回(休眠)")
+        lines: list[str] = []
+        for i, h in enumerate(hits, 1):
+            if h.get("kind") == "history":
+                lines.append(f"{i}. [第{h['turn']}回合·{h['role']}] {h['text']}")
+            else:
+                meta = h.get("meta") or ""
+                lines.append(f"{i}. {h['text']}" + (f"  ({meta})" if meta else ""))
+        source = ",".join(sorted({h.get("kind") or "" for h in hits}))
 
         text = "\n".join(
             ["以下是按本回合输入从【全程游戏历史】召回的相关往事,当作已发生事实参考,勿复述成新发生:"]

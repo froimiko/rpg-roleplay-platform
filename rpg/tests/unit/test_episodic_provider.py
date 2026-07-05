@@ -54,7 +54,7 @@ def test_recalls_out_of_window_fact(monkeypatch):
     assert c.applied and c.layers, c.warnings
     text = c.layers[0]["content"]
     assert "银怀表" in text and "第3回合" in text
-    assert c.debug["source"] == "history"
+    assert c.debug["source"] == "history"  # merged 池里只有 history 语料时
 
 
 def test_dormant_on_generic_input(monkeypatch):
@@ -97,3 +97,17 @@ def test_novel_pack_not_double_wired():
     novel = next(v for v in vars(reg).values()
                  if isinstance(v, dict) and v.get("kind") == "novel_adaptation")
     assert "episodic_recall" not in novel["context_providers"]
+
+
+def test_merged_strong_history_beats_weak_kb_event():
+    """酒馆 e2e 实锤回归:一条弱相关 kb 事件(闲聊天气)绝不能压掉 history 里的强命中
+    (煎鱼烧厨房=真答案)。合并同池排序后强者在前。"""
+    from kb.episodic import merge_and_rank
+    kb = [{"id": 1, "summary": "角色与芙兰朵露在会面室闲聊天气,角色表达了对雨天的偏好",
+           "story_time": "", "location": "会面室", "participants": []}]
+    hist = [{"role": "user", "content": f"第{i}轮无关闲聊而已"} for i in range(6)]
+    hist.insert(2, {"role": "user", "content": "我最近在学做菜,昨天试着煎了鱼,差点把厨房烧了,哈哈。"})
+    hist += [{"role": "user", "content": f"近因第{i}条"} for i in range(12)]  # 近因窗口垫底
+    hits = merge_and_rank("还记得我说过我在学做菜吗?那次闹了什么笑话?", kb, hist, k=3)
+    assert hits, "应召回煎鱼事件"
+    assert hits[0]["kind"] == "history" and "煎了鱼" in hits[0]["text"]

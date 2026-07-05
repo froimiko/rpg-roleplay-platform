@@ -142,44 +142,10 @@ def retrieve_episodic(
     if not (save_id and commit_id and (query_text or "").strip()):
         return []
     try:
-        from kb.live_repo import _ANCESTRY
-        from platform_app.db import connect, init_db
-        init_db()
-        # 正确性门:本存档一条嵌入事件都没有(生产常态,全库覆盖 0.65%)→ 嵌入查询向量
-        # 毫无意义,跳过 embed_query —— 否则每回合白挨最多两次注定失败的 HTTP(用户
-        # embedder+admin fallback 皆 400)拖慢回合。有嵌入才值得付这次调用。
-        with connect() as db:
-            _has_vec = db.execute(
-                "select 1 from kb_events where save_id=%s and embedding_vec is not null limit 1",
-                (int(save_id),),
-            ).fetchone()
-        qv = None
-        if _has_vec:
-            try:
-                from platform_app.knowledge.embedding import embed_query
-                qv = embed_query(query_text, user_id)
-            except Exception:
-                qv = None
-        if qv:
-            sql = _ANCESTRY + """
-            select logical_key, summary, story_time, location, participants,
-                   (1 - (embedding_vec <=> %(qv)s::vector)) as score
-            from kb_events
-            where save_id = %(save)s
-              and born_commit in (select cid from ancestry)
-              and retired_at_commit is null
-              and embedding_vec is not null
-            order by embedding_vec <=> %(qv)s::vector
-            limit %(k)s
-            """
-            with connect() as db:
-                rows = db.execute(
-                    sql, {"commit": int(commit_id), "save": int(save_id), "qv": qv, "k": int(k)},
-                ).fetchall()
-            hits = [dict(r) for r in (rows or [])
-                    if float(r.get("score") or 0.0) >= _VECTOR_SCORE_FLOOR]
-            if hits:
-                return hits
+        # 向量快路(带存在性门:零嵌入存档跳过 embed_query,防每回合白挨失败 HTTP)
+        hits = _retrieve_vector(save_id, commit_id, user_id, query_text, k=k)
+        if hits:
+            return hits
         return retrieve_episodic_keyword(save_id, commit_id, query_text, k=k)
     except Exception as exc:
         log.warning("[episodic] retrieve_episodic skip: %s", exc)
@@ -236,6 +202,140 @@ def score_history_messages(
     return out
 
 
+def merge_and_rank(
+    query_text: str, kb_events: list[dict], history: list[dict], *,
+    k: int = 3, exclude_recent: int = 12,
+) -> list[dict]:
+    """kb_events + 全量 history 合并同池打分,单一排序取 top-k。纯函数零 IO。
+
+    修酒馆 e2e 实锤的排序缺陷:「kb 有命中就短路」会让一条弱相关 kb 事件(如闲聊天气
+    的 known_events 同步)压掉 history 里的强命中(真答案),模型只好编造。同池排序后
+    强者胜出,语料来源不再是优先级。
+
+    返回 [{kind:'event'|'history', text, score, turn?, role?, meta?}]。"""
+    if not (query_text or "").strip():
+        return []
+    combined: list[dict] = []
+    for e in kb_events or []:
+        s = str(e.get("summary") or "").strip()
+        if not s:
+            continue
+        combined.append({"id": int(e.get("id") or 0), "summary": s,
+                         "location": str(e.get("location") or ""),
+                         "participants": e.get("participants") or [],
+                         "_kind": "event", "_src": e})
+    old = (history or [])[:-exclude_recent] if exclude_recent > 0 else list(history or [])
+    for i, m in enumerate(old):
+        if not isinstance(m, dict):
+            continue
+        c = str(m.get("content") or "").strip()
+        if not c:
+            continue
+        combined.append({"id": i, "summary": c, "location": "", "participants": [],
+                         "_kind": "history", "_role": (m.get("role") or "user"), "_idx": i})
+    scored = _score_events(query_text, combined)
+    out: list[dict] = []
+    for score, e in scored[: max(1, int(k))]:
+        if e["_kind"] == "event":
+            src = e["_src"]
+            meta = " · ".join(x for x in [str(src.get("story_time") or "").strip(),
+                                          str(src.get("location") or "").strip()] if x)
+            out.append({"kind": "event", "text": str(src.get("summary") or ""),
+                        "meta": meta, "score": score})
+        else:
+            out.append({"kind": "history", "turn": int(e["_idx"]) // 2 + 1,
+                        "role": "玩家" if e["_role"] == "user" else "GM",
+                        "text": _excerpt_around_match(str(e["summary"]), query_text),
+                        "score": score})
+    return out
+
+
+def retrieve_episodic_merged(
+    save_id: int, commit_id: int, user_id: int | None, query_text: str,
+    history: list[dict], *, k: int = 3, exclude_recent: int = 12,
+) -> list[dict]:
+    """酒馆/自由/模组模式入口:向量快路优先(有嵌入且过阈),否则 kb_events+history
+    合并关键词打分(merge_and_rank)。novel 路径(retrieve_episodic)不受影响。"""
+    if not (query_text or "").strip():
+        return []
+    kb_rows: list[dict] = []
+    if save_id and commit_id:
+        try:
+            vec_hits = _retrieve_vector(save_id, commit_id, user_id, query_text, k=k)
+            if vec_hits:
+                return [{"kind": "event", "text": str(e.get("summary") or ""),
+                         "meta": " · ".join(x for x in [str(e.get("story_time") or "").strip(),
+                                                        str(e.get("location") or "").strip()] if x),
+                         "score": e.get("score")} for e in vec_hits]
+            kb_rows = _fetch_keyword_corpus(save_id, commit_id)
+        except Exception as exc:
+            log.warning("[episodic] merged kb 侧跳过(非致命): %s", exc)
+            kb_rows = []
+    return merge_and_rank(query_text, kb_rows, history, k=k, exclude_recent=exclude_recent)
+
+
+def _retrieve_vector(
+    save_id: int, commit_id: int, user_id: int | None, query_text: str, *, k: int = 5,
+) -> list[dict]:
+    """向量路径(带存在性门+相关性下限)。无嵌入/无 embedder/全不过阈 → []。"""
+    from kb.live_repo import _ANCESTRY
+    from platform_app.db import connect, init_db
+    init_db()
+    with connect() as db:
+        _has_vec = db.execute(
+            "select 1 from kb_events where save_id=%s and embedding_vec is not null limit 1",
+            (int(save_id),),
+        ).fetchone()
+    if not _has_vec:
+        return []
+    try:
+        from platform_app.knowledge.embedding import embed_query
+        qv = embed_query(query_text, user_id)
+    except Exception:
+        qv = None
+    if not qv:
+        return []
+    sql = _ANCESTRY + """
+    select logical_key, summary, story_time, location, participants,
+           (1 - (embedding_vec <=> %(qv)s::vector)) as score
+    from kb_events
+    where save_id = %(save)s
+      and born_commit in (select cid from ancestry)
+      and retired_at_commit is null
+      and embedding_vec is not null
+    order by embedding_vec <=> %(qv)s::vector
+    limit %(k)s
+    """
+    with connect() as db:
+        rows = db.execute(
+            sql, {"commit": int(commit_id), "save": int(save_id), "qv": qv, "k": int(k)},
+        ).fetchall()
+    return [dict(r) for r in (rows or [])
+            if float(r.get("score") or 0.0) >= _VECTOR_SCORE_FLOOR]
+
+
+def _fetch_keyword_corpus(save_id: int, commit_id: int) -> list[dict]:
+    """谱系过滤的 kb_events 关键词语料(近因优先,封顶 _KEYWORD_CORPUS_CAP)。"""
+    from kb.live_repo import _ANCESTRY
+    from platform_app.db import connect, init_db
+    init_db()
+    sql = _ANCESTRY + """
+    select id, logical_key, summary, story_time, location, participants
+    from kb_events
+    where save_id = %(save)s
+      and born_commit in (select cid from ancestry)
+      and retired_at_commit is null
+      and coalesce(summary, '') <> ''
+    order by id desc
+    limit %(cap)s
+    """
+    with connect() as db:
+        rows = db.execute(
+            sql, {"commit": int(commit_id), "save": int(save_id), "cap": _KEYWORD_CORPUS_CAP},
+        ).fetchall()
+    return [dict(r) for r in (rows or [])]
+
+
 def retrieve_episodic_keyword(
     save_id: int, commit_id: int, query_text: str, *, k: int = 5,
 ) -> list[dict]:
@@ -244,24 +344,7 @@ def retrieve_episodic_keyword(
     if not (save_id and commit_id and (query_text or "").strip()):
         return []
     try:
-        from kb.live_repo import _ANCESTRY
-        from platform_app.db import connect, init_db
-        init_db()
-        sql = _ANCESTRY + """
-        select id, logical_key, summary, story_time, location, participants
-        from kb_events
-        where save_id = %(save)s
-          and born_commit in (select cid from ancestry)
-          and retired_at_commit is null
-          and coalesce(summary, '') <> ''
-        order by id desc
-        limit %(cap)s
-        """
-        with connect() as db:
-            rows = db.execute(
-                sql, {"commit": int(commit_id), "save": int(save_id), "cap": _KEYWORD_CORPUS_CAP},
-            ).fetchall()
-        events = [dict(r) for r in (rows or [])]
+        events = _fetch_keyword_corpus(save_id, commit_id)
         scored = _score_events(query_text, events)
         out: list[dict] = []
         for score, e in scored[: max(1, int(k))]:
