@@ -80,3 +80,27 @@ def test_gm_guide_block_exception_safe(monkeypatch):
 
     monkeypatch.setattr(ff, "feature_enabled", _boom)
     assert master._consequence_guide_block(1) == ""
+
+
+def test_fingerprint_dedup_survives_punctuation_drift():
+    # 生产实测:史官跨回合重提取,「期限约定——…，将再次对峙」vs「期限约定——…,将再次对峙」
+    from state.consequence_ledger import register_consequence
+    sd = {"turn": 8}
+    ok1, _ = register_consequence(sd, text="两日期限约定——后天正午前若不撤离，将再次对峙", due_turns=4)
+    ok2, msg2 = register_consequence(sd, text="两日期限约定——后天正午前若不撤离,将再次对峙", due_turns=4)
+    assert ok1 and not ok2 and "重复" in msg2
+
+
+def test_recorder_user_prompt_lists_pending_ledger():
+    from agents.recorder import _build_user_prompt
+    sd = {
+        "player": {}, "world": {}, "memory": {}, "relationships": {},
+        "consequence_ledger": [
+            {"text": "答应雷纳德查兽伤", "status": "pending"},
+            {"text": "已兑现的旧事", "status": "fired"},
+        ],
+    }
+    p_on = _build_user_prompt("正文", sd, frozenset({"ops"}), None, None, None, consequence_enabled=True)
+    assert "严禁重复登记" in p_on and "答应雷纳德查兽伤" in p_on and "已兑现的旧事" not in p_on
+    p_off = _build_user_prompt("正文", sd, frozenset({"ops"}), None, None, None, consequence_enabled=False)
+    assert "严禁重复登记" not in p_off

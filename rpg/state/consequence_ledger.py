@@ -45,11 +45,28 @@ def _ledger(state_data: dict) -> list[dict]:
     return ledger
 
 
+_FP_STRIP_RE = None  # 惰性编译
+
+
+def _normalize_for_fp(text: str) -> str:
+    """指纹归一化:去掉全部标点/空白,只留文字数字。
+
+    生产实测:史官跨回合重提取同一承诺时措辞会漂(「期限约定——」vs「期限——」、
+    全角/半角逗号),精确匹配挡不住;归一化吃掉标点差异。措辞用词级漂移由
+    recorder 提示词侧的「已登记清单」防(见 recorder._build_user_prompt)。
+    """
+    global _FP_STRIP_RE
+    import re as _re
+    if _FP_STRIP_RE is None:
+        _FP_STRIP_RE = _re.compile(r"[\W_]+", _re.UNICODE)
+    return _FP_STRIP_RE.sub("", text or "")
+
+
 def _fingerprint(text: str, due: dict) -> tuple[str, str, str]:
-    """指纹去重键:text + due 两个字段(不含 id/turn/origin,同 dedupe_json_ops 思路)。"""
+    """指纹去重键:归一化 text + due 两个字段(不含 id/turn/origin,同 dedupe_json_ops 思路)。"""
     due = due or {}
     return (
-        text,
+        _normalize_for_fp(text),
         str(due.get("turns", "")),
         str(due.get("location", "")),
     )

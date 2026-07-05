@@ -173,9 +173,26 @@ def _build_user_prompt(
     pending_anchors: list[dict] | None,
     chapter_map: list[dict] | None,
     acceptance_clauses: list[str] | None,
+    consequence_enabled: bool = False,
 ) -> str:
     """组装 user message：state 快照 + GM 正文 + 各任务附加材料。"""
     lines: list[str] = []
+
+    # 后果账本:已登记未到期清单喂给史官,防跨回合换措辞重复登记(生产实测第 9 回合
+    # 「期限约定——」被换成「期限——」再登一遍,指纹归一化只能挡标点漂移,用词漂移靠这里)。
+    if consequence_enabled:
+        try:
+            _pending_cq = [
+                str(e.get("text") or "")
+                for e in (state_data.get("consequence_ledger") or [])
+                if isinstance(e, dict) and e.get("status") == "pending"
+            ][:20]
+        except Exception:
+            _pending_cq = []
+        if _pending_cq:
+            lines.append("## 后果账本·已登记未到期（严禁重复登记,包括换措辞描述同一件事）")
+            lines.extend(f"- {t}" for t in _pending_cq)
+            lines.append("")
 
     # 状态快照（始终附带，ops 任务需要；其它任务只读正文但一并提供）
     p = (state_data.get("player") or {})
@@ -606,6 +623,7 @@ def record_turn(
     user_prompt = _build_user_prompt(
         gm_prose, state_data, active_tasks,
         pending_anchors, chapter_map, acceptance_clauses,
+        consequence_enabled=_consequence_on,
     )
     tool_schema = _build_tool_schema(active_tasks, acceptance_clauses,
                                      consequence_enabled=_consequence_on)
