@@ -738,6 +738,7 @@ async def api_chat(
         )
 
         response = ""
+        _done_streamed = False  # 已发过 done(正常完成或已打断落库)→ 断连兜底绝不二次落库
         command_text, changed = ("", False) if attachments else _command_response(message, state)
         if command_text:
             if changed:
@@ -772,6 +773,8 @@ async def api_chat(
                 is_set_parser_enabled=_is_set_parser_enabled,
                 active_script_id=_active_script_id,
             ):
+                if evt == "done":
+                    _done_streamed = True
                 yield _sse(evt, data)
             if pipeline_ctx.early_return:
                 return
@@ -793,6 +796,8 @@ async def api_chat(
                 platform_knowledge_mod=platform_knowledge,
                 run_context_agent_fn=getattr(_self_mod, "run_context_agent", None),
             ):
+                if evt == "done":
+                    _done_streamed = True
                 yield _sse(evt, data)
             if pipeline_ctx.early_return:
                 return
@@ -867,6 +872,8 @@ async def api_chat(
                     rule_results_prompt=_rule_results_prompt,
                     platform_knowledge_mod=platform_knowledge,
                 ):
+                    if evt == "done":
+                        _done_streamed = True
                     yield _sse(evt, data)
                 if pipeline_ctx.early_return:
                     return
@@ -886,6 +893,8 @@ async def api_chat(
                 active_script_id=_active_script_id,
                 chat_max_tokens=_chat_max_tokens,
             ):
+                if evt == "done":
+                    _done_streamed = True
                 yield _sse(evt, data)
             if pipeline_ctx.early_return:
                 return
@@ -897,7 +906,34 @@ async def api_chat(
                 persist_chat_turn=_persist_chat_turn,
                 build_usage_payload=_build_usage_payload,
             ):
+                if evt == "done":
+                    _done_streamed = True
                 yield _sse(evt, data)
+        except (GeneratorExit, asyncio.CancelledError):
+            # 纯网络断连(SSE 被客户端/代理关闭):半截正文「打断即落库」,玩家重连不再整
+            # 回合作废。玩家主动 /api/stop 与新回合顶掉 run_id 走 run_gm_phase 内的既有
+            # 打断分支;这里只兜断连(取消经 CancelledError/GeneratorExit 直接打断 await,
+            # 不经过那个 if 判断)。_done_streamed=已发过 done(正常完成或已打断落库)→
+            # 绝不二次落库。persist 为同步调用无 await(取消语境 await 会立刻再抛);
+            # 写库毫秒级,连接已死,短阻塞可接受。
+            _partial = str(getattr(pipeline_ctx, "response", "") or "").strip()
+            if _partial and not _done_streamed:
+                try:
+                    _persist_chat_turn(
+                        api_user, pipeline_ctx.state, pipeline_ctx.message_for_model,
+                        _partial + "\n\n【网络中断,已保留部分内容】",
+                        persist_user_id=pipeline_ctx.persist_user_id,
+                        active_save_id=pipeline_ctx.active_save_id,
+                        interrupted=True,
+                    )
+                    _mark_context_run(
+                        pipeline_ctx.context_run_id, "stopped",
+                        duration_ms=int((time.time() - _chat_start_time) * 1000),
+                    )
+                    _log.info("[chat] 断连打断落库:保留 %d 字部分内容", len(_partial))
+                except Exception as _pe:
+                    _log.warning("[chat] 断连打断落库失败(放弃,不影响清理): %s", _pe)
+            raise
         except Exception as exc:
             _mark_context_run(
                 pipeline_ctx.context_run_id,

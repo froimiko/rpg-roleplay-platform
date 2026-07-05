@@ -1293,6 +1293,9 @@ async def run_gm_phase(
                 ctx.early_return = True
                 return
             response += chunk
+            # 保持 ctx.response 实时新鲜:断连/异常时 routes 层靠它拿到半截正文
+            # (原先只在循环退出点赋值 → 中途断掉 partial 恒空,「打断即落库」无米下锅)。
+            ctx.response = response
             _fence_fw = _fence_guard.feed(chunk)
             if _fence_fw:
                 yield ("token", {"text": _fence_fw})
