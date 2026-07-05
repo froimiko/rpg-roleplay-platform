@@ -506,6 +506,26 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                                             _progress_chapter, _dpc(_save_id_prog, db=_db_prog), _last_sat)
                             except Exception:
                                 pass
+                        # ── 时间线战役批次1:揭示天花板估章钳制。生产实锤(save 268):
+                        # occurred 冻结 ch7 十天、估章把 progress_chapter 顶到 17 →
+                        # ch8-17 世界书/实体/NPC 被超前揭示(反馈#82 后期NPC)、剧情被当
+                        # 已发生。确定性地板 = max(occurred/variant 最大章, 玩家 /set
+                        # 显式地板 user_progress_floor);有地板才钳(纯发散无锚档不钳,
+                        # 发散解冻语义保留);玩家显式跳章走地板放行(逃生阀 d50eb926a)。
+                        # env RPG_REVEAL_ESTIMATE_LOOKAHEAD 默认 3,<=0 关闭钳制。
+                        try:
+                            import os as _os_clamp
+                            from gm_serving.settings import clamp_reveal_progress as _clamp_rp
+                            _user_floor = int((_wl_prog or {}).get("user_progress_floor") or 0)
+                            _det_floor = max(int(_last_sat or 0), _user_floor)
+                            _lookahead = int(_os_clamp.environ.get("RPG_REVEAL_ESTIMATE_LOOKAHEAD", "3") or 3)
+                            _clamped = _clamp_rp(_progress_chapter, _det_floor, _lookahead)
+                            if _clamped != _progress_chapter:
+                                log.info("[retrieval] 揭示进度钳制: %s → %s (floor=%s, lookahead=%s)",
+                                         _progress_chapter, _clamped, _det_floor, _lookahead)
+                                _progress_chapter = _clamped
+                        except Exception as _clamp_err:
+                            log.warning(f"[retrieval] 揭示钳制跳过(非致命): {_clamp_err}")
             except Exception as _prog_err:
                 log.warning(f"[retrieval] progress_chapter 同步跳过(非致命): {_prog_err}")
             # C 修(反馈「主线不更新」):main_quest 从当前 phase 派生(锚点系统已知阶段),不再靠 GM

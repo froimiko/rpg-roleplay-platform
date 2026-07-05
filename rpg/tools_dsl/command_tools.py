@@ -600,9 +600,13 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
             try:
                 from platform_app.db import connect
                 from gm_serving.settings import advance_progress, read_settings
+                from gm_serving.settings import set_user_progress_floor
                 with connect() as db:
                     before = (read_settings(db, int(sid)) or {}).get("progress_chapter")
                     advance_progress(db, int(sid), to_ch)  # max-only,单调只增
+                    # 玩家显式跳章=确定性地板,揭示钳制(clamp_reveal_progress)对它放行,
+                    # 逃生阀语义保留(d50eb926a)。
+                    set_user_progress_floor(db, int(sid), to_ch)
                     after = (read_settings(db, int(sid)) or {}).get("progress_chapter")
             except Exception as exc:
                 return f"advance_story_progress 失败: {type(exc).__name__}: {exc}"

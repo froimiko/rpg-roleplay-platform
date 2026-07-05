@@ -271,6 +271,9 @@ def _build_user_prompt(
         lines.append("· 本回合玩家的处境/事件,若对应原著某主角正经历的剧情(哪怕人物名、细节不同)"
                      "→ current_chapter=那一章号;**人物名不同绝不是答 null 的理由**。")
         lines.append("· 若玩家确实脱离原著、在干原著里没有的自己的事 → current_chapter=null。")
+        lines.append("· **纯私人/日常/感情场景**(洗漱起居、闲聊约会、亲密互动等,与原著情节梁"
+                     "无对应)→ 一律 current_chapter=null,不得因'角色出自原著'就比对到某章;"
+                     "这类回合也不构成剧情推进。")
 
     return "\n".join(lines)
 

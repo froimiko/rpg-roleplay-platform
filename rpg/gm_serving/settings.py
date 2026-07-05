@@ -126,6 +126,34 @@ def apply_settings(db, save_id: int, updates: dict[str, Any], *, is_create: bool
     return {"applied": applied, "rejected": rejected}
 
 
+def set_user_progress_floor(db, save_id: int, chapter: int) -> None:
+    """记录玩家【显式】设置的进度地板(/set advance_story_progress 逃生阀专用,max-only)。
+
+    与估章推的 progress_chapter 分开存:揭示天花板的估章钳制(clamp_reveal_progress)
+    只认确定性地板(occurred 锚点 / 本键),玩家显式跳章必须绕过钳制,否则 d50eb926a
+    的逃生阀被废。键在 _session_repo._PRESERVE_SETTINGS_SQL 里 sticky。"""
+    _ensure_session(db, save_id)
+    db.execute(
+        "update game_sessions set worldline = jsonb_set(coalesce(worldline, '{}'::jsonb), "
+        "'{user_progress_floor}', to_jsonb(greatest(coalesce((worldline->>'user_progress_floor')::int, 0), %s)), true) "
+        "where save_id=%s",
+        (int(chapter), save_id),
+    )
+
+
+def clamp_reveal_progress(progress: int, det_floor: int, lookahead: int) -> int:
+    """揭示天花板的估章钳制(纯函数,时间线战役批次1)。
+
+    生产实锤(save 268):occurred 冻结 ch7 十天,估章把 progress_chapter 顶到 17,
+    ch8-17 的世界书/实体/NPC 被超前揭示(反馈#82 无关后期NPC)、剧情被当已发生。
+    钳制:存在确定性地板(occurred/variant 最大章 或 玩家显式 /set 地板)时,
+    揭示用进度 ≤ 地板 + lookahead;无地板(纯发散/无锚档)不钳,发散档解冻语义保留。
+    lookahead <= 0 = 关闭钳制(env 逃生阀)。"""
+    if lookahead <= 0 or det_floor < 1:
+        return progress
+    return min(progress, det_floor + lookahead)
+
+
 def advance_progress(db, save_id: int, chapter: int) -> None:
     """推进玩家进度(取 max,只增不减)。防剧透集合随之扩。
     用单条原子 SQL(greatest 在 DB 内算)替代「读-改-写整 jsonb」:workers=2 下两并发回合

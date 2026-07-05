@@ -16,7 +16,7 @@ _PRESERVE_SETTINGS_SQL = (
     "coalesce((select jsonb_object_agg(key, value) "
     "from jsonb_each(game_sessions.worldline) where key in "
     "('starting_worldline','foreknowledge_mode','npc_awareness',"
-    "'steering_strength','spoiler_guard','progress_chapter')), '{}'::jsonb)"
+    "'steering_strength','spoiler_guard','progress_chapter','user_progress_floor')), '{}'::jsonb)"
 )
 
 
