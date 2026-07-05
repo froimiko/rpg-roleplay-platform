@@ -861,6 +861,7 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                                     _el.append(f"{_i}. {_e.get('summary') or ''}" + (f"  ({_meta})" if _meta else ""))
                                 _el.append("以上按当前情境从全程历史召回,当作【已发生事实】参考,勿复述成新发生。")
                                 parts.append("\n".join(_el))
+                                log.info("[retrieval] episodic recall 注入 %d 条 (save=%s)", len(_epi), _sid_for_hist)
                 except Exception as _epi_err:
                     log.warning(f"[retrieval] episodic recall 注入失败 (非致命): {_epi_err}")
         except Exception as _hist_err:
