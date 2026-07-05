@@ -105,9 +105,13 @@ def enrich_script_worldbook(script_id: int, user_id: int, *, pattern: str,
                 continue
             user_p = (f"【条目名】{title}\n【现有内容(过于简略,需充实)】{ent.get('content') or '(空)'}\n"
                       f"【原文材料】\n{material}")
-            text, _u = call_agent_json(rapi, rmodel, _SYSTEM, user_p, user_id,
-                                       tool_schema=None, max_tokens=700, timeout_sec=60)
-            content = validate_enriched(text or "")
+            content = None
+            for _attempt in range(3):  # flash 随机性:验收拒最多重试两次
+                text, _u = call_agent_json(rapi, rmodel, _SYSTEM, user_p, user_id,
+                                           tool_schema=None, max_tokens=700, timeout_sec=60)
+                content = validate_enriched(text or "")
+                if content:
+                    break
             if not content:
                 out.append({"id": ent["id"], "title": title, "status": "reject(验收拒)"})
                 continue
