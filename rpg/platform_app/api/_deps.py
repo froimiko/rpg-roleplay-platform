@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import re
+
 from fastapi import Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse as BaseJSONResponse
@@ -78,6 +81,33 @@ COMMANDS = [
 ]
 
 
+# 建档/存档列表偶发 "Invalid control character"(浏览器 JSON.parse / Python json.loads
+# 均拒收裸 \x00-\x1f):存量存档的自由文本字段(title / player_name / world_time /
+# 角色卡 background 等,来自玩家手填、LLM 生成、或 SillyTavern PNG 卡片导入)可能已经
+# 带着裸控制字符落库多年。标准 json.dumps 会正确转义这些字符——但那依赖【每一个】响应
+# 都严格走 jsonable_encoder → json.dumps 这条路径，属于隐式契约，一旦某处改用别的序列化
+# （手写 Response、换 orjson、日志/缓存里转手拼接……）就会无声破功，而脏数据已经在库里，
+# 只修写入侧救不了老档。这里在读出→响应这一层做兜底：递归清洗所有 str 叶子值，把 C0 控制
+# 字符（\x00-\x1f，保留 \t\n\r 这三个合法空白）和 DEL（\x7f）替换成一个空格，不改变其余内容、
+# 不改变字符串长度以外的语义。
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _strip_control_chars(value):
+    """递归清洗 dict/list/str 中的裸控制字符（保留 \\t \\n \\r）。非 str 原样返回。"""
+    if isinstance(value, str):
+        if not _CONTROL_CHAR_RE.search(value):
+            return value  # 快路径：绝大多数字符串无脏字符，不分配新对象
+        return _CONTROL_CHAR_RE.sub(" ", value)
+    if isinstance(value, dict):
+        return {k: _strip_control_chars(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_strip_control_chars(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_control_chars(v) for v in value)
+    return value
+
+
 def json_response(content, status_code: int = 200, **kwargs):
     if isinstance(content, dict) and "meta" not in content:
         content = {
@@ -87,7 +117,9 @@ def json_response(content, status_code: int = 200, **kwargs):
                 "stable": True,
             },
         }
-    return BaseJSONResponse(jsonable_encoder(content), status_code=status_code, **kwargs)
+    encoded = jsonable_encoder(content)
+    encoded = _strip_control_chars(encoded)
+    return BaseJSONResponse(encoded, status_code=status_code, **kwargs)
 
 
 def _request_is_https(request: Request) -> bool:

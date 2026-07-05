@@ -624,3 +624,11 @@ def test_dict_shape_salvage_items_wrapper(monkeypatch):
     monkeypatch.setattr(_recorder, "_resolve_recorder_api_and_model", lambda *a, **k: ("deepseek", "m"))
     written = run_heartbeat_tick(state, user_id=None)
     assert written == ["磨坊的水车轴断了,修好要等三天"]  # 短键名 "items" 被滤掉,列表被取出
+
+
+def test_prompt_has_locality_rule():
+    """心跳 prompt 必须含地理铁律(测玩实证:远方人物被写成本地实时传闻)。"""
+    from agents.world_heartbeat import _build_prompts
+    sysp, userp = _build_prompts({"current_location": "布耶纳村", "time": "晨", "facts_recent": [], "relationship_names": [], "active_entities": [], "recent_background_events": [], "pending_anchor_hints": []})
+    assert "地理铁律" in sysp
+    assert "当前地点" in userp or "当前所在地" in sysp

@@ -18,6 +18,17 @@ import secrets as _secrets
 
 _log = _logging.getLogger(__name__)
 
+
+def _sanitize_payload(obj):
+    """裸控制字符兜底(与 api._deps._strip_control_chars 同款):/api/new 家族返回裸
+    JSONResponse、不过 json_response 的清洗层,单独兜一层防脏存档 free text 让
+    浏览器 JSON.parse 报 Invalid control character。"""
+    try:
+        from platform_app.api._deps import _strip_control_chars
+        return _strip_control_chars(obj)
+    except Exception:
+        return obj
+
 _CLIENT_SAFE_RUNTIME_PREFIXES = (
     "未找到 Vertex AI Service Account。",
     "Vertex AI 调用被拒(403)。",
@@ -222,7 +233,7 @@ async def api_new(
         from app import _lru_set as _lru_set_inner
         _lru_set_inner(_state_by_user, uid, state)
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "backup": backup, "state": _payload(api_user)})
+    return JSONResponse({"ok": True, "backup": backup, "state": _sanitize_payload(_payload(api_user))})
 
 
 # ── 游戏流水线 · 开场策略(rail 知识只住游戏层,不进底层 GMAgent)──────────────
@@ -1015,7 +1026,7 @@ async def api_save(
     if not result.ok:
         return JSONResponse({"ok": False, "error": result.error}, status_code=400)
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return JSONResponse({"ok": True, "state": _sanitize_payload(_payload(api_user))})
 
 
 @router.post("/api/message/edit", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
