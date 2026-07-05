@@ -6013,10 +6013,12 @@
       },
       "birthpoint": {
         "label": "出生点",
-        "hint": "选择从哪个剧情节点开始游戏(可选,默认从开头)",
+        "hint": "选择从哪个剧情节点开始游戏",
         "loading": "加载出生点…",
         "load_error": "出生点加载失败,可继续跳过",
         "empty": "该剧本暂无预设出生点,将从开头开始",
+        "please_select": "请选择出生点(或选「从故事开头开始」)",
+        "from_start": "从故事开头开始",
         "chapter_range": "第 {{min}}–{{max}} 章",
         "chapter_single": "第 {{n}} 章"
       },
@@ -6125,7 +6127,8 @@
         "row_save_name": "存档名称",
         "row_script": "剧本",
         "row_birthpoint": "出生点",
-        "from_start": "从开头",
+        "from_start": "从故事开头开始",
+        "birthpoint_unselected": "尚未选择出生点",
         "row_role": "角色",
         "row_origin": "出身",
         "row_identity": "身份",

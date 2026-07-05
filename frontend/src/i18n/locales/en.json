@@ -6016,10 +6016,12 @@
       },
       "birthpoint": {
         "label": "Starting Point",
-        "hint": "Choose where in the story to begin (optional, defaults to the beginning)",
+        "hint": "Choose where in the story to begin",
         "loading": "Loading starting points…",
         "load_error": "Failed to load starting points — you can skip this step",
         "empty": "No preset starting points for this script. The story will begin from the start.",
+        "please_select": "Please choose a starting point (or \"From the beginning\")",
+        "from_start": "From the beginning",
         "chapter_range": "Ch. {{min}}–{{max}}",
         "chapter_single": "Ch. {{n}}"
       },
@@ -6129,6 +6131,7 @@
         "row_script": "Script",
         "row_birthpoint": "Starting Point",
         "from_start": "From the beginning",
+        "birthpoint_unselected": "No starting point selected yet",
         "row_role": "Character",
         "row_origin": "Origin",
         "row_identity": "Identity",

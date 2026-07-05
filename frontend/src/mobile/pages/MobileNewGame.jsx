@@ -76,6 +76,11 @@ const NEWGAME_ACTIVE_IMPORT_STATUSES = new Set(['queued', 'pending', 'running', 
 const NEWGAME_IMPORT_TERMINAL_STATUSES = new Set(['done', 'done_with_errors', 'partial', 'failed', 'cancelled']);
 const NEWGAME_BLOCKING_READINESS_KEYS = new Set(['chunks', 'anchors']);
 
+// 出生点 sentinel:剧本有出生点锚点数据时,「从故事开头开始」也必须是用户主动选中的一项
+// (而非未选择的静默默认),对齐桌面 saves.jsx 的强制必填语义。提交时转换为 null。
+const BIRTHPOINT_FROM_START = '__from_start__';
+const isFromStartBirthpoint = (bp) => !!bp && bp.anchor_id === BIRTHPOINT_FROM_START;
+
 function scriptBlockReason(script) {
   if (!script) return '';
   const status = String(
@@ -159,7 +164,7 @@ function FieldLabel({ children, hint }) {
 /* ================================================================
    STEP 0 — 剧本与出生点
    ================================================================ */
-function StepScriptBirth({ scripts, lockedScriptId, scriptId, setScriptId, birthpoint, setBirthpoint }) {
+function StepScriptBirth({ scripts, lockedScriptId, scriptId, setScriptId, birthpoint, setBirthpoint, onBirthpointRequiredChange }) {
   const { t } = useTranslation();
   const [phases, setPhases] = useState([]);
   const [bpLoading, setBpLoading] = useState(false);
@@ -189,6 +194,14 @@ function StepScriptBirth({ scripts, lockedScriptId, scriptId, setScriptId, birth
   }, [scriptId]);
 
   useEffect(() => { fetchBp(); }, [fetchBp]);
+
+  // 把「本剧本是否存在出生点锚点数据」上报给父级,用于 step0Valid 判定:
+  // 有数据 → 必须显式选择(含从头开始哨兵);无数据(锚点未提取)→ 不锁死,自动放行。
+  useEffect(() => {
+    if (!scriptId) { onBirthpointRequiredChange?.(false); return; }
+    if (bpLoading) return; // 加载中维持上一次已知状态,避免闪烁误判
+    onBirthpointRequiredChange?.(phases.length > 0);
+  }, [scriptId, bpLoading, phases.length, onBirthpointRequiredChange]);
 
   // 剧本切换时清空出生点
   const prevScriptRef = useRef(scriptId);
@@ -264,6 +277,14 @@ function StepScriptBirth({ scripts, lockedScriptId, scriptId, setScriptId, birth
           <FieldLabel hint={t('mobile.new_game.birthpoint.hint')}>{t('mobile.new_game.birthpoint.label')}</FieldLabel>
           <ErrBar msg={bpErr} />
           {bpLoading && <Loading text={t('mobile.new_game.birthpoint.loading')} />}
+          {!bpLoading && phases.length > 0 && !birthpoint && (
+            <div style={{
+              fontSize: 12, color: 'var(--warn)', padding: '7px 11px', marginBottom: 6,
+              border: '1px solid rgba(212,179,102,.3)', borderRadius: 8, background: 'var(--warn-soft)',
+            }}>
+              {t('mobile.new_game.birthpoint.please_select')}
+            </div>
+          )}
           {!bpLoading && phases.length === 0 && !bpErr && (
             <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>
               {t('mobile.new_game.birthpoint.empty')}
@@ -272,6 +293,29 @@ function StepScriptBirth({ scripts, lockedScriptId, scriptId, setScriptId, birth
           )}
           {!bpLoading && phases.length > 0 && (
             <div style={{ display: 'grid', gap: 6 }}>
+              {/* 显式「从故事开头开始」选项:必须用户主动点选,不做静默默认 */}
+              {(() => {
+                const isStartSel = isFromStartBirthpoint(birthpoint);
+                return (
+                  <label style={{
+                    display: 'grid', gridTemplateColumns: '16px 1fr', gap: 10,
+                    padding: '10px 13px', borderRadius: 10, cursor: 'pointer',
+                    border: isStartSel ? '1px solid var(--accent-edge)' : '1px solid var(--line-soft)',
+                    background: isStartSel ? 'var(--accent-soft)' : 'var(--panel)',
+                    alignItems: 'center', transition: 'border-color .12s, background .12s',
+                  }}>
+                    <input
+                      type="radio"
+                      checked={isStartSel}
+                      onChange={() => setBirthpoint({ anchor_id: BIRTHPOINT_FROM_START, from_start: true })}
+                      style={{ accentColor: 'var(--accent)' }}
+                    />
+                    <span style={{ fontFamily: 'var(--font-serif)', fontSize: 13.5, color: isStartSel ? 'var(--accent)' : 'var(--text)' }}>
+                      {t('mobile.new_game.birthpoint.from_start')}
+                    </span>
+                  </label>
+                );
+              })()}
               {phases.map(phase => {
                 const isOpen = openPhase === phase.phase_label;
                 return (
@@ -831,17 +875,23 @@ function StepMeta({ foreknowledge, setForeknowledge, npcAwareness, setNpcAwarene
 /* ================================================================
    STEP 4 — 确认
    ================================================================ */
-function StepConfirm({ title, setTitle, scripts, scriptId, birthpoint, roleMode, pickedCard, newCardName, allRoleOptions, playerOrigin, identity, foreknowledge, npcAwareness, steering, spoiler, submitErr, submitting }) {
+function StepConfirm({ title, setTitle, scripts, scriptId, birthpoint, birthpointRequired, roleMode, pickedCard, newCardName, allRoleOptions, playerOrigin, identity, foreknowledge, npcAwareness, steering, spoiler, submitErr, submitting }) {
   const { t } = useTranslation();
   const selScript = scripts.find(s => String(s.id) === String(scriptId)) || null;
   const pickedOpt = allRoleOptions.find(o => o.key === pickedCard);
   const roleName = roleMode === 'new' ? (newCardName.trim() || t('mobile.new_game.confirm.new_role_fallback')) : (pickedOpt?.name || '—');
   const origLabel = (() => { const o = ORIGIN_OPTIONS.find(x => x.value === playerOrigin); return o ? t(o.labelKey) : playerOrigin; })();
+  // 出生点未选:剧本本身没有锚点数据(不锁死)才算合法的"从开头"；
+  // 若剧本要求选择但仍为空(理论上正常流程已挡在 step0,这里是兜底防御),渲染警示样式而非普通文案。
+  const birthpointMissingButRequired = !birthpoint && birthpointRequired !== false;
+  const birthpointLabel = birthpoint
+    ? (isFromStartBirthpoint(birthpoint) ? t('mobile.new_game.confirm.from_start') : birthpoint.story_time_label)
+    : (birthpointMissingButRequired ? t('mobile.new_game.confirm.birthpoint_unselected') : t('mobile.new_game.confirm.from_start'));
 
   const rows = [
     { k: t('mobile.new_game.confirm.row_save_name'), v: title.trim() || '—', highlight: !title.trim() },
     { k: t('mobile.new_game.confirm.row_script'), v: selScript?.title || '—', highlight: !selScript },
-    { k: t('mobile.new_game.confirm.row_birthpoint'), v: birthpoint?.story_time_label || t('mobile.new_game.confirm.from_start') },
+    { k: t('mobile.new_game.confirm.row_birthpoint'), v: birthpointLabel, highlight: birthpointMissingButRequired },
     { k: t('mobile.new_game.confirm.row_role'), v: roleName, highlight: !roleName || roleName === '—' },
     { k: t('mobile.new_game.confirm.row_origin'), v: origLabel },
     { k: t('mobile.new_game.confirm.row_identity'), v: identity ? `${identity.name || ''} ${identity.role || ''}`.trim() || t('mobile.new_game.confirm.identity_set') : t('mobile.new_game.confirm.identity_none') },
@@ -903,6 +953,10 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
   // ── Step 0 state ──
   const [scriptId, setScriptId] = useState(lockedScriptId || '');
   const [birthpoint, setBirthpoint] = useState(null);
+  // 本剧本是否存在出生点锚点数据(由 StepScriptBirth 上报)。true=必须显式选择才能进入下一步。
+  // null=尚未确认(StepScriptBirth 本次会话还没挂载过,例如草稿直接恢复到 step>0)——
+  // 保守起见按"需要选择"处理,避免绕过必选闸(用户回到 step0 即可解锁)。
+  const [birthpointRequired, setBirthpointRequired] = useState(null);
 
   // ── Step 1 state ──
   const [roleMode, setRoleMode] = useState('existing');
@@ -1023,7 +1077,10 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
   ];
 
   const selScript = scripts.find(s => String(s.id) === String(scriptId)) || null;
-  const step0Valid = !!scriptId && !scriptBlockReason(selScript);
+  // 出生点:剧本有锚点数据时必须显式选择(含「从头开始」哨兵);无锚点数据(未提取)不锁死;
+  // birthpointRequired 为 null(本次会话尚未走过 step0 确认)时保守按"需要选择"处理。
+  const birthpointOk = birthpointRequired === false || !!birthpoint;
+  const step0Valid = !!scriptId && !scriptBlockReason(selScript) && birthpointOk;
   const step1Valid = (roleMode === 'existing' && !!pickedCard) || (roleMode === 'new' && !!newCardName.trim());
   const step2Valid = true; // 身份是可选项
   const step3Valid = true; // meta 都有默认值
@@ -1077,7 +1134,8 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
         character_kind: charKind,
         new_card: null,
         role_mode: finalRoleMode,
-        birthpoint: birthpoint || null,
+        // 「从头开始」哨兵仅用于前端强制显式选择,后端语义仍是 birthpoint=null(从第一章开局)。
+        birthpoint: (birthpoint && !isFromStartBirthpoint(birthpoint)) ? birthpoint : null,
         identity: identity ? {
           name: identity.name || '',
           role: identity.role || '',
@@ -1156,6 +1214,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
                   setScriptId={v => { setScriptId(v); lsSet('newgame.lastScriptId', v); }}
                   birthpoint={birthpoint}
                   setBirthpoint={setBirthpoint}
+                  onBirthpointRequiredChange={setBirthpointRequired}
                 />
               )}
               {step === 1 && (
@@ -1209,6 +1268,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
                   scripts={scripts}
                   scriptId={scriptId}
                   birthpoint={birthpoint}
+                  birthpointRequired={birthpointRequired}
                   roleMode={roleMode}
                   pickedCard={pickedCard}
                   newCardName={newCardName}
