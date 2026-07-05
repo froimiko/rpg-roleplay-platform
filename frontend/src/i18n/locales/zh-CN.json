@@ -2196,7 +2196,8 @@
       "checkout_head": "HEAD · {{id}}",
       "checkout_ok": "已切换到版本 {{id}}",
       "checkout_fail": "版本切换失败",
-      "checkout_not_impl": "版本 checkout 后端尚未实现 (501)"
+      "checkout_not_impl": "版本 checkout 后端尚未实现 (501)",
+      "checkout_unavailable": "版本回滚暂未开放"
     },
     "edit": {
       "readonly_title": "只读模式",
@@ -3482,6 +3483,7 @@
         "switch_tip": "切换版本",
         "header": "当前版本 — 最近 {{count}} 个 commit",
         "checkout_not_impl": "版本 checkout 后端尚未实现 (501)",
+        "checkout_unavailable": "版本回滚暂未开放",
         "switched": "已切换到版本 {{sha}}",
         "switch_failed": "版本切换失败"
       },
@@ -5185,7 +5187,8 @@
         "rolled_back": "已回退到该版本",
         "rollback_error": "回退失败",
         "rolling_back": "回退中…",
-        "rollback_btn": "回退到此版本"
+        "rollback_btn": "回退到此版本",
+        "checkout_unavailable": "版本回滚暂未开放"
       },
       "overrides": {
         "title": "剧本参数覆盖",

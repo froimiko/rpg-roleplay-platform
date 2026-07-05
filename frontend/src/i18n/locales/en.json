@@ -2105,7 +2105,8 @@
       "checkout_head": "HEAD · {{id}}",
       "checkout_ok": "Switched to version {{id}}",
       "checkout_fail": "Version switch failed",
-      "checkout_not_impl": "Version checkout not yet implemented (501)"
+      "checkout_not_impl": "Version checkout not yet implemented (501)",
+      "checkout_unavailable": "Version rollback is not yet available"
     },
     "edit": {
       "readonly_title": "Read-only",
@@ -3391,6 +3392,7 @@
         "switch_tip": "Switch version",
         "header": "Current version — last {{count}} commits",
         "checkout_not_impl": "Version checkout not yet implemented (501)",
+        "checkout_unavailable": "Version rollback is not yet available",
         "switched": "Switched to version {{sha}}",
         "switch_failed": "Version switch failed"
       },
@@ -5188,7 +5190,8 @@
         "rolled_back": "Rolled back successfully",
         "rollback_error": "Rollback failed",
         "rolling_back": "Rolling back…",
-        "rollback_btn": "Roll back to this version"
+        "rollback_btn": "Roll back to this version",
+        "checkout_unavailable": "Version rollback is not yet available"
       },
       "overrides": {
         "title": "Script Parameter Overrides",

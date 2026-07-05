@@ -504,14 +504,15 @@ function VersionsView({ script, currentUserId, onBack, nav }) {
                   {isOwner && c.id !== script?.head_commit_id && (
                     <button
                       onClick={() => onRollback(c)}
-                      disabled={rollingBack === c.id}
+                      disabled
+                      title={t('mobile.scripts.versions.checkout_unavailable')}
                       style={{
                         marginTop: 8, minHeight: 44, padding: '6px 12px', borderRadius: 8,
                         fontSize: 12, color: 'var(--accent)', border: '1px solid var(--accent-edge)',
-                        background: 'var(--accent-soft)',
+                        background: 'var(--accent-soft)', opacity: 0.6, cursor: 'not-allowed',
                       }}
                     >
-                      {rollingBack === c.id ? t('mobile.scripts.versions.rolling_back') : t('mobile.scripts.versions.rollback_btn')}
+                      {t('mobile.scripts.versions.rollback_btn')}
                     </button>
                   )}
                 </div>

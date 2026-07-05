@@ -364,9 +364,8 @@ function VersionHistoryDrawer({ script, currentUserId, onClose }) {
               cell: (c) => (
                 <CSButton
                   variant="inline-link"
-                  disabled={!isOwner || rollingBack === c.id}
-                  loading={rollingBack === c.id}
-                  title={!isOwner ? t('scripts.version.rollback_disabled_tip') : ''}
+                  disabled
+                  title={t('scripts.version.checkout_unavailable')}
                   onClick={() => onRollback(c)}
                 >{t('scripts.version.rollback_btn')}</CSButton>
               ),

@@ -151,8 +151,11 @@ function ScriptVersionSelect({ scriptId, headCommitId }) {
                     width: '100%', padding: '6px 10px', borderRadius: 0, gap: 8,
                     background: isCurrent ? 'var(--accent-soft, rgba(212,164,94,0.12))' : 'transparent',
                     fontWeight: isCurrent ? 600 : 400, borderBottom: '1px solid var(--line-soft)',
+                    opacity: isCurrent ? 1 : 0.6, cursor: isCurrent ? 'pointer' : 'not-allowed',
                   }}
                   onClick={() => onCheckout(c.id)}
+                  disabled={!isCurrent}
+                  title={!isCurrent ? t('game.console.version.checkout_unavailable') : undefined}
                 >
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: isCurrent ? 'var(--accent)' : 'inherit' }}>
                     {(c.id || '').slice(0, 8)}
