@@ -254,24 +254,38 @@ def retrieve_episodic_merged(
     save_id: int, commit_id: int, user_id: int | None, query_text: str,
     history: list[dict], *, k: int = 3, exclude_recent: int = 12,
 ) -> list[dict]:
-    """酒馆/自由/模组模式入口:向量快路优先(有嵌入且过阈),否则 kb_events+history
-    合并关键词打分(merge_and_rank)。novel 路径(retrieve_episodic)不受影响。"""
+    """酒馆/自由/模组模式入口:向量命中(≤2条,补语义视角)+ kb_events+history 合并
+    关键词打分(merge_and_rank)去重补足。novel 路径(retrieve_episodic)不受影响。
+
+    ⚠️向量命中**绝不独占返回**(酒馆e2e二次实锤:save351 唯一一条闲聊事件被后处理
+    补了嵌入 → 向量路径命中即短路 → history 里的真答案再次被压掉。向量只覆盖
+    kb_events 语料,永远不能替代含 history 的合并池,只能作为额外视角并列注入)。"""
     if not (query_text or "").strip():
         return []
+    out: list[dict] = []
     kb_rows: list[dict] = []
     if save_id and commit_id:
         try:
-            vec_hits = _retrieve_vector(save_id, commit_id, user_id, query_text, k=k)
-            if vec_hits:
-                return [{"kind": "event", "text": str(e.get("summary") or ""),
-                         "meta": " · ".join(x for x in [str(e.get("story_time") or "").strip(),
-                                                        str(e.get("location") or "").strip()] if x),
-                         "score": e.get("score")} for e in vec_hits]
+            for e in _retrieve_vector(save_id, commit_id, user_id, query_text, k=2):
+                out.append({"kind": "event", "text": str(e.get("summary") or ""),
+                            "meta": " · ".join(x for x in [str(e.get("story_time") or "").strip(),
+                                                           str(e.get("location") or "").strip()] if x),
+                            "score": e.get("score")})
+        except Exception as exc:
+            log.warning("[episodic] merged 向量侧跳过(非致命): %s", exc)
+        try:
             kb_rows = _fetch_keyword_corpus(save_id, commit_id)
         except Exception as exc:
             log.warning("[episodic] merged kb 侧跳过(非致命): %s", exc)
             kb_rows = []
-    return merge_and_rank(query_text, kb_rows, history, k=k, exclude_recent=exclude_recent)
+    seen = {h["text"] for h in out}
+    for h in merge_and_rank(query_text, kb_rows, history, k=k, exclude_recent=exclude_recent):
+        if h["text"] not in seen:
+            seen.add(h["text"])
+            out.append(h)
+        if len(out) >= k + 1:
+            break
+    return out
 
 
 def _retrieve_vector(

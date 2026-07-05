@@ -111,3 +111,20 @@ def test_merged_strong_history_beats_weak_kb_event():
     hits = merge_and_rank("还记得我说过我在学做菜吗?那次闹了什么笑话?", kb, hist, k=3)
     assert hits, "应召回煎鱼事件"
     assert hits[0]["kind"] == "history" and "煎了鱼" in hits[0]["text"]
+
+
+def test_merged_vector_hit_never_shortcircuits_history(monkeypatch):
+    """酒馆e2e二次实锤回归:向量命中(被后处理补嵌入的孤立事件)绝不独占返回,
+    history 强命中必须同池在场。"""
+    import kb.episodic as epi
+    monkeypatch.setattr(epi, "_retrieve_vector", lambda *a, **k: [
+        {"summary": "角色与芙兰朵露在会面室闲聊天气", "story_time": "", "location": "会面室",
+         "participants": [], "score": 0.61}])
+    monkeypatch.setattr(epi, "_fetch_keyword_corpus", lambda *a, **k: [])
+    hist = [{"role": "user", "content": f"第{i}轮无关闲聊而已"} for i in range(6)]
+    hist.insert(2, {"role": "user", "content": "我最近在学做菜,昨天试着煎了鱼,差点把厨房烧了,哈哈。"})
+    hist += [{"role": "user", "content": f"近因第{i}条"} for i in range(12)]
+    hits = epi.retrieve_episodic_merged(351, 3459, 1, "还记得我说过我在学做菜吗?", hist, k=3)
+    kinds = [(h["kind"], h["text"][:12]) for h in hits]
+    assert any(h["kind"] == "history" and "煎了鱼" in h["text"] for h in hits), kinds
+    assert any(h["kind"] == "event" for h in hits), kinds  # 向量视角仍在场
