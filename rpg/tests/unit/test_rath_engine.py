@@ -170,3 +170,13 @@ def test_validate_scene_rejects_fabricated_institution():
         "npc_updates": {},
     }, ensure_ascii=False)
     assert validate_scene(ok, "汉娜", "伊万", known_text="任意材料") is not None
+
+
+def test_player_setting_sanctity_rule():
+    """用户实锤:世界给穿越者主角编「实验品」替代来历+伪造证据=篡改设定。
+    设定神圣条款:NPC 可开放猜测,绝不编具体替代来历/伪造指向性证据。"""
+    sys_p, _ = build_scene_prompts(_snap(), "汉娜", "伊万")
+    assert "玩家角色设定神圣" in sys_p and "绝不为其编造具体的替代来历" in sys_p
+    assert "实验品" in sys_p
+    sys_p2, _ = build_scene_prompts({"npc_agendas": {"甲": {}, "乙": {}}}, "甲", "乙")
+    assert "设定神圣" not in sys_p2
