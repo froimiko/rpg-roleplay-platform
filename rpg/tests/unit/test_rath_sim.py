@@ -242,3 +242,16 @@ def test_canon_stall_forced_advance():
     text = advance_stalled_canon(sim)
     assert text and "留学生会馆" in text
     assert sim["canon"]["cursor"] == 1 and sim["canon"]["stall"] == 0
+
+
+def test_unconscious_player_location_settles_once():
+    """昏迷守恒=不可移动,但「落定未知位置」不是移动(实锤:位置永远卡死未知地点)。"""
+    snap = _snapshot(); snap["player"]["current_location"] = ""
+    sim = init_sim_state(snap, _cards(), [], clock_min=0)
+    assert sim["cast"]["菲莉丝"]["location"] == "未知地点"
+    apply_scheduler_output(sim, {"cast_updates": {"菲莉丝": {"location": "林有德的小屋"}}})
+    assert sim["cast"]["菲莉丝"]["location"] == "林有德的小屋"
+    # 落定后再改=移动 → 拒
+    out = apply_scheduler_output(sim, {"cast_updates": {"菲莉丝": {"location": "毛瑟厂"}}})
+    assert sim["cast"]["菲莉丝"]["location"] == "林有德的小屋"
+    assert any("昏迷" in r for r in out["rejected"])

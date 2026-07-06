@@ -232,7 +232,8 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
             if not v:
                 continue
             if k == "location":
-                if unconscious:
+                if unconscious and str(c.get("location") or "") != "未知地点":
+                    # 守恒=不可移动;但「落定未知位置」不是移动(实锤:昏迷玩家位置永远卡死未知)
                     rejected.append("玩家昏迷:位置不可变")
                     continue
                 if v not in (sim.get("places") or []):
