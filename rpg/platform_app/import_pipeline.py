@@ -2411,6 +2411,17 @@ REBUILD_MODULES = {
     "worldbook":     ("rebuild_worldbook",    "世界书重建",   True),  # may be True or False depending on source
     "anchors":       ("rebuild_anchors",      "时间线重建",   False),
     "embeddings":    ("rebuild_embeddings",   "向量重嵌入",   False),
+    # 三个新模块(原 CLI-only 提取能力接入 rebuild 框架,补 API/UI 缺口):
+    # · facts_refine: chapter_facts 摘要/故事内时间 LLM 精炼(extract.facts_refine.refine_script),
+    #   恒需 BYOK LLM。
+    "facts_refine":  ("rebuild_facts_refine", "章节摘要精炼", True),
+    # · worldbook_enrich: 命中 pattern 的世界书条目 LLM 充实(extract.worldbook_enrich)，
+    #   恒需 BYOK LLM。
+    "worldbook_enrich": ("rebuild_worldbook_enrich", "世界书条目充实", True),
+    # · world_key: 结构先验回填(extract.world_key_backfill.backfill_worldlines)默认零 LLM，
+    #   仅 options.use_llm=True 时追加 LLM 窄确认 —— 与 worldbook/cards 同款「按 body 覆盖
+    #   needs_llm」范式,故此处基线登记为 False,下方 estimate/schedule 按 use_llm 校正。
+    "world_key":     ("rebuild_world_key",    "世界线回填",   False),
 }
 
 
@@ -2519,6 +2530,9 @@ def estimate_module_rebuild(
         needs_llm = (source_pref == "llm")
     if module == "canon" and source_pref == "resolve_only":
         needs_llm = False
+    if module == "world_key":
+        # 结构先验默认零 LLM;仅 body.use_llm 真值时才需要 BYOK(第二层窄确认)。
+        needs_llm = bool(body.get("use_llm"))
 
     if module == "embeddings":
         includes = [str(x) for x in (body.get("include") or ["chunks", "cards", "worldbook", "canon"])]
@@ -2556,6 +2570,9 @@ def estimate_module_rebuild(
             "cards": ["character_cards"],
             "worldbook": ["worldbook_entries"],
             "anchors": ["script_timeline_anchors"],
+            "facts_refine": ["chapter_facts"],
+            "worldbook_enrich": ["worldbook_entries"],
+            "world_key": ["chapter_facts", "script_timeline_anchors"],
         }.get(module, [kind])
         if module in {"chapter-facts", "anchors"} and chunks_total == 0:
             prereqs.append({
@@ -2577,6 +2594,28 @@ def estimate_module_rebuild(
                 "ok": False,
                 "hint": "当前没有规范实体(知识库人物为空),请先重做「知识库人物」,"
                         "或将世界书来源改为 LLM 生成。",
+            })
+        # facts_refine 精炼的是已有 chapter_facts 行(UPDATE,不新增),facts 为空则无可精炼。
+        if module == "facts_refine":
+            with connect() as db:
+                facts_total = _scalar(db, "select count(*) as c from chapter_facts where script_id = %s")
+            if facts_total == 0:
+                prereqs.append({
+                    "key": "chapter_facts",
+                    "label": "章节事实",
+                    "ok": False,
+                    "hint": "当前剧本还没有章节事实,请先重做「章节事实」。",
+                    "count": 0,
+                    "total": max(chapter_count, 1),
+                })
+        # worldbook_enrich 充实的是已存在、标题命中 pattern 的世界书条目;世界书为空则无可充实。
+        if module == "worldbook_enrich" and wb_total == 0:
+            prereqs.append({
+                "key": "worldbook",
+                "label": "世界书条目",
+                "ok": False,
+                "hint": "当前剧本还没有世界书条目,请先重做「世界书」。",
+                "count": 0,
             })
         if needs_llm:
             api_id, llm_model = _resolve_extractor_llm(user_id)
@@ -2639,6 +2678,63 @@ def estimate_module_rebuild(
                 _base = max(canon_total, 20)
                 est_in = _base * 1500
                 est_out = _base * 300
+            elif module == "facts_refine":
+                # 逐章调 LLM 精炼 summary/in_world_time(extract.facts_refine.refine_script)。
+                # 涉及章节数 = [ch_from, ch_to] 区间(默认整本),按 ~1.5k tokens/章估算
+                # (与 estimate_module_rebuild 既有粗估口径一致,不接 arc budget——精炼是逐章
+                # 独立小调用,非 arc 弧段合并调用)。
+                _ch_from_raw = body.get("ch_from")
+                _ch_to_raw = body.get("ch_to")
+                try:
+                    _ch_from = int(_ch_from_raw) if _ch_from_raw not in (None, "") else 1
+                except (TypeError, ValueError):
+                    _ch_from = 1
+                try:
+                    _ch_to = int(_ch_to_raw) if _ch_to_raw not in (None, "") else chapter_count
+                except (TypeError, ValueError):
+                    _ch_to = chapter_count
+                _ch_to = min(_ch_to, chapter_count) if chapter_count else _ch_to
+                _n_chapters = max(0, _ch_to - _ch_from + 1) if (_ch_to and _ch_from) else 0
+                est_in = _n_chapters * 1500
+                est_out = _n_chapters * 100  # 摘要产出短(≤200字),output 远小于 input
+            elif module == "worldbook_enrich":
+                # 命中 pattern 的世界书条目数(与 enrich_script_worldbook 同一 `title ~ pattern`
+                # 查询口径,不调 LLM,只查一次 DB)× ~2k tokens/条目。
+                _pattern = str(body.get("pattern") or "力量|概念|势力|体系")
+                try:
+                    with connect() as db:
+                        _wb_hit_row = db.execute(
+                            "select count(*) as c from worldbook_entries "
+                            "where script_id = %s and title ~ %s",
+                            (script_id, _pattern),
+                        ).fetchone()
+                    _n_entries = int(_wb_hit_row["c"]) if _wb_hit_row else 0
+                except Exception:
+                    _n_entries = 0
+                est_in = _n_entries * 2000
+                est_out = _n_entries * 400
+            elif module == "world_key":              # 必是 use_llm=True(否则 needs_llm=False)
+                # 第二层 LLM 窄确认按段(segment)发起调用,一段边界一次调用。段数用零 IO 的
+                # classify_segments 纯函数算(不落库、不调 LLM),口径与 backfill_worldlines
+                # 实际跑时产生的段数一致。
+                try:
+                    from extract.world_key_backfill import classify_segments as _classify_segments
+                    with connect() as db:
+                        _ck_rows = db.execute(
+                            "select chapter_index, title, volume_title from script_chapters "
+                            "where script_id = %s", (script_id,),
+                        ).fetchall()
+                    _chapters_for_seg = [
+                        {"chapter_index": r["chapter_index"], "title": r.get("title") or "",
+                         "volume_title": r.get("volume_title") or ""}
+                        for r in (_ck_rows or [])
+                    ]
+                    _segments = _classify_segments(_chapters_for_seg)
+                    _n_segments = max(0, len(_segments) - 1)  # 首段无边界可确认,N 段有 N-1 条边界
+                except Exception:
+                    _n_segments = 0
+                est_in = _n_segments * 1000
+                est_out = _n_segments * 150
             if est_in or est_out:
                 tokens_est = est_in + est_out
                 try:
@@ -2690,6 +2786,10 @@ def schedule_module_rebuild(
             needs_llm = False
     # 进度感知角色卡:cards 默认零 LLM(False);仅 source/mode=='llm' 的丰富重建才需 BYOK 凭证。
     if module == "cards" and source_pref == "llm":
+        needs_llm = True
+    # world_key:结构先验默认零 LLM(REBUILD_MODULES 基线 False);仅 body.use_llm 真值时才需要
+    # BYOK(第二层窄确认)—— 与 estimate_module_rebuild 同一对齐规则。
+    if module == "world_key" and body.get("use_llm"):
         needs_llm = True
     if needs_llm:
         require_user_llm_credential(user_id)
@@ -2937,6 +3037,104 @@ def _run_module_rebuild(
                 "after_count": int(total["c"]) if total else 0,
                 "partial_failures": partial_failures,
                 "extra": counts,
+            }
+        elif module == "facts_refine":
+            # extract.facts_refine.refine_script:逐章调 LLM 精炼 chapter_facts.summary/
+            # in_world_time。options 透传 {ch_from, ch_to, api_id, model};不传 api_id/model
+            # 时 refine_script 内部走 _resolve_recorder_api_and_model 解析用户默认模型。
+            from extract.facts_refine import refine_script
+            ch_from_raw = body.get("ch_from")
+            ch_to_raw = body.get("ch_to")
+            try:
+                ch_from = int(ch_from_raw) if ch_from_raw not in (None, "") else 1
+            except (TypeError, ValueError):
+                ch_from = 1
+            try:
+                ch_to = int(ch_to_raw) if ch_to_raw not in (None, "") else None
+            except (TypeError, ValueError):
+                ch_to = None
+            with connect() as _dbc:
+                before = _count(_dbc, "chapter_facts", script_id)
+            r = refine_script(
+                script_id, user_id,
+                ch_from=ch_from, ch_to=ch_to,
+                api_id=(body.get("api_id") or None), model=(body.get("model") or None),
+                apply=True,
+            )
+            with connect() as _dbc:
+                after = _count(_dbc, "chapter_facts", script_id)
+            partial_failures = []
+            if int(r.get("skipped") or 0) or int(r.get("failed") or 0):
+                partial_failures.append({
+                    "stage": "facts_refine",
+                    "error": f"skipped={r.get('skipped')} failed={r.get('failed')}",
+                })
+            result = {
+                "ok": bool(r.get("ok")),
+                "source": "llm_refined",
+                "before_count": before,
+                "after_count": after,
+                "partial_failures": partial_failures,
+                "error": r.get("error") if not r.get("ok") else "",
+                "extra": {"refined": r.get("refined"), "range": r.get("range")},
+            }
+        elif module == "worldbook_enrich":
+            # extract.worldbook_enrich.enrich_script_worldbook:命中 pattern 的世界书条目
+            # LLM 重写 content。pattern 默认核心设定类词汇正则。
+            from extract.worldbook_enrich import enrich_script_worldbook
+            pattern = str(body.get("pattern") or "力量|概念|势力|体系")
+            with connect() as _dbc:
+                before = _count(_dbc, "worldbook_entries", script_id)
+            r = enrich_script_worldbook(
+                script_id, user_id, pattern=pattern,
+                api_id=(body.get("api_id") or None), model=(body.get("model") or None),
+                apply=True,
+            )
+            entries = list(r.get("entries") or [])
+            ok_count = sum(1 for e in entries if e.get("status") == "ok")
+            partial_failures = [
+                {"stage": "worldbook_enrich", "entry_id": e.get("id"), "error": e.get("status")}
+                for e in entries if e.get("status") not in ("ok",)
+            ]
+            result = {
+                "ok": bool(r.get("ok")),
+                "source": "llm_enriched",
+                "before_count": before,
+                "after_count": before,   # UPDATE,不新增行;充实数用 extra.enriched 体现
+                "partial_failures": partial_failures,
+                "error": r.get("error") if not r.get("ok") else "",
+                "extra": {"enriched": ok_count, "total_matched": len(entries)},
+            }
+        elif module == "world_key":
+            # extract.world_key_backfill.backfill_worldlines:结构先验回填 worldline_key/
+            # in_world_time;body.use_llm 真值时追加第二层 LLM 窄确认(BYOK)。
+            from extract.world_key_backfill import backfill_worldlines
+            with connect() as _dbc:
+                before = _count(_dbc, "script_timeline_anchors", script_id)
+            r = backfill_worldlines(
+                script_id,
+                dry_run=False,
+                use_llm=bool(body.get("use_llm")),
+                user_id=user_id,
+                api_id_override=(body.get("api_id") or None),
+                model_override=(body.get("model") or None),
+            )
+            with connect() as _dbc:
+                after = _count(_dbc, "script_timeline_anchors", script_id)
+            partial_failures = []
+            if r.get("overcut"):
+                partial_failures.append({
+                    "stage": "world_key",
+                    "error": "overcut:分段过密已整体退回单世界(null)",
+                })
+            result = {
+                "ok": True,
+                "source": "structural_prior" if not body.get("use_llm") else "structural_prior+llm",
+                "before_count": before,
+                "after_count": after,
+                "partial_failures": partial_failures,
+                "extra": {"written": r.get("written"), "would_write": r.get("would_write"),
+                          "overcut": r.get("overcut")},
             }
         else:
             result = {"ok": False, "error": f"unhandled module: {module}"}

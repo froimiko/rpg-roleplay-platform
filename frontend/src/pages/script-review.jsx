@@ -33,6 +33,10 @@ async function unmarkReviewed(scriptId) {
   });
   return r.json().catch(() => ({ ok: r.ok }));
 }
+// TODO(剧本库收敛,处置⑧): 本轮只做提取 UI 五层重复收敛,不合并 canon 编辑端点(面铺太大)。
+// 这里的行内"编辑摘要/删除"走 PATCH /canon;script-edit-canon.jsx 的 CanonEntityEditorView
+// 走独立的 REST /canon-entities (PUT/POST/DELETE)。两套端点长期应统一到 /canon-entities REST,
+// 但那是另一轮改造。
 async function patchCanon(scriptId, body) {
   const r = await fetch(`${API()}/api/scripts/${scriptId}/canon`, {
     method: 'PATCH', credentials: 'include',

@@ -29,6 +29,33 @@ import { ModuleMatrixOverview } from '../components/ModuleMatrixOverview.jsx';
 import { RebuildJobBanner } from '../components/RebuildJobBanner.jsx';
 import { RebuildEstimateModal } from '../components/RebuildEstimateModal.jsx';
 
+// 收敛处置④:「知识库中心」新增三张模块卡(后端并行注册,契约:
+// POST /api/scripts/{id}/rebuild/{module}[/estimate] 与既有 7 模块完全同构,
+// useScriptRebuild 的 cardProps(module) 天然适配,零改动即可接入)。
+const EXTRA_MODULE_CARDS = [
+  {
+    id: 'facts_refine',
+    titleKey: 'modules.facts_refine.title',
+    titleDefault: '章节摘要 LLM 精炼',
+    descKey: 'modules.facts_refine.desc',
+    descDefault: '把确定性残句摘要升级为 LLM 真摘要 + 故事内时间',
+  },
+  {
+    id: 'worldbook_enrich',
+    titleKey: 'modules.worldbook_enrich.title',
+    titleDefault: '世界书核心条目充实',
+    descKey: 'modules.worldbook_enrich.desc',
+    descDefault: '对力量体系/核心设定类条目做机制级充实',
+  },
+  {
+    id: 'world_key',
+    titleKey: 'modules.world_key.title',
+    titleDefault: '世界观切分回填',
+    descKey: 'modules.world_key.desc',
+    descDefault: '多世界书(无限流/穿越)按世界切段,LLM 确认边界',
+  },
+];
+
 export function useScriptRebuild(scriptId) {
   const { t } = useTranslation();
   const [statusPayload, setStatusPayload] = React.useState(null);
@@ -253,14 +280,27 @@ export function useScriptRebuild(scriptId) {
   };
 }
 
-/* ModuleRebuildPanel — 整 tab 用,把 matrix + banner + modal 合成一个 view.
-   ScriptDetailPanel 在 "模块" tab 直接 <ModuleRebuildPanel scriptId={s.id} /> */
+/* ModuleRebuildPanel — 「知识库中心」tab 用,把 matrix + banner + modal 合成一个 view.
+   ScriptDetailPanel 在 "modules"(知识库中心)tab 直接 <ModuleRebuildPanel scriptId={s.id} /> */
 export function ModuleRebuildPanel({ scriptId }) {
+  const { t } = useTranslation();
   const rb = useScriptRebuild(scriptId);
   return (
     <CSSpaceBetween size="l">
       <RebuildJobBanner {...rb.bannerProps} />
       <ModuleMatrixOverview {...rb.matrixProps} />
+      {/* 收敛处置④:三张新模块卡——与既有 7 模块走同一套 rb.cardProps/openEstimate 机制,
+          端点 POST /api/scripts/{id}/rebuild/{module}[/estimate] 自动成立(后端并行注册)。 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+        {EXTRA_MODULE_CARDS.map((m) => (
+          <ModuleStatusCard
+            key={m.id}
+            {...rb.cardProps(m.id)}
+            title={t(m.titleKey, { defaultValue: m.titleDefault })}
+            description={t(m.descKey, { defaultValue: m.descDefault })}
+          />
+        ))}
+      </div>
       <RebuildEstimateModal {...rb.modalProps} />
     </CSSpaceBetween>
   );

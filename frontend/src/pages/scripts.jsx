@@ -14,6 +14,8 @@ import { CardEditModal, cardSnippet, npcToUserCardBody } from './cards.jsx';
 import { NewGameModal } from './saves.jsx';
 import { ScriptReview } from './script-review.jsx';
 import { WorldbookEditorView } from './script-edit-worldbook.jsx';
+// 孤儿组件复活(处置⑦):kb_canon_entities 表格编辑器,原先零引用
+import { CanonEntityEditorView } from './script-edit-canon.jsx';
 import { credApiIdSet } from '../components/catalog-helpers.js';
 import { isCredentialsError } from '../lib/creds.js';
 import { lsGetJSON, lsSetJSON, lsRemove } from '../lib/storage.js';
@@ -529,7 +531,7 @@ function CoverFrame({ src, title, isOwner, onEdit }) {
 
 function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatus, currentUserId,
   pendingTab, onPendingTabConsumed,
-  onPlay, onContinueSave, onNewGame, onChapters, onReview, onExtractDone, onEmbed, onExport, onToggleVisibility, onDelete, onUnsubscribe, onEditOverrides, onReload }) {
+  onPlay, onContinueSave, onNewGame, onChapters, onReview, onExtractDone, onExport, onToggleVisibility, onDelete, onUnsubscribe, onEditOverrides, onReload }) {
   const { t } = useTranslation();
   const [tab, setTab] = useStatePL('overview');
 
@@ -797,7 +799,6 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
             <CSButton iconName="settings" onClick={() => setHistoryOpen(v => !v)}>{t('scripts.version.history_btn')}</CSButton>
             <CSButtonDropdown expandToViewport
               items={[
-                { id: 'embed', text: es?.running ? t('scripts.my.embedding') : t('scripts.my.embed_start'), iconName: 'search', disabled: !!es?.running },
                 { id: 'export', text: t('scripts.my.action_export'), iconName: 'download' },
                 { id: 'visibility', text: s.is_public ? t('scripts.my.action_unpublish') : t('scripts.my.action_publish'), iconName: s.is_public ? 'lock-private' : 'share' },
                 s.is_subscribed
@@ -806,8 +807,7 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
               ]}
               onItemClick={({ detail }) => {
                 const id = detail.id;
-                if (id === 'embed') onEmbed(s);
-                else if (id === 'export') onExport(s);
+                if (id === 'export') onExport(s);
                 else if (id === 'visibility') onToggleVisibility(s);
                 else if (id === 'delete') onDelete(s);
                 else if (id === 'unsubscribe') onUnsubscribe && onUnsubscribe(s);
@@ -902,9 +902,11 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
             ]} />
             {/* phase_rebuild_panel: 7 模块状态矩阵 — 取代旧 embed 单卡 */}
             <ModuleMatrixOverview {...rb.matrixProps} />
-            {/* embed 4 子卡:chunks / cards / worldbook / canon,各独立 include 重嵌 */}
+            {/* 收敛处置③:embed 4 子卡改只读进度展示——重嵌操作统一收口到「知识库中心」
+                (ModuleRebuildPanel → embeddings 模块卡),这里不再传 onRebuild,
+                ModuleStatusCard 无 onRebuild 时天然不渲染"重做"按钮。 */}
             <CSSpaceBetween size="s">
-              <CSHeader variant="h3" description={t('scripts.editor.embed_breakdown_desc', { defaultValue: '向量索引按内容类型拆分,可选择性重嵌。' })}>
+              <CSHeader variant="h3" description={t('scripts.editor.embed_breakdown_desc', { defaultValue: '向量索引按内容类型拆分的只读进度;重嵌请去「知识库中心」。' })}>
                 {t('scripts.editor.embed_breakdown_title', { defaultValue: '向量索引' })}
               </CSHeader>
               <CSColumnLayout columns={2} variant="text-grid" minColumnWidth={300}>
@@ -926,7 +928,6 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
                       activeJobId={rb.activeJob ? (rb.activeJob.job_id || rb.activeJob.id) : null}
                       title={t(`scripts.editor.embed_kind_${kind}`, { defaultValue: kind })}
                       description={t('scripts.editor.embed_kind_desc', { defaultValue: 'pgvector embedding_vec 列' })}
-                      onRebuild={() => rb.openEstimate({ module: 'embeddings', options: { include: [kind] } })}
                     />
                   );
                 })}
@@ -946,32 +947,15 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
           </CSSpaceBetween>
         ) },
         { id: 'world', label: t('scripts.editor.tab_world'), content: (
-          <CSSpaceBetween size="l">
-            <ModuleStatusCard
-              {...rb.cardProps('worldbook')}
-              extraActions={
-                <CSSpaceBetween direction="horizontal" size="xxs">
-                  <CSButton iconName="add-plus"
-                    onClick={() => rb.openEstimate({ module: 'worldbook', options: { source: 'canon' } })}>
-                    {t('scripts.editor.wb_from_canon', { defaultValue: '从知识库人物反推(免费)' })}
-                  </CSButton>
-                  <CSButton iconName="gen-ai" variant="primary"
-                    onClick={() => rb.openEstimate({ module: 'worldbook', options: { source: 'llm' } })}>
-                    {t('scripts.editor.wb_llm_rich', { defaultValue: 'LLM 重提富化' })}
-                  </CSButton>
-                </CSSpaceBetween>
-              }
-            />
-            <WorldbookEditorView script={s} />
-          </CSSpaceBetween>
+          /* 收敛处置⑤:重做卡从内容 tab 删除——本 tab 只留编辑器本体,
+             重建/富化操作统一去「知识库中心」。 */
+          <WorldbookEditorView script={s} />
         ) },
         { id: 'npc', label: t('scripts.editor.tab_npc'), content: (
           <CSSpaceBetween size="l">
-            <ModuleStatusCard
-              {...rb.cardProps('cards')}
-              title={t('scripts.editor.tab_npc')}
-              description={t('scripts.editor.cards_desc', { defaultValue: 'NPC 角色卡(可玩),与知识库人物条目不同' })}
-            />
+            {/* 收敛处置⑤/⑥:重做卡 + "AI 复核人名/语义" 均迁出本 tab——
+                前者去「知识库中心」的 cards 模块卡,后者迁到「知识库中心」角色卡分组
+                (ModuleRebuildPanel 内 cards 卡旁的次按钮)。本 tab 只留 NPC 列表本体。 */}
             <CSCards loading={loading && npc == null} loadingText={t('scripts.editor.loading_npc')}
             items={npc || []} trackBy="id"
             cardsPerRow={[{ cards: 1 }, { minWidth: 480, cards: 2 }]}
@@ -979,11 +963,6 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
               <CSHeader counter={`(${(npc || []).length})`}
                 actions={
                   <CSSpaceBetween direction="horizontal" size="xs">
-                    {isOwner && (npc || []).length >= 2 && (
-                      <CSButton iconName="search" onClick={() => setAuditOpen(true)}>
-                        {t('scripts.audit.btn', { defaultValue: 'AI 复核人名/语义' })}
-                      </CSButton>
-                    )}
                     <CSButton iconName="add-plus" onClick={() => setNpcEdit({ card: null, isNew: true })}>{t('scripts.editor.add_npc')}</CSButton>
                   </CSSpaceBetween>
                 }>
@@ -1051,22 +1030,19 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
           </CSSpaceBetween>
         ) },
         { id: 'canon-editor', label: t('scripts.editor.tab_canon', { defaultValue: '知识库人物' }), content: (
-          <CSSpaceBetween size="l">
-            <ModuleStatusCard
-              {...rb.cardProps('canon')}
-              description={t('scripts.editor.canon_desc', { defaultValue: 'kb_canon_entities — LLM 抽出的人物/组织/地点等规范化条目;NPC 角色卡是另一码事。' })}
-            />
-            <CSBox color="text-body-secondary" fontSize="body-s">
-              {t('scripts.editor.canon_editor_todo', { defaultValue: 'kb_canon_entities 表格编辑器:见 /api/scripts/{id}/canon — 表格视图在另一 phase 落地。当前可用"重做"按钮重新抽取。' })}
-            </CSBox>
-          </CSSpaceBetween>
+          /* 收敛处置⑤⑦:重做卡删除(去知识库中心);孤儿组件 CanonEntityEditorView 接线——
+             它自带 GET/PUT/POST/DELETE /api/scripts/{id}/canon-entities 全套 CRUD(后端已存在,
+             非孤儿端点),按 ownerId/currentUserId 走只读闸。 */
+          <CanonEntityEditorView scriptId={s.id} ownerId={s.owner_id} currentUserId={currentUserId} />
         ) },
         { id: 'timeline', label: t('scripts.editor.tab_timeline'), content: (
           <CSSpaceBetween size="l">
-            <ModuleStatusCard
-              {...rb.cardProps('anchors')}
-              description={t('scripts.editor.anchors_desc', { defaultValue: 'script_timeline_anchors,从 chapter_facts 的故事时间标签构建,零 LLM' })}
-            />
+            {/* 收敛处置⑦:孤儿组件 AnchorEditorView 通读后发现它期望 GET /api/scripts/{id}/anchors
+                (列表,带 phase/chapter 过滤)做初始加载,但后端 script_edit.py 只注册了
+                PUT/POST/DELETE /api/scripts/{id}/anchors(单条),没有对应的列表 GET 路由——
+                接上会导致组件首次加载即 404 卡死。按任务指示降级:时间线 tab 保持现有只读列表
+                (数据源 window.api.scripts.timeline,与 AnchorEditorView 期望的端点不同),
+                不接 AnchorEditorView。重做卡按处置⑤删除,去知识库中心统一操作。 */}
             {(loading && tl == null)
               ? <CSBox color="text-body-secondary">{t('common.loading')}</CSBox>
               : (!tl || tl.length === 0)
@@ -1106,13 +1082,32 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
                   </CSSpaceBetween>}
           </CSSpaceBetween>
         ) },
-        { id: 'modules', label: t('scripts.editor.tab_modules', { defaultValue: '模块' }), content: (
-          /* 集中视图:7 模块矩阵汇总,跟 overview 的 matrix 数据源一致,但这里独占整 tab 方便高密度操作 */
-          <ModuleRebuildPanel scriptId={s.id} />
-        ) },
-        { id: 'extract', label: t('scripts.editor.tab_extract'), content: (
-          /* KbExtractPanel 现仅承担"一键全量 LLM 抽取"(scope=full);单模块重做下放到上述各 tab */
-          <KbExtractPanel script={s} onDone={onExtractDone} />
+        { id: 'modules', label: t('scripts.kb_center', { defaultValue: '知识库中心' }), content: (
+          /* 收敛处置④⑥:「模块」tab 升级为「知识库中心」——所有重建/提取操作的唯一聚合地。
+             矩阵(ModuleRebuildPanel,含 facts_refine/worldbook_enrich/world_key 三张新卡)
+             + 角色卡分组的 AI 复核次按钮(原 NPC tab 迁来) + 底部「全量重新提取」区块
+             (原独立 extract tab 并入,KbExtractPanel 仅剩 full scope)。 */
+          <CSSpaceBetween size="l">
+            <ModuleRebuildPanel scriptId={s.id} />
+            {isOwner && (npc || []).length >= 2 && (
+              <CSContainer header={
+                <CSHeader variant="h3" description={t('scripts.audit.desc_short', { defaultValue: '合并同人多卡、锁定真主角、删非人名卡——按需触发,不进导入流水线。' })}>
+                  {t('scripts.audit.section_title', { defaultValue: 'NPC 角色卡 · AI 复核' })}
+                </CSHeader>
+              }>
+                <CSButton iconName="search" onClick={() => setAuditOpen(true)}>
+                  {t('scripts.audit.btn', { defaultValue: 'AI 复核人名/语义' })}
+                </CSButton>
+              </CSContainer>
+            )}
+            <CSContainer header={
+              <CSHeader variant="h3" description={t('scripts.editor.extract_full_desc', { defaultValue: '重新跑一遍全量 LLM 抽取(章节摘要/知识库人物/世界书/锚点全刷新)。单模块重做请用上面的矩阵卡片。' })}>
+                {t('scripts.editor.extract_full_title', { defaultValue: '全量重新提取' })}
+              </CSHeader>
+            }>
+              <KbExtractPanel script={s} onDone={onExtractDone} />
+            </CSContainer>
+          </CSSpaceBetween>
         ) },
         { id: 'gm-style', label: t('scripts.page.tab_gm_style'), content: (
           /* GM 倾向性 6 滑块(剧本级):篇幅/镜头/戏剧密度/心理/悬念/引导,仅 owner 可写 */
@@ -1320,41 +1315,9 @@ function ScriptsListView() {
   const [scriptPage, setScriptPage] = useStatePL(1);
   const SCRIPT_PAGE_SIZE = 50;
 
-  // task 51: 触发某 script 的向量化(GET status 也走这里 polling)
-  const triggerEmbed = React.useCallback(async (sid) => {
-    try {
-      const r = await fetch(`${window.__API_BASE || ""}/api/scripts/${sid}/embed`, {
-        method: "POST", credentials: "include",
-      });
-      if (!r.ok && r.status !== 200) {
-        window.__apiToast?.(t('scripts.toast.embed_fail'), { kind: "danger", detail: `HTTP ${r.status}`, duration: 5000 });
-        return;
-      }
-      const j = await r.json();
-      if (j.ok === false) {
-        // credentials_required → 用人话引导去 RAG 设置，而不是裸技术错
-        const isCredsError = j.code === 'credentials_required' || j.error_key === 'credentials_required' || j.needs_credentials;
-        if (isCredsError) {
-          const hint = j.hint || j.error || t('scripts.toast.embed_no_embedder_hint');
-          window.__apiToast?.(t('scripts.toast.embed_no_embedder'), {
-            kind: "warn",
-            detail: hint + ' — ' + t('scripts.toast.embed_go_rag_settings'),
-            duration: 8000,
-            action: { label: t('scripts.import.go_api_settings'), onClick: () => { plNavigate('settings-models'); } },
-          });
-        } else {
-          // 其他失败(含 405 relay 错误被翻译成人话后从 j.error 传出)
-          window.__apiToast?.(t('scripts.toast.embed_fail'), { kind: "danger", detail: j.error || t('scripts.toast.unknown_error'), duration: 5000 });
-        }
-        return;
-      }
-      window.toast?.(t('scripts.toast.embed_started'), { kind: "ok", detail: t('scripts.toast.embed_started_detail'), duration: 3000 });
-      setEmbedStatus(s => ({ ...s, [sid]: j.status }));
-    } catch (e) {
-      window.__apiToast?.(t('scripts.toast.embed_fail'), { kind: "danger", detail: String(e), duration: 3000 });
-    }
-  }, [t]);
-
+  // 收敛处置②:triggerEmbed(POST /api/scripts/{id}/embed,后端自认废弃 alias)已删——
+  // 触发入口收敛到知识库中心(ModuleRebuildPanel → rebuild/embeddings)。这里只保留
+  // GET /embed/status 的只读轮询,喂概览 tab 的"向量索引"只读进度子卡。
   // task 51: 自动 poll 所有 running 状态的 script,每 3s 刷一次 progress
   useEffectPL(() => {
     const runningIds = Object.entries(embedStatus).filter(([, v]) => v && v.running).map(([k]) => k);
@@ -1491,22 +1454,12 @@ function ScriptsListView() {
   const [reviewScript, setReviewScript] = useStatePL(null); // Phase E.1: KB 复核 modal
   const [importOpen, setImportOpen] = useStatePL(false); // 导入剧本全页覆盖(替代侧栏 #scripts-import)
 
-  // 每行操作下拉项 + 向量化状态(task 51)
+  // 每行操作下拉项(收敛处置①:去 action_review/embed——复核入口唯一化到详情面板顶部按钮,
+  // 嵌入收敛到知识库中心;列表下拉只保留列表级动作)
   const rowActions = (s) => {
-    const es = embedStatus[s.id];
-    const totalDone = es ? (es.chunks.done + es.cards.done + es.worldbook.done) : 0;
-    const totalAll = es ? (es.chunks.total + es.cards.total + es.worldbook.total) : 0;
-    const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
-    const fullyDone = es && !es.running && totalAll > 0 && totalDone >= totalAll;
-    const running = es && es.running;
-    const embedText = running ? t('scripts.my.embed_running', { pct })
-      : fullyDone ? t('scripts.my.embed_done', { n: totalAll })
-      : t('scripts.my.embed_start');
     return [
       { id: 'chapters', text: t('scripts.my.action_chapters'), iconName: 'file' },
       { id: 'overrides', text: t('scripts.my.action_overrides'), iconName: 'edit' },
-      { id: 'review', text: t('scripts.my.action_review'), iconName: 'status-info' },
-      { id: 'embed', text: embedText, iconName: fullyDone ? 'status-positive' : 'gen-ai', disabled: !!running },
       { id: 'visibility', text: s.is_public ? t('scripts.my.action_unpublish') : t('scripts.my.action_publish'), iconName: s.is_public ? 'lock-private' : 'share' },
       { id: 'export', text: t('scripts.my.action_export'), iconName: 'download', disabled: exportingId === s.id },
       s.is_subscribed
@@ -1517,8 +1470,6 @@ function ScriptsListView() {
   const onRowAction = (s, id) => {
     if (id === 'chapters') setChaptersOpen(s);
     else if (id === 'overrides') setOverridesScript(s);
-    else if (id === 'review') setReviewScript(s);
-    else if (id === 'embed') triggerEmbed(s.id);
     else if (id === 'export') onExportPack(s);
     else if (id === 'visibility') onToggleVisibility(s);
     else if (id === 'delete') onDelete(s);
@@ -1621,7 +1572,6 @@ function ScriptsListView() {
         onChapters={setChaptersOpen}
         onReview={setReviewScript}
         onExtractDone={reload}
-        onEmbed={(s) => triggerEmbed(s.id)}
         onExport={onExportPack}
         onToggleVisibility={onToggleVisibility}
         onDelete={onDelete}
@@ -3476,9 +3426,10 @@ function _stageIndicator(status) {
 function KbExtractPanel({ script, onDone }) {
   const { t } = useTranslation();
   const sid = script.id;
-  // scope: 'full' = 全量重提取(LLM 重型),'embed_only' = 仅重嵌入向量(无 LLM,$0)
-  // 旧"提取"按钮其实=重新导入剧本,改成显式 scope 让用户清楚选哪种
-  const [scope, setScope] = useStatePL('full');
+  // 收敛处置⑥:scope 收窄到唯一值 'full'——worldbook_only/anchors_only/embed_only
+  // 与知识库中心的单模块重做(rebuild/{module})完全重复,已删除。本面板只承担
+  // "一键全量重新提取"(重跑整套 LLM 抽取流水线)。
+  const scope = 'full';
   const [algorithm, setAlgorithm] = useStatePL('arc');
   // Provider/Model 统一由 AgentModelPicker(prefPrefix=extractor)管理:它解析用户
   // 已配凭据 + 偏好后通过 onChange 回传 {api_id, model_real_name},这里只持有回传值
@@ -3561,11 +3512,8 @@ function KbExtractPanel({ script, onDone }) {
 
   // 当前参数 vs 估算时参数:不一致(用户改了参数)= stale,需要重新估算
   const _estimateStale = !estimatedHash || estimatedHash !== _paramsHash();
-  // 零 LLM 的 scope (worldbook_only / anchors_only / embed_only) 都 $0,不调 LLM,
-  // **不需要强制估算** — 之前 _canStart 一律要求估算导致这 3 个 scope 永远点不动 "开始提取"。
-  const _isZeroLlmScope = scope === 'worldbook_only' || scope === 'anchors_only' || scope === 'embed_only';
-  // 开始按钮 gate:full scope 需要非过期估算;零 LLM scope 直接放行。
-  const _canStart = _isZeroLlmScope || (!_estimateStale && estimate && estimate.ok !== false);
+  // scope 恒为 'full',永远走 LLM,必须先估算才能开始。
+  const _canStart = !_estimateStale && estimate && estimate.ok !== false;
 
   const startStream = (jobId) => {
     setPhase('running');
@@ -3611,20 +3559,18 @@ function KbExtractPanel({ script, onDone }) {
   return (
     <CSSpaceBetween size="l">
       <CSSpaceBetween direction="horizontal" size="xs">
-        {/* 零 LLM scope 不需要估算按钮(估算返 $0 没意义) */}
-        {phase === 'config' && !_isZeroLlmScope && (
+        {phase === 'config' && (
           <CSButton onClick={doEstimate} loading={estimating} variant={_estimateStale ? 'primary' : 'normal'}>{t('scripts.review.estimate_cost')}</CSButton>
         )}
         {(phase === 'config' || phase === 'error') && (
-          <CSButton variant={(_isZeroLlmScope || !_estimateStale) ? 'primary' : 'normal'} iconName="gen-ai"
+          <CSButton variant={!_estimateStale ? 'primary' : 'normal'} iconName="gen-ai"
             onClick={doStart} disabled={!_canStart}>
             {t('scripts.review.start_extract')}
           </CSButton>
         )}
         {phase === 'running' && <CSButton onClick={doCancel}>{t('scripts.review.cancel_job')}</CSButton>}
       </CSSpaceBetween>
-      {/* 强制估算环节:full scope 才适用;零 LLM scope 直接跳过 */}
-      {phase === 'config' && _estimateStale && !_isZeroLlmScope && (
+      {phase === 'config' && _estimateStale && (
         <CSAlert type="info">{t('scripts.review.must_estimate_first')}</CSAlert>
       )}
       {err && <CSAlert type="error">{err}</CSAlert>}
@@ -3634,51 +3580,27 @@ function KbExtractPanel({ script, onDone }) {
             <CSBox color="text-body-secondary" fontSize="body-s">
               {t('scripts.review.desc')}
             </CSBox>
-            {/* 提取范围 — 4 选 1。除"全量"外都零 LLM,从已 persist 的中间产物重建 */}
-            <CSFormField label={t('scripts.review.scope')}
-              description={t('scripts.review.scope_desc')}>
-              <CSSegmentedControl selectedId={scope}
-                options={[
-                  { id: 'full',           text: t('scripts.review.scope_full') },
-                  { id: 'worldbook_only', text: t('scripts.review.scope_worldbook_only') },
-                  { id: 'anchors_only',   text: t('scripts.review.scope_anchors_only') },
-                  { id: 'embed_only',     text: t('scripts.review.scope_embed_only') },
-                ]}
-                onChange={({ detail }) => setScope(detail.selectedId)} />
-            </CSFormField>
-            {scope === 'embed_only' && (
-              <CSAlert type="info">{t('scripts.review.scope_embed_only_note')}</CSAlert>
-            )}
-            {scope === 'worldbook_only' && (
-              <CSAlert type="info">{t('scripts.review.scope_worldbook_only_note')}</CSAlert>
-            )}
-            {scope === 'anchors_only' && (
-              <CSAlert type="info">{t('scripts.review.scope_anchors_only_note')}</CSAlert>
-            )}
-            {scope === 'full' && (
+            {/* 收敛处置⑥:scope 选择器已删——本面板只剩「全量重新提取」一种模式,
+                worldbook_only/anchors_only/embed_only 与知识库中心矩阵卡片完全重复。 */}
             <CSFormField label={t('scripts.review.algorithm')}>
               <CSSegmentedControl selectedId={algorithm}
                 options={[{ id: 'arc', text: t('scripts.review.algo_arc') }, { id: 'per_chapter', text: t('scripts.review.algo_per_chapter') }]}
                 onChange={({ detail }) => setAlgorithm(detail.selectedId)} />
             </CSFormField>
-            )}
-            {scope === 'full' && (
-              <CSColumnLayout columns={2}>
-                <CSFormField label={t('scripts.review.chapter_min')}
-                  description={t('scripts.review.chapter_range_desc')}>
-                  <CSInput type="number" value={chapterMin}
-                    placeholder={t('scripts.review.chapter_min_placeholder')}
-                    onChange={({ detail }) => setChapterMin(detail.value)} />
-                </CSFormField>
-                <CSFormField label={t('scripts.review.chapter_max')}>
-                  <CSInput type="number" value={chapterMax}
-                    placeholder={t('scripts.review.chapter_max_placeholder')}
-                    onChange={({ detail }) => setChapterMax(detail.value)} />
-                </CSFormField>
-              </CSColumnLayout>
-            )}
-            {scope === 'full' && (
-              <CSSpaceBetween size="l">
+            <CSColumnLayout columns={2}>
+              <CSFormField label={t('scripts.review.chapter_min')}
+                description={t('scripts.review.chapter_range_desc')}>
+                <CSInput type="number" value={chapterMin}
+                  placeholder={t('scripts.review.chapter_min_placeholder')}
+                  onChange={({ detail }) => setChapterMin(detail.value)} />
+              </CSFormField>
+              <CSFormField label={t('scripts.review.chapter_max')}>
+                <CSInput type="number" value={chapterMax}
+                  placeholder={t('scripts.review.chapter_max_placeholder')}
+                  onChange={({ detail }) => setChapterMax(detail.value)} />
+              </CSFormField>
+            </CSColumnLayout>
+            <CSSpaceBetween size="l">
                 {/* Provider+Model:全站唯一实现 AgentModelPicker(extractor 偏好)。
                     它只列出用户已配凭据的 provider、给「未配 key」告警、解析后通过
                     onChange 回传 {api_id, model_real_name} 供 cfgBody() 拼请求体;
@@ -3703,7 +3625,6 @@ function KbExtractPanel({ script, onDone }) {
                   <CSFormField label={t('scripts.review.max_usd')}><CSInput type="number" value={maxUsd} onChange={({ detail }) => setMaxUsd(detail.value)} /></CSFormField>
                 </CSColumnLayout>
               </CSSpaceBetween>
-            )}
 
             {estimate && estimate.ok !== false && (
               <CSAlert type="info" header={t('scripts.review.cost_estimate')}>

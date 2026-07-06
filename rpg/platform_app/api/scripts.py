@@ -160,6 +160,13 @@ async def api_script_modules_status(script_id: int, user=Depends(require_user)):
             "rebuild_embeddings": "embeddings",
             "full_pipeline": "full_pipeline",
             "llm_extract": "llm_extract",
+            # 三个新模块(facts_refine/worldbook_enrich/world_key)。这三个不在下方
+            # modules-status 的 7 张固定卡片里(它们是按需精炼/充实操作，非"是否已建立"
+            # 状态型模块)，但登记进这份 kind→module 映射保持与 REBUILD_MODULES 的
+            # job kind 命名一致，避免这三类 job 的 kind 在此表里"找不到"而被静默丢弃。
+            "rebuild_facts_refine": "facts_refine",
+            "rebuild_worldbook_enrich": "worldbook_enrich",
+            "rebuild_world_key": "world_key",
         }
         job_rows = db.execute(
             "select kind, job_id, status, finished_at, created_at "
