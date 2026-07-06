@@ -200,17 +200,18 @@ function ExperimentPanel({ expId }) {
     if (ticking) return;
     setTicking(true);
     try {
+      // 后端已异步化:立即返回 started,推进在后台完成(约1分钟),日志轮询自然刷出。
       const r = await window.api.rath.tick(expId);
       if (!r || r.ok === false) {
-        window.__apiToast?.(t('rath_page.toast.tick_declined', { defaultValue: '本次演算未执行' }), { kind: 'warn', detail: r?.error });
+        window.__apiToast?.(t('rath_page.toast.tick_declined', { defaultValue: '本次推进未执行' }), { kind: 'warn', detail: r?.error || r?.reason });
       } else {
-        const n = Array.isArray(r.wrote_events) ? r.wrote_events.length : 0;
-        const sceneNote = r.scene?.scene_summary ? ` · ${r.scene.scene_summary}` : '';
-        window.__apiToast?.(t('rath_page.toast.tick_done', { defaultValue: '演算完成', count: n }) + sceneNote, { kind: 'ok', duration: 3200 });
+        window.__apiToast?.(t('rath_page.toast.tick_started', { defaultValue: '已开始推进,完成后会出现在日志中(约1分钟)' }), { kind: 'ok', duration: 3600 });
+        setTimeout(() => load(true), 35000);
+        setTimeout(() => load(true), 80000);
       }
-      await load(false);
+      await load(true);
     } catch (e) {
-      window.__apiToast?.(t('rath_page.toast.tick_failed', { defaultValue: '演算请求失败' }), { kind: 'danger', detail: e?.message });
+      window.__apiToast?.(t('rath_page.toast.tick_failed', { defaultValue: '推进请求失败' }), { kind: 'danger', detail: e?.message });
     } finally {
       setTicking(false);
     }

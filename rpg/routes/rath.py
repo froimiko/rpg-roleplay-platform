@@ -122,10 +122,17 @@ async def api_rath_tick(exp_id: int, user=Depends(get_current_user)):
     with connect() as db:
         if not _own_exp(db, exp_id, user["id"]):
             return JSONResponse({"ok": False, "error": "实验不存在"}, status_code=404)
+    # 异步化(用户实锤:同步跑两次 LLM 需 60-100s,前端超时误报失败):
+    # 立即返回 started,tick 在后台线程跑完落日志,前端轮询自然刷出。
     import asyncio
     from rath.engine import tick_experiment
-    out = await asyncio.to_thread(tick_experiment, int(exp_id), manual=True)
-    return out if out.get("ok") else JSONResponse(out, status_code=409)
+    task = asyncio.create_task(asyncio.to_thread(tick_experiment, int(exp_id), manual=True))
+    _bg = getattr(api_rath_tick, "_bg_tasks", set())
+    api_rath_tick._bg_tasks = _bg
+    _bg.add(task)
+    task.add_done_callback(_bg.discard)
+    return {"ok": True, "started": True,
+            "note": "已开始推进(约1分钟),完成后会出现在日志中。"}
 
 
 @router.post("/api/rath/experiments/{exp_id}/{action}")

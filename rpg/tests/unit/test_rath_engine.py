@@ -124,3 +124,12 @@ def test_pair_excludes_generic_names_and_player():
 def test_pair_all_generic_falls_back_to_cast():
     s = {"npc_agendas": {}, "relationships": {"少女": "未知", "陌生人": "警惕"}}
     assert select_scene_pair(s, extra_candidates=["林有德", "薇欧拉"]) == ("林有德", "薇欧拉")
+
+
+def test_player_in_scene_rules():
+    """化身自主行动:player_in_scene 时规则3变为按设定驱动+状态守恒+不替玩家做重大决定。"""
+    sys_p, _ = build_scene_prompts(_snap(), "汉娜", "阿尔", player_in_scene="阿尔")
+    assert "按其【设定】驱动" in sys_p and "不替玩家做重大不可逆决定" in sys_p
+    assert "玩家不在场" not in sys_p
+    sys_p2, _ = build_scene_prompts(_snap(), "汉娜", "伊万")
+    assert "玩家不在场" in sys_p2

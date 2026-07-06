@@ -92,6 +92,7 @@ def build_scene_prompts(
     elapsed_hint: str = "", recent_events: list[str] | None = None,
     world_context: str = "", directive: str = "",
     extra_dossiers: dict | None = None,
+    player_in_scene: str = "",
 ) -> tuple[str, str]:
     """构造对手戏 prompt。防剧透同心跳口径:只喂快照里已有的信息 + 世界书要点
     (world_context,拆书审计后补:离线戏没有世界观材料会滑向平庸写实,战姬味丢失)。"""
@@ -100,13 +101,20 @@ def build_scene_prompts(
     location = str(player.get("current_location") or "").strip()
     wtime = str(world.get("time") or "").strip()
     ev_lines = "\n".join(f"- {e}" for e in (recent_events or [])[:4]) or "(暂无)"
+    _rule3 = (
+        (f"3. 本场包含玩家角色【{player_in_scene}】:由你按其【设定】驱动其自主行动。"
+         "行动必须严格符合其当前状态(如昏迷则只能有微弱生理反应/本能的力量外溢/梦呓,绝不能清醒对话);"
+         "小步演进;**不替玩家做重大不可逆决定**(不缔约/不杀伤/不离开当前地点/不暴露其最深的秘密)。\n")
+        if player_in_scene else
+        "3. 玩家不在场:对话中可以提到玩家(用其名字),但玩家绝不出现、绝不说话。\n"
+    )
     system_prompt = (
-        "你是离线世界模拟器:玩家不在场时,两位 NPC 之间发生一小段真实互动。\n"
+        "你是离线世界模拟器:玩家不在场时,世界中的角色之间发生一小段真实互动。\n"
         "铁律:\n"
         "1. 只能使用下面档案、世界观要点与近况中给出的信息,不得发明新的重要人物/地点/物品。\n"
         "2. 地理连贯:场景只能发生在两人当前合理所在之处;远方的人与事只能被谈及,不能到场;\n"
         "   若玩家所在地未知,场景应设在与两人身份相符的日常场所,禁止凭空编造军事/战场场景。\n"
-        "3. 玩家不在场:对话中可以提到玩家(用其名字),但玩家绝不出现、绝不说话。\n"
+        + _rule3 +
         f"4. 对话不超过 {MAX_TRANSCRIPT_LINES} 行,每行不超过 {MAX_LINE_CHARS} 字;小事即可,不要写重大转折。\n"
         "5. **不要复读近期动向里已发生的对话**:写这段时间里【新】的小进展,让世界前进一小步;\n"
         "   世界观要点里的元素(时局/势力/超常力量的传闻)可以自然进入闲谈,体现这个世界的质感。\n"

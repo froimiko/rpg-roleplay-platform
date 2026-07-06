@@ -258,13 +258,26 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                 scene_pair = select_scene_pair(
                     snap, extra_candidates=cast_names,
                     exclude_names={player_name} if player_name else None)
+                # 玩家化身自主行动(用户需求):偶数场次由玩家角色按【设定】参演——
+                # 化身在玩家离线时也活着(状态守恒:昏迷只能梦呓;绝不替玩家做重大决定)。
+                player_in_scene = ""
+                if player_name and scene_pair and int(claim["scenes_today"]) % 2 == 0:
+                    scene_pair = (scene_pair[0], player_name)
+                    player_in_scene = player_name
+                    _pl = snap.get("player") or {}
+                    cast_dossiers = dict(cast_dossiers)
+                    cast_dossiers[player_name] = (
+                        "玩家角色(按其设定由模拟器驱动,状态守恒);"
+                        + str(_pl.get("role") or "")[:50] + ";"
+                        + str(_pl.get("background") or _pl.get("identity_role_desc") or "")[:180]
+                    )
                 if scene_pair:
                     from agents._harness import call_agent_json
                     sys_p, usr_p = build_scene_prompts(
                         snap, scene_pair[0], scene_pair[1],
                         elapsed_hint=elapsed_hint, recent_events=recent + wrote,
                         world_context=world_context, directive=directive,
-                        extra_dossiers=cast_dossiers)
+                        extra_dossiers=cast_dossiers, player_in_scene=player_in_scene)
                     text, _usage = call_agent_json(
                         api_id=api_id, model=model, system_prompt=sys_p, user_prompt=usr_p,
                         user_id=user_id, tool_schema=None, max_tokens=900, timeout_sec=40,

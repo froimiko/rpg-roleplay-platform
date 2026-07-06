@@ -505,7 +505,15 @@ def _build_initial_snapshot(
     name = role = background = ""
     # task 91: 没传 new_card/character 时,默认拿用户的"默认 persona",
     # 没有就回退到最近的 user_character_card。避免新建存档总是空玩家。
-    if not isinstance(new_card, dict) and not isinstance(character, dict):
+    # 修(实锤:菲莉丝/周镇北档 player 被酒馆导入的芙兰朵露卡顶替):调用方给了完整
+    # identity 却没显式选角色卡时,identity 就是玩家本体 —— 不该再落 task 91 的
+    # 「默认 persona」回退去抓卡库里无关的最近一张卡。
+    if (not isinstance(new_card, dict) and not isinstance(character, dict)
+            and isinstance(identity, dict) and str(identity.get("name") or "").strip()):
+        name = str(identity.get("name") or "").strip()
+        role = str(identity.get("role") or "").strip()
+        background = str(identity.get("background") or "").strip()
+    elif not isinstance(new_card, dict) and not isinstance(character, dict):
         try:
             from . import user_cards as _ucards
             personas = _ucards.list_personas(user_id).get("items", [])
