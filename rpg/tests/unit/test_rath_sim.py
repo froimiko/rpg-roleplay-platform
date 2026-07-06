@@ -381,3 +381,29 @@ def test_night_curfew_respects_voluntary_lodging_and_legacy_state():
     assert a["location"] == "德绍旅馆"
     if len(names) > 1:
         assert b["activity"] == "睡眠" and b["location"] == "河岸"
+
+
+def test_night_gate_rejects_leaving_home_lowtension():
+    from rath.sim import enforce_night
+    sim = init_sim_state(_snapshot(), _cards(), [], clock_min=25 * 60)  # 次日 01:00
+    npc = next(n for n, c in sim["cast"].items() if c.get("kind") != "player")
+    sim.setdefault("places", []).append("水泥厂东边仓库")
+    enforce_night(sim)  # 拍首:在家睡眠
+    out = apply_scheduler_output(sim, {"cast_updates": {npc: {"location": "水泥厂东边仓库", "activity": "搜查痕迹"}}})
+    assert any("夜间不外出" in r for r in out["rejected"])
+    assert sim["cast"][npc]["location"] == sim["cast"][npc]["home"]
+
+
+def test_night_gate_spares_hot_thread_and_daytime():
+    sim = init_sim_state(_snapshot(), _cards(), [], clock_min=25 * 60)
+    npc = next(n for n, c in sim["cast"].items() if c.get("kind") != "player")
+    sim.setdefault("places", []).append("水泥厂东边仓库")
+    sim["threads"] = [{"id": "t9", "desc": "追凶", "tension": 9, "participants": [npc]}]
+    out = apply_scheduler_output(sim, {"cast_updates": {npc: {"location": "水泥厂东边仓库"}}})
+    assert not any("夜间不外出" in r for r in out["rejected"])
+    assert sim["cast"][npc]["location"] == "水泥厂东边仓库"
+    sim2 = init_sim_state(_snapshot(), _cards(), [], clock_min=14 * 60)  # 白天
+    npc2 = next(n for n, c in sim2["cast"].items() if c.get("kind") != "player")
+    sim2.setdefault("places", []).append("水泥厂东边仓库")
+    out2 = apply_scheduler_output(sim2, {"cast_updates": {npc2: {"location": "水泥厂东边仓库"}}})
+    assert sim2["cast"][npc2]["location"] == "水泥厂东边仓库"

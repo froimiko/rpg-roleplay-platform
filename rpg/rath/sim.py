@@ -223,6 +223,12 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
     # 全名+首段简称都算提及玩家(「菲莉丝·卡俄斯」→「菲莉丝」,防简称绕过装置闸)
     _pkeys = [x for x in {_pname, _pname.split("·")[0] if _pname else ""} if len(x) >= 2]
     _APPARATUS = ("共振", "能量转移", "能量核心", "激活条件", "装置")
+    # 夜间外出闸(浸泡实锤:夜律拍首拉回家,同拍调度又把人派去水泥厂搜查=夜归被覆盖。
+    # 夜间低张力角色拒收「离家」位置变更;回家方向放行;高张力线参与者豁免)
+    _m = int(sim.get("clock_min") or 0) % 1440
+    _night = _m >= NIGHT_START or _m < NIGHT_END
+    _hot = {p for t in (sim.get("threads") or [])
+            if int(t.get("tension") or 0) >= 8 for p in (t.get("participants") or [])}
 
     def _gate(text: str, what: str) -> bool:
         t = str(text or "")
@@ -252,6 +258,11 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
                 if unconscious and str(c.get("location") or "") != "未知地点":
                     # 守恒=不可移动;但「落定未知位置」不是移动(实锤:昏迷玩家位置永远卡死未知)
                     rejected.append("玩家昏迷:位置不可变")
+                    continue
+                _home = str(c.get("home") or "").strip()
+                if (_night and rk not in _hot and _home and _home != "未知地点"
+                        and v != _home and str(c.get("location") or "") == _home):
+                    rejected.append(f"{rk}:夜间不外出(低张力)")
                     continue
                 if v not in (sim.get("places") or []):
                     if not _gate(v, "新地点"):
