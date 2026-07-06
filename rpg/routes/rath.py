@@ -132,7 +132,7 @@ async def api_rath_tick(exp_id: int, user=Depends(get_current_user)):
 async def api_rath_action(exp_id: int, action: str, request: Request, user=Depends(get_current_user)):
     if not _flag_ok(user):
         return _deny()
-    if action not in ("pause", "resume", "archive", "accel"):
+    if action not in ("pause", "resume", "archive", "accel", "directive"):
         return JSONResponse({"ok": False, "error": "未知操作"}, status_code=400)
     from platform_app.db import connect, init_db
     from rath.engine import ACCEL_CHOICES, _expose
@@ -141,7 +141,14 @@ async def api_rath_action(exp_id: int, action: str, request: Request, user=Depen
         exp = _own_exp(db, exp_id, user["id"])
         if not exp:
             return JSONResponse({"ok": False, "error": "实验不存在"}, status_code=404)
-        if action == "accel":
+        if action == "directive":
+            body = await request.json()
+            directive = str(body.get("directive") or "").strip()[:200]
+            row = db.execute(
+                "update rath_experiments set directive = nullif(%s,'') where id=%s returning *",
+                (directive, int(exp_id)),
+            ).fetchone()
+        elif action == "accel":
             body = await request.json()
             accel = int(body.get("accel") or 0)
             if accel not in ACCEL_CHOICES:

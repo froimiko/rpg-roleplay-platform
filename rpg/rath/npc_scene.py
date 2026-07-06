@@ -18,9 +18,16 @@ MAX_SUMMARY_CHARS = 160
 MAX_PRIVATE_MEMORY_CHARS = 80
 
 
-def select_scene_pair(state_data: dict) -> tuple[str, str] | None:
+def select_scene_pair(
+    state_data: dict, extra_candidates: list[str] | None = None,
+) -> tuple[str, str] | None:
     """从快照选两个对手戏 NPC:议程 NPC 优先(有 goal/stance 才演得像),
-    不足两个则从 relationships 补位。选不出两个 → None(本 tick 不演,正常)。"""
+    不足两个则从 relationships 补位。选不出两个 → None(本 tick 不演,正常)。
+
+    extra_candidates(用户实锤「主角团根本没这人」后补):原著 canon 主要角色
+    (character_cards 按 importance,调用方已做防剧透门控)。有 canon 候选时,
+    第二席让给 canon 头名 —— 让离线世界围绕书的卡司运转,而不是围着 GM 即兴
+    发明的路人打转。"""
     if not isinstance(state_data, dict):
         return None
     agendas = state_data.get("npc_agendas") or {}
@@ -32,21 +39,30 @@ def select_scene_pair(state_data: dict) -> tuple[str, str] | None:
                 names.append(n)
             if len(names) >= 2:
                 break
-    if len(names) < 2:
+    extras = [n for n in (extra_candidates or [])
+              if isinstance(n, str) and n.strip() and n not in names]
+    if not names and len(extras) >= 2:
+        return extras[0], extras[1]  # 全新档:直接演卡司
+    if len(names) < 1 or (len(names) < 2 and not extras):
         return None
-    # 确定性选择:议程最近更新的两位(updated_turn 大在前;无议程的排后但保持字典序稳定)
+    # 确定性选择:议程最近更新的在前(无议程的排后但保持字典序稳定)
     def _key(n: str):
         a = agendas.get(n) or {}
         return (-int(a.get("updated_turn") or 0), n)
     names.sort(key=_key)
+    if extras:
+        return names[0], extras[0]  # 本地熟人 × 原著卡司
     return names[0], names[1]
 
 
-def _npc_dossier(state_data: dict, name: str) -> str:
+def _npc_dossier(state_data: dict, name: str, extra_dossiers: dict | None = None) -> str:
     agendas = state_data.get("npc_agendas") or {}
     rels = state_data.get("relationships") or {}
     a = agendas.get(name) or {}
     parts = [f"姓名:{name}"]
+    extra = (extra_dossiers or {}).get(name)
+    if extra:
+        parts.append(str(extra)[:120])
     if a.get("goal"):
         parts.append(f"当前目标:{a['goal']}")
     if a.get("stance"):
@@ -60,7 +76,8 @@ def _npc_dossier(state_data: dict, name: str) -> str:
 def build_scene_prompts(
     state_data: dict, npc_a: str, npc_b: str, *,
     elapsed_hint: str = "", recent_events: list[str] | None = None,
-    world_context: str = "",
+    world_context: str = "", directive: str = "",
+    extra_dossiers: dict | None = None,
 ) -> tuple[str, str]:
     """构造对手戏 prompt。防剧透同心跳口径:只喂快照里已有的信息 + 世界书要点
     (world_context,拆书审计后补:离线戏没有世界观材料会滑向平庸写实,战姬味丢失)。"""
@@ -84,13 +101,15 @@ def build_scene_prompts(
         '"npc_updates":{"名字":{"goal":"可选,若目标有微调","stance":"可选","private_memory":"这个角色私下会记住的一句话"}}}'
     )
     wc_block = f"【世界观要点】\n{world_context}\n" if (world_context or "").strip() else ""
+    dv_block = (f"【观测者引导(世界应朝此方向自然倾斜,允许铺垫,不得突兀跳变)】{directive.strip()}\n"
+                if (directive or "").strip() else "")
     user_prompt = (
-        f"【NPC甲】{_npc_dossier(state_data, npc_a)}\n"
-        f"【NPC乙】{_npc_dossier(state_data, npc_b)}\n"
+        f"【NPC甲】{_npc_dossier(state_data, npc_a, extra_dossiers)}\n"
+        f"【NPC乙】{_npc_dossier(state_data, npc_b, extra_dossiers)}\n"
         f"【玩家最后所在】{location or '(未知)'}\n"
         f"【世界时间】{wtime or '(未知)'}\n"
         f"【离线时长】{elapsed_hint or '(不详)'}\n"
-        f"{wc_block}"
+        f"{wc_block}{dv_block}"
         f"【近期世界侧动向(已发生,不要复读)】\n{ev_lines}\n\n"
         f"请生成 {npc_a} 与 {npc_b} 之间这段离线互动。"
     )

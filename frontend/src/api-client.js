@@ -835,6 +835,8 @@
       pause: (id) => POST(`/api/rath/experiments/${id}/pause`, {}),
       resume: (id) => POST(`/api/rath/experiments/${id}/resume`, {}),
       archive: (id) => POST(`/api/rath/experiments/${id}/archive`, {}),
+      // 世界引导(观测者意志,≤200字;空串=清除) body {directive}
+      directive: (id, directive) => POST(`/api/rath/experiments/${id}/directive`, { directive }),
       // 加速档 body {accel: 1|60|240}
       accel: (id, accel) => POST(`/api/rath/experiments/${id}/accel`, { accel }),
     },

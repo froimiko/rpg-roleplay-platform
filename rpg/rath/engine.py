@@ -63,6 +63,7 @@ def _expose(row: dict) -> dict:
         "ticks_today": int(row.get("ticks_today") or 0),
         "scenes_today": int(row.get("scenes_today") or 0),
         "budget": {"ticks_per_day": MAX_TICKS_PER_DAY, "scenes_per_day": MAX_SCENES_PER_DAY},
+        "directive": str(row.get("directive") or ""),
         "last_tick_at": str(row.get("last_tick_at") or ""),
         "created_at": str(row.get("created_at") or ""),
     }
@@ -124,7 +125,7 @@ def _claim_tick(db, exp_id: int, *, manual: bool) -> dict | None:
            and (t.day_key <> current_date or t.ticks_today < %s)
            {due_cond}
         returning t.id, t.save_id, t.user_id, t.accel, t.ticks_today, t.scenes_today,
-                  t.world_clock_min as new_clock, prev.world_clock_min as old_clock
+                  t.directive, t.world_clock_min as new_clock, prev.world_clock_min as old_clock
         """,
         (int(exp_id),
          60 if manual else 1,  # 手动 tick 至少推 1 小时世界时,给戏留跨度
@@ -165,11 +166,43 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                 ).fetchall()
         except Exception:
             wb_rows = []
+        # 原著 canon 卡司(用户实锤「主角团根本没这人」):按 importance 取头部角色,
+        # 防剧透门控=first_revealed_chapter ≤ 玩家进度+3 且 reveal_known。
+        # dossier 只用时间中性字段(personality/appearance),不用 identity(全书聚合含结局剧透)。
+        cast_rows = []
+        try:
+            if _sid:
+                _prog = 1
+                try:
+                    _prog = int(((snap.get("worldline") or {}).get("progress_chapter"))
+                                or ((snap.get("world") or {}).get("progress_chapter")) or 1)
+                except Exception:
+                    _prog = 1
+                cast_rows = db.execute(
+                    "select name, personality, appearance from character_cards "
+                    "where script_id=%s and coalesce(reveal_known, true) "
+                    "and coalesce(first_revealed_chapter, 0) <= %s "
+                    "order by importance desc nulls last limit 3",
+                    (_sid, _prog + 3),
+                ).fetchall()
+        except Exception:
+            cast_rows = []
     if not snap or not commit_id:
         return {"ok": False, "reason": "快照不可读"}
     world_context = "\n".join(
         f"- {r['title']}: {str(r.get('content') or '')[:140]}" for r in (wb_rows or [])
     )
+    directive = str(claim.get("directive") or "").strip()
+    cast_names = [str(r.get("name") or "").strip() for r in (cast_rows or []) if r.get("name")]
+    cast_dossiers = {
+        str(r["name"]).strip():
+            "原著重要人物(当前阶段身份以正文为准);" +
+            ";".join(x for x in [
+                str(r.get("personality") or "").strip()[:60],
+                ("外貌:" + str(r.get("appearance") or "").strip()[:40]) if r.get("appearance") else "",
+            ] if x)
+        for r in (cast_rows or []) if r.get("name")
+    }
     new_clock = int(claim["new_clock"])
     gain_min = max(0, new_clock - int(claim["old_clock"] or 0))
     elapsed_hint = f"世界内约 {gain_min // 60} 小时 {gain_min % 60} 分钟(观测钟 {_clock_label(new_clock)})"
@@ -197,6 +230,8 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
             usr_p += f"\n\n【离线时长】玩家已离开,{elapsed_hint}。事件应体现这段时间的自然流逝。"
             if world_context:
                 usr_p += f"\n【世界观要点(事件应符合此世界质感)】\n{world_context}"
+            if directive:
+                usr_p += f"\n【观测者引导(事件应朝此方向自然倾斜,不得突兀)】{directive}"
             text, _usage = call_agent_json(
                 api_id=api_id, model=model, system_prompt=sys_p, user_prompt=usr_p,
                 user_id=user_id, tool_schema=None, max_tokens=400, timeout_sec=25,
@@ -211,13 +246,14 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                 and int(claim["scenes_today"]) < MAX_SCENES_PER_DAY):
             try:
                 from rath.npc_scene import build_scene_prompts, select_scene_pair, validate_scene
-                scene_pair = select_scene_pair(snap)
+                scene_pair = select_scene_pair(snap, extra_candidates=cast_names)
                 if scene_pair:
                     from agents._harness import call_agent_json
                     sys_p, usr_p = build_scene_prompts(
                         snap, scene_pair[0], scene_pair[1],
                         elapsed_hint=elapsed_hint, recent_events=recent + wrote,
-                        world_context=world_context)
+                        world_context=world_context, directive=directive,
+                        extra_dossiers=cast_dossiers)
                     text, _usage = call_agent_json(
                         api_id=api_id, model=model, system_prompt=sys_p, user_prompt=usr_p,
                         user_id=user_id, tool_schema=None, max_tokens=900, timeout_sec=40,

@@ -2215,6 +2215,10 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """,
         "create index if not exists idx_rath_events_exp on rath_events(exp_id, id desc)",
     ]),
+    (94, "rath_directive", [
+        # RATH 世界引导(观测者意志):用户在观测台写引导方向,离线心跳/对手戏朝其自然倾斜。
+        "alter table rath_experiments add column if not exists directive text",
+    ]),
 ]
 
 

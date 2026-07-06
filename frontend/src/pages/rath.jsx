@@ -28,6 +28,7 @@ import CSBadge from '@cloudscape-design/components/badge';
 import CSAlert from '@cloudscape-design/components/alert';
 import CSSelect from '@cloudscape-design/components/select';
 import CSSegmentedControl from '@cloudscape-design/components/segmented-control';
+import CSTextarea from '@cloudscape-design/components/textarea';
 import CSColumnLayout from '@cloudscape-design/components/column-layout';
 import CSExpandableSection from '@cloudscape-design/components/expandable-section';
 import CSStatusIndicator from '@cloudscape-design/components/status-indicator';
@@ -243,6 +244,27 @@ function ExperimentPanel({ expId }) {
     }
   };
 
+  const [directiveDraft, setDirectiveDraft] = useState('');
+  const [directiveBusy, setDirectiveBusy] = useState(false);
+  const [directiveLoaded, setDirectiveLoaded] = useState(false);
+  useEffect(() => {
+    // 首次拿到实验详情时回填引导草稿(仅一次,避免轮询覆盖正在编辑的内容)
+    if (exp && !directiveLoaded) { setDirectiveDraft(exp.directive || ''); setDirectiveLoaded(true); }
+  }, [exp, directiveLoaded]);
+  useEffect(() => { setDirectiveLoaded(false); }, [expId]);
+  const doDirective = async () => {
+    if (directiveBusy) return;
+    setDirectiveBusy(true);
+    try {
+      const r = await window.api.rath.directive(expId, directiveDraft.trim());
+      if (r && r.ok === false) throw new Error(r.error || 'directive 保存失败');
+      window.__apiToast?.(t('rath_page.directive.saved', { defaultValue: directiveDraft.trim() ? '世界引导已设置,下一拍生效' : '世界引导已清除' }), { kind: 'ok' });
+      await load(true);
+    } catch (e) {
+      window.__apiToast?.(t('rath_page.directive.fail', { defaultValue: '保存失败' }), { kind: 'danger', detail: String(e?.message || e) });
+    } finally { setDirectiveBusy(false); }
+  };
+
   const doAccel = async (accel) => {
     if (accelBusy || !exp || Number(exp.accel) === Number(accel)) return;
     setAccelBusy(true);
@@ -313,6 +335,21 @@ function ExperimentPanel({ expId }) {
           {t('rath_page.action.archive', { defaultValue: '归档' })}
         </CSButton>
       </CSSpaceBetween>
+
+      {/* 世界引导(观测者意志) */}
+      <CSContainer header={<CSHeader variant="h2" description={t('rath_page.directive.desc', { defaultValue: '写下你希望世界演进的方向,离线心跳与对手戏会朝它自然倾斜(不会突兀跳变)。留空并保存即清除。' })}>{t('rath_page.directive.title', { defaultValue: '世界引导' })}</CSHeader>}>
+        <CSSpaceBetween size="xs">
+          <CSTextarea
+            value={directiveDraft}
+            onChange={({ detail }) => setDirectiveDraft(detail.value)}
+            placeholder={t('rath_page.directive.placeholder', { defaultValue: '例如:让林氏商行的走私案逐渐浮出水面;让薇欧拉注意到主角的存在。' })}
+            rows={2}
+          />
+          <CSButton loading={directiveBusy} onClick={doDirective}>
+            {t('rath_page.directive.save', { defaultValue: '保存引导' })}
+          </CSButton>
+        </CSSpaceBetween>
+      </CSContainer>
 
       {/* 搖光单元板 */}
       <CSContainer header={<CSHeader variant="h2">{t('rath_page.fluctlights.title', { defaultValue: '搖光单元' })}</CSHeader>}>
