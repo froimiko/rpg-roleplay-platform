@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.57.4] - 2026-07-06
+
+### Fixed
+- **RATH 不再替玩家角色编来历**:离线世界的角色可以对玩家的来历困惑好奇,但不会再编造"实验品/某机构产物"之类的具体替代身份或伪造相关证据;你的设定谜团只由你亲自揭示。
+
 ## [1.57.3] - 2026-07-06
 
 ### Fixed
