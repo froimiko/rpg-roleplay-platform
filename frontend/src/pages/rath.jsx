@@ -1,17 +1,17 @@
-/* RATH·搖光观测台 — Platform 内嵌子页(#rath,游玩 / Play 导航组下,与酒馆平级)。
+/* RATH — Platform 内嵌子页(#rath,游玩 / Play 导航组下,与酒馆平级)。
  *
  * 设计:docs/design/rath_observation_deck_v0.md。后端 rpg/routes/rath.py。
  * 核心铁律(前端视角):这是「离线活世界」实验的**观测面板**,不写游戏 state ——
- * 所有操作(建实验/tick/加速/暂停/归档)都只作用于 rath_experiments / rath_events,
+ * 所有操作(建实验/tick/加速/暂停/归档/引导)都只作用于 rath_experiments / rath_events,
  * 与玩家正在玩的存档 state 无关(存档只被只读地取材料)。
  *
  * 布局:
  *   顶部 — 实验选择/创建区(无实验→存档下拉+启动按钮;有实验→下拉切换)。
  *   实验面板(选中后 GET 详情,30s 轮询):
- *     · 状态行卡片:观测钟 + 加速档 SegmentedControl + 状态 + 今日预算。
- *     · 操作条:立即演算一拍 / 暂停或恢复 / 归档(二次确认)。
- *     · 搖光单元板:fluctlights 卡片网格(goal/stance/private_memories)。
- *     · 观测时间线:events 列表(新在上),scene 事件可展开 transcript。
+ *     · 状态行卡片:世界时间 + 加速档 SegmentedControl + 世界运行 Toggle(自动推进说明)。
+ *     · 操作条:推进一步 / 归档(二次确认)。
+ *     · 角色动态板:fluctlights 卡片网格(goal/stance/private_memories)。
+ *     · 日志:顶部引导插入行(单行输入+按钮) + events 列表(新在上),互动事件可展开 transcript。
  *
  * 403(flag 未开放)→ 整页空态提示,不渲染任何操作 UI。
  */
@@ -28,10 +28,10 @@ import CSBadge from '@cloudscape-design/components/badge';
 import CSAlert from '@cloudscape-design/components/alert';
 import CSSelect from '@cloudscape-design/components/select';
 import CSSegmentedControl from '@cloudscape-design/components/segmented-control';
-import CSTextarea from '@cloudscape-design/components/textarea';
+import CSInput from '@cloudscape-design/components/input';
+import CSToggle from '@cloudscape-design/components/toggle';
 import CSColumnLayout from '@cloudscape-design/components/column-layout';
 import CSExpandableSection from '@cloudscape-design/components/expandable-section';
-import CSStatusIndicator from '@cloudscape-design/components/status-indicator';
 
 import { ConfirmModal } from '../tavern-app.jsx';
 
@@ -128,16 +128,19 @@ function ExperimentPicker({ experiments, activeId, onSwitch, onCreated }) {
   );
 }
 
-/* ── 单条时间线事件(心跳 / 对手戏,scene 可展开 transcript)────────────── */
+/* ── 单条日志事件(事件 / 互动 / 引导,互动可展开 transcript)────────────── */
 function EventRow({ ev }) {
   const { t } = useTranslation();
   const isScene = ev.kind === 'scene';
+  const isDirective = ev.kind === 'directive';
   const transcript = (ev.payload && Array.isArray(ev.payload.transcript)) ? ev.payload.transcript : [];
+  const badgeColor = isDirective ? 'blue' : (isScene ? 'green' : 'grey');
+  const badgeText = isDirective
+    ? t('rath_page.event.kind_directive', { defaultValue: '引导' })
+    : (isScene ? t('rath_page.event.kind_scene', { defaultValue: '互动' }) : t('rath_page.event.kind_heartbeat', { defaultValue: '事件' }));
   const body = (
     <CSSpaceBetween direction="horizontal" size="xs" alignItems="center">
-      <CSBadge color={isScene ? 'blue' : 'grey'}>
-        {isScene ? t('rath_page.event.kind_scene', { defaultValue: '对手戏' }) : t('rath_page.event.kind_heartbeat', { defaultValue: '心跳' })}
-      </CSBadge>
+      <CSBadge color={badgeColor}>{badgeText}</CSBadge>
       <CSBox color="text-body-secondary" fontSize="body-s">{ev.world_clock_label}</CSBox>
       <CSBox>{ev.summary || t('rath_page.event.no_summary', { defaultValue: '(无摘要)' })}</CSBox>
     </CSSpaceBetween>
@@ -244,24 +247,20 @@ function ExperimentPanel({ expId }) {
     }
   };
 
-  const [directiveDraft, setDirectiveDraft] = useState('');
+  const [directiveInput, setDirectiveInput] = useState('');
   const [directiveBusy, setDirectiveBusy] = useState(false);
-  const [directiveLoaded, setDirectiveLoaded] = useState(false);
-  useEffect(() => {
-    // 首次拿到实验详情时回填引导草稿(仅一次,避免轮询覆盖正在编辑的内容)
-    if (exp && !directiveLoaded) { setDirectiveDraft(exp.directive || ''); setDirectiveLoaded(true); }
-  }, [exp, directiveLoaded]);
-  useEffect(() => { setDirectiveLoaded(false); }, [expId]);
   const doDirective = async () => {
-    if (directiveBusy) return;
+    const text = directiveInput.trim();
+    if (directiveBusy || !text) return;
     setDirectiveBusy(true);
     try {
-      const r = await window.api.rath.directive(expId, directiveDraft.trim());
-      if (r && r.ok === false) throw new Error(r.error || 'directive 保存失败');
-      window.__apiToast?.(t('rath_page.directive.saved', { defaultValue: directiveDraft.trim() ? '世界引导已设置,下一拍生效' : '世界引导已清除' }), { kind: 'ok' });
+      const r = await window.api.rath.directive(expId, text);
+      if (r && r.ok === false) throw new Error(r.error || t('rath_page.directive.fail', { defaultValue: '插入失败' }));
+      setDirectiveInput('');
+      window.__apiToast?.(t('rath_page.directive.inserted', { defaultValue: '引导已插入,从当前时间点开始生效' }), { kind: 'ok' });
       await load(true);
     } catch (e) {
-      window.__apiToast?.(t('rath_page.directive.fail', { defaultValue: '保存失败' }), { kind: 'danger', detail: String(e?.message || e) });
+      window.__apiToast?.(t('rath_page.directive.fail', { defaultValue: '插入失败' }), { kind: 'danger', detail: String(e?.message || e) });
     } finally { setDirectiveBusy(false); }
   };
 
@@ -288,71 +287,70 @@ function ExperimentPanel({ expId }) {
 
   const budget = exp.budget || {};
   const running = exp.status === 'running';
+  const accelMin = Math.round(Number(exp.accel) || 1);
+  const tickIntervalMinutes = Math.round((Number(exp.tick_interval_sec) || 1800) / 60);
 
   return (
     <CSSpaceBetween size="l">
       {/* 状态行卡片 */}
       <CSContainer>
-        <CSColumnLayout columns={4} variant="text-grid">
+        <CSColumnLayout columns={2} variant="text-grid">
           <StatCell
-            label={t('rath_page.stat.clock', { defaultValue: '观测钟' })}
-            value={<CSBox fontSize="heading-xl" fontWeight="bold">{exp.world_clock_label || '—'}</CSBox>}
+            label={t('rath_page.stat.clock', { defaultValue: '世界时间' })}
+            value={
+              <>
+                <CSBox fontSize="heading-xl" fontWeight="bold">{exp.world_clock_label || '—'}</CSBox>
+                <CSBox color="text-body-secondary" fontSize="body-s" margin={{ top: 'xxs' }}>
+                  {t('rath_page.stat.clock_hint', {
+                    defaultValue: `时间流速 ${accelMin}× — 现实 1 分钟 ≈ 世界 ${accelMin} 分钟;推进一步 ≈ 世界 1 小时`,
+                    accel: accelMin,
+                  })}
+                </CSBox>
+              </>
+            }
           />
           <StatCell
-            label={t('rath_page.stat.accel', { defaultValue: '加速档' })}
+            label={t('rath_page.stat.accel', { defaultValue: '时间流速' })}
             value={
               <CSSegmentedControl
                 selectedId={String(exp.accel)}
-                options={ACCEL_OPTIONS.map((a) => ({ id: String(a), text: `${a}x` }))}
+                options={ACCEL_OPTIONS.map((a) => ({ id: String(a), text: `${a}×` }))}
                 onChange={({ detail }) => doAccel(Number(detail.selectedId))}
               />
             }
           />
-          <StatCell
-            label={t('rath_page.stat.status', { defaultValue: '状态' })}
-            value={
-              <CSStatusIndicator type={running ? 'in-progress' : 'stopped'}>
-                {running ? t('rath_page.status.running', { defaultValue: '运行中' }) : t('rath_page.status.paused', { defaultValue: '已暂停' })}
-              </CSStatusIndicator>
-            }
-          />
-          <StatCell
-            label={t('rath_page.stat.budget', { defaultValue: '今日预算' })}
-            value={`${exp.ticks_today ?? 0}/${budget.ticks_per_day ?? 48} · ${exp.scenes_today ?? 0}/${budget.scenes_per_day ?? 12}`}
-          />
         </CSColumnLayout>
+      </CSContainer>
+
+      {/* 世界运行开关 */}
+      <CSContainer>
+        <CSSpaceBetween size="xs">
+          <CSToggle checked={running} disabled={statusBusy} onChange={doPauseResume}>
+            {t('rath_page.run_toggle.label', { defaultValue: '世界运行' })}
+          </CSToggle>
+          <CSBox color="text-body-secondary" fontSize="body-s">
+            {t('rath_page.run_toggle.hint', {
+              defaultValue: `开启时每 ${tickIntervalMinutes} 分钟自动推进一次 · 今日 ${exp.ticks_today ?? 0}/${budget.ticks_per_day ?? 48} 次`,
+              minutes: tickIntervalMinutes,
+              ticksToday: exp.ticks_today ?? 0,
+              ticksPerDay: budget.ticks_per_day ?? 48,
+            })}
+          </CSBox>
+        </CSSpaceBetween>
       </CSContainer>
 
       {/* 操作条 */}
       <CSSpaceBetween direction="horizontal" size="xs">
         <CSButton variant="primary" loading={ticking} onClick={doTick}>
-          {t('rath_page.action.tick', { defaultValue: '立即演算一拍' })}
-        </CSButton>
-        <CSButton loading={statusBusy} onClick={doPauseResume}>
-          {running ? t('rath_page.action.pause', { defaultValue: '暂停' }) : t('rath_page.action.resume', { defaultValue: '恢复' })}
+          {t('rath_page.action.tick', { defaultValue: '推进一步' })}
         </CSButton>
         <CSButton onClick={() => setArchiveConfirm(true)}>
           {t('rath_page.action.archive', { defaultValue: '归档' })}
         </CSButton>
       </CSSpaceBetween>
 
-      {/* 世界引导(观测者意志) */}
-      <CSContainer header={<CSHeader variant="h2" description={t('rath_page.directive.desc', { defaultValue: '写下你希望世界演进的方向,离线心跳与对手戏会朝它自然倾斜(不会突兀跳变)。留空并保存即清除。' })}>{t('rath_page.directive.title', { defaultValue: '世界引导' })}</CSHeader>}>
-        <CSSpaceBetween size="xs">
-          <CSTextarea
-            value={directiveDraft}
-            onChange={({ detail }) => setDirectiveDraft(detail.value)}
-            placeholder={t('rath_page.directive.placeholder', { defaultValue: '例如:让林氏商行的走私案逐渐浮出水面;让薇欧拉注意到主角的存在。' })}
-            rows={2}
-          />
-          <CSButton loading={directiveBusy} onClick={doDirective}>
-            {t('rath_page.directive.save', { defaultValue: '保存引导' })}
-          </CSButton>
-        </CSSpaceBetween>
-      </CSContainer>
-
-      {/* 搖光单元板 */}
-      <CSContainer header={<CSHeader variant="h2">{t('rath_page.fluctlights.title', { defaultValue: '搖光单元' })}</CSHeader>}>
+      {/* 角色动态板 */}
+      <CSContainer header={<CSHeader variant="h2">{t('rath_page.fluctlights.title', { defaultValue: '角色动态' })}</CSHeader>}>
         {fluctlights.length === 0 ? (
           <CSBox color="text-body-secondary" textAlign="center" padding={{ vertical: 'l' }}>
             {t('rath_page.fluctlights.empty', { defaultValue: '尚无议程 NPC——先在这个存档里玩几回合,让角色拥有自己的目标。' })}
@@ -379,17 +377,38 @@ function ExperimentPanel({ expId }) {
         )}
       </CSContainer>
 
-      {/* 观测时间线 */}
-      <CSContainer header={<CSHeader variant="h2">{t('rath_page.timeline.title', { defaultValue: '观测时间线' })}</CSHeader>}>
-        {events.length === 0 ? (
-          <CSBox color="text-body-secondary" textAlign="center" padding={{ vertical: 'l' }}>
-            {t('rath_page.timeline.empty', { defaultValue: '尚无观测记录——点「立即演算一拍」触发第一次离线心跳。' })}
-          </CSBox>
-        ) : (
+      {/* 日志:顶部插入引导 + events 列表 */}
+      <CSContainer header={<CSHeader variant="h2">{t('rath_page.timeline.title', { defaultValue: '日志' })}</CSHeader>}>
+        <CSSpaceBetween size="s">
           <CSSpaceBetween size="xs">
-            {events.map((ev) => <EventRow key={ev.id} ev={ev} />)}
+            <CSSpaceBetween direction="horizontal" size="xs" alignItems="center">
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <CSInput
+                  value={directiveInput}
+                  onChange={({ detail }) => setDirectiveInput(detail.value)}
+                  placeholder={t('rath_page.directive.placeholder', { defaultValue: '在此刻插入一条引导,影响之后的世界演化…' })}
+                  onKeyDown={({ detail }) => { if (detail.key === 'Enter') doDirective(); }}
+                />
+              </div>
+              <CSButton loading={directiveBusy} disabled={!directiveInput.trim()} onClick={doDirective}>
+                {t('rath_page.directive.insert_btn', { defaultValue: '插入引导' })}
+              </CSButton>
+            </CSSpaceBetween>
+            <CSBox color="text-body-secondary" fontSize="body-s">
+              {t('rath_page.directive.hint', { defaultValue: '最新一条引导生效;历史引导保留在日志中。' })}
+            </CSBox>
           </CSSpaceBetween>
-        )}
+
+          {events.length === 0 ? (
+            <CSBox color="text-body-secondary" textAlign="center" padding={{ vertical: 'l' }}>
+              {t('rath_page.timeline.empty', { defaultValue: '尚无日志——点「推进一步」触发第一次自动推进。' })}
+            </CSBox>
+          ) : (
+            <CSSpaceBetween size="xs">
+              {events.map((ev) => <EventRow key={ev.id} ev={ev} />)}
+            </CSSpaceBetween>
+          )}
+        </CSSpaceBetween>
       </CSContainer>
 
       <ConfirmModal
@@ -443,7 +462,7 @@ export default function RathPage() {
   if (denied) {
     return (
       <div className="pl-sec">
-        <CSAlert type="info" header={t('rath_page.denied_header', { defaultValue: 'RATH 观测台未开放' })}>
+        <CSAlert type="info" header={t('rath_page.denied_header', { defaultValue: 'RATH 未对当前账号开放' })}>
           {t('rath_page.denied_body', { defaultValue: 'RATH 实验未对当前账号开放' })}
         </CSAlert>
       </div>
@@ -454,7 +473,7 @@ export default function RathPage() {
     <div className="pl-sec">
       <CSSpaceBetween size="l">
         <CSHeader variant="h1" description={t('rath_page.header.description', { defaultValue: '离线活世界实验:玩家不在时,世界仍按有界规则继续运转。' })}>
-          {t('rath_page.header.title', { defaultValue: 'RATH · 搖光观测台' })}
+          {t('rath_page.header.title', { defaultValue: 'RATH' })}
         </CSHeader>
 
         {experiments == null ? (

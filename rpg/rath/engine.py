@@ -125,7 +125,7 @@ def _claim_tick(db, exp_id: int, *, manual: bool) -> dict | None:
            and (t.day_key <> current_date or t.ticks_today < %s)
            {due_cond}
         returning t.id, t.save_id, t.user_id, t.accel, t.ticks_today, t.scenes_today,
-                  t.directive, t.world_clock_min as new_clock, prev.world_clock_min as old_clock
+                  t.world_clock_min as new_clock, prev.world_clock_min as old_clock
         """,
         (int(exp_id),
          60 if manual else 1,  # 手动 tick 至少推 1 小时世界时,给戏留跨度
@@ -148,9 +148,17 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
         save_id, user_id = int(claim["save_id"]), int(claim["user_id"])
         snap, commit_id = _read_snapshot(db, save_id)
         recent_rows = db.execute(
-            "select summary from rath_events where exp_id=%s order by id desc limit 4",
+            "select summary from rath_events where exp_id=%s and kind in ('heartbeat','scene') "
+            "order by id desc limit 4",
             (int(exp_id),),
         ).fetchall()
+        # 引导=插入日志的节点事件(用户重设计):最新一条从其插入点开始引导后续演化。
+        # 不再读 experiments.directive 列(旧全局状态语义,已废)。
+        drow = db.execute(
+            "select summary from rath_events where exp_id=%s and kind='directive' "
+            "order by id desc limit 1",
+            (int(exp_id),),
+        ).fetchone()
         # 世界观要点(拆书审计后补):离线戏/心跳没有世界书材料会滑向平庸写实(战姬味丢失实锤)。
         # 取该剧本高优先级条目压缩成要点,喂进两个 LLM prompt。
         wb_rows = []
@@ -193,7 +201,7 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
     world_context = "\n".join(
         f"- {r['title']}: {str(r.get('content') or '')[:140]}" for r in (wb_rows or [])
     )
-    directive = str(claim.get("directive") or "").strip()
+    directive = str((drow or {}).get("summary") or "").strip()
     cast_names = [str(r.get("name") or "").strip() for r in (cast_rows or []) if r.get("name")]
     cast_dossiers = {
         str(r["name"]).strip():

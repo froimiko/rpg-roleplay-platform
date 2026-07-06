@@ -142,12 +142,18 @@ async def api_rath_action(exp_id: int, action: str, request: Request, user=Depen
         if not exp:
             return JSONResponse({"ok": False, "error": "实验不存在"}, status_code=404)
         if action == "directive":
+            # 引导=插入日志的节点事件:从插入点开始引导其后的演化,最新一条生效。
+            # 历史全部留在 rath_events(kind=directive),日志可查。
             body = await request.json()
             directive = str(body.get("directive") or "").strip()[:200]
-            row = db.execute(
-                "update rath_experiments set directive = nullif(%s,'') where id=%s returning *",
-                (directive, int(exp_id)),
-            ).fetchone()
+            if not directive:
+                return JSONResponse({"ok": False, "error": "引导内容不能为空"}, status_code=400)
+            db.execute(
+                "insert into rath_events (exp_id, kind, summary, world_clock_min) "
+                "values (%s, 'directive', %s, %s)",
+                (int(exp_id), directive, int(exp.get("world_clock_min") or 0)),
+            )
+            row = exp
         elif action == "accel":
             body = await request.json()
             accel = int(body.get("accel") or 0)
