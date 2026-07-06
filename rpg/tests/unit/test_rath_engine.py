@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from rath.engine import _clock_label  # noqa: E402
 from rath.npc_scene import (  # noqa: E402
     build_scene_prompts,
+    find_fabricated_nouns,
     select_scene_pair,
     validate_scene,
 )
@@ -133,3 +134,42 @@ def test_player_in_scene_rules():
     assert "玩家不在场" not in sys_p
     sys_p2, _ = build_scene_prompts(_snap(), "汉娜", "伊万")
     assert "玩家不在场" in sys_p2
+
+
+# ── 剧情膨胀根治(用户实锤:3拍编出G7臂甲/第七试验场) ─────────────────
+
+def test_daily_beat_forbids_new_clues():
+    sys_p, _ = build_scene_prompts(_snap(), "汉娜", "伊万", beat="daily")
+    assert "日常一拍" in sys_p and "禁止" in sys_p
+    assert "专有名词铁律" in sys_p
+
+
+def test_progress_beat_allows_one_step():
+    sys_p, _ = build_scene_prompts(_snap(), "汉娜", "伊万", beat="progress")
+    assert "进展一拍" in sys_p and "恰好一个" in sys_p
+
+
+def test_fabricated_noun_gate():
+    known = "毛瑟厂的步枪很有名;她们隶属城防军。"
+    assert find_fabricated_nouns("他要去第七试验场查档案", known)  # 新造 → 抓到
+    assert find_fabricated_nouns("毛瑟厂的订单到了", known) == []
+    assert find_fabricated_nouns("平静的一天,没有任何新鲜事", known) == []
+    # 右对齐渐进:材料里有「第七试验场」时,带句子前缀的贪婪捕获不误拒
+    known2 = known + "档案提到第七试验场。"
+    assert find_fabricated_nouns("他要去第七试验场查档案", known2) == []
+
+
+def test_validate_scene_rejects_fabricated_institution():
+    import json
+    raw = json.dumps({
+        "transcript": [{"speaker": "汉娜", "line": "明天我们去黑森研究所看看"}],
+        "scene_summary": "两人决定去黑森研究所调查",
+        "npc_updates": {},
+    }, ensure_ascii=False)
+    assert validate_scene(raw, "汉娜", "伊万", known_text="日常材料里没有那个地方") is None
+    ok = json.dumps({
+        "transcript": [{"speaker": "汉娜", "line": "今天风真大"}],
+        "scene_summary": "两人在屋里闲聊天气",
+        "npc_updates": {},
+    }, ensure_ascii=False)
+    assert validate_scene(ok, "汉娜", "伊万", known_text="任意材料") is not None

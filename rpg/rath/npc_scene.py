@@ -93,6 +93,7 @@ def build_scene_prompts(
     world_context: str = "", directive: str = "",
     extra_dossiers: dict | None = None,
     player_in_scene: str = "",
+    beat: str = "daily",
 ) -> tuple[str, str]:
     """构造对手戏 prompt。防剧透同心跳口径:只喂快照里已有的信息 + 世界书要点
     (world_context,拆书审计后补:离线戏没有世界观材料会滑向平庸写实,战姬味丢失)。"""
@@ -116,9 +117,14 @@ def build_scene_prompts(
         "   若玩家所在地未知,场景应设在与两人身份相符的日常场所,禁止凭空编造军事/战场场景。\n"
         + _rule3 +
         f"4. 对话不超过 {MAX_TRANSCRIPT_LINES} 行,每行不超过 {MAX_LINE_CHARS} 字;小事即可,不要写重大转折。\n"
-        "5. **不要复读近期动向里已发生的对话**:写这段时间里【新】的小进展,让世界前进一小步;\n"
-        "   世界观要点里的元素(时局/势力/超常力量的传闻)可以自然进入闲谈,体现这个世界的质感。\n"
-        "6. 只输出严格 JSON(不要代码围栏),schema:\n"
+        + (("5. 本场是【日常一拍】:无事发生的真实生活切片(照料/闲话/沉默/例行公事/一顿饭)。\n"
+            "   **禁止**引入任何新线索、新发现、新推理、新计划;把时间过成生活,情绪可以流动,情节必须原地。\n")
+           if beat == "daily" else
+           ("5. 本场是【进展一拍】:允许**恰好一个**小进展(一条新信息或一个小决定),\n"
+            "   必须从已有事实自然长出;其余内容仍是日常。不要复读近期动向。\n"))
+        + "6. **专有名词铁律**:绝不发明新的机构/地点/组织/装置/计划的名字;只能使用档案、世界观要点、近况中出现过的名词。\n"
+        "   世界观要点里的元素可以自然进入闲谈,体现这个世界的质感。\n"
+        "7. 只输出严格 JSON(不要代码围栏),schema:\n"
         '{"transcript":[{"speaker":"名字","line":"台词或动作"}],'
         '"scene_summary":"≤120字的第三人称场景纪要(写清两人谈了什么/做了什么)",'
         '"npc_updates":{"名字":{"goal":"可选,若目标有微调","stance":"可选","private_memory":"这个角色私下会记住的一句话"}}}'
@@ -142,7 +148,32 @@ def build_scene_prompts(
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 
-def validate_scene(raw_text: str, npc_a: str, npc_b: str) -> dict | None:
+_NOUN_SUFFIX_RE = re.compile(
+    r"[一-鿿]{1,6}(?:试验场|实验场|实验室|研究所|研究院|兵工厂|军工厂|司令部|指挥部|"
+    r"办事处|委员会|结社|教团|骑士团|情报局|安全局|管理局|档案馆|收容所|基地|要塞|"
+    r"计划|行动|工程|协议|条约|装置|机关|型号)"
+)
+
+
+def find_fabricated_nouns(text: str, known_text: str) -> list[str]:
+    """专有名词闸(剧情膨胀实锤:3拍编出G7臂甲/第七试验场/毛瑟厂密室调令):
+    机构/地点/计划/装置类后缀的词若不在已知材料里出现过 → 视为幻觉新造。纯函数。"""
+    if not text:
+        return []
+    known = known_text or ""
+    out = []
+    for m in _NOUN_SUFFIX_RE.finditer(text):
+        tok = m.group(0)
+        # 贪婪捕获会把句子前缀吞进 token(「他要去第七试验场」);判定用右对齐渐进:
+        # token 的任一右对齐子串(≥后缀+1字)在材料中出现 → 视为已知(宁漏勿误)。
+        is_known = any(tok[i:] in known for i in range(len(tok) - 2))
+        if not is_known and tok not in out:
+            out.append(tok)
+    return out
+
+
+def validate_scene(raw_text: str, npc_a: str, npc_b: str,
+                   known_text: str | None = None) -> dict | None:
     """解析+验收 LLM 场景输出。返回规整 dict 或 None(拒收,本 tick 无戏,正常)。
 
     防臆造闸(同柱子3口径):transcript speaker 与 npc_updates 键都必须 ∈ {npc_a, npc_b}。
@@ -190,4 +221,10 @@ def validate_scene(raw_text: str, npc_a: str, npc_b: str) -> dict | None:
                 clean["private_memory"] = pm[:MAX_PRIVATE_MEMORY_CHARS]
             if clean:
                 updates[str(name).strip()] = clean
+    if known_text is not None:
+        joined = summary + " " + " ".join(r["line"] for r in transcript)
+        fabricated = find_fabricated_nouns(joined, known_text)
+        if fabricated:
+            log.info("[rath] 场景拒收(幻觉新造名词): %s", fabricated)
+            return None
     return {"transcript": transcript, "scene_summary": summary, "npc_updates": updates}
