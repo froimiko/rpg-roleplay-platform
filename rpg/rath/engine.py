@@ -235,8 +235,21 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                     _ranked = sorted(
                         ((n, c) for n, c in _cards_all.items() if _imp.get(n, 0) >= 100),
                         key=lambda kv: -_imp.get(kv[0], 0))[:5]
-                    cast_rows = [{"name": n, "sheet": _format_card(n, c or {})[:260]}
-                                 for n, c in _ranked]
+                    # Phase 2 投影(正典):把全书聚合的 identity/background 投影成
+                    # 「当前进度下的角色态」——否则第1章就泄结局(美索不达米亚控制者)。
+                    from context_engine import apply_projection_to_card
+                    from context_engine.projection import project_character_state
+                    cast_rows = []
+                    for n, c in _ranked:
+                        card = dict(c or {})
+                        try:
+                            proj = project_character_state(
+                                db, _sid, n, _prog, "strict",
+                                aliases=card.get("aliases") or None)
+                            card = apply_projection_to_card(card, proj)
+                        except Exception:
+                            pass
+                        cast_rows.append({"name": n, "sheet": _format_card(n, card)[:260]})
                 # 原著河道(用户实锤:仿真跟原著0%重合——原著剧情必须是世界的主时间流)
                 canon_rows = db.execute(
                     "select chapter, summary from chapter_facts "
