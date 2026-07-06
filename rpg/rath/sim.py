@@ -39,6 +39,7 @@ def init_sim_state(snapshot: dict, cast_cards: list[dict], wb_rows: list[dict],
             "kind": "player",
             "sheet": (str(player.get("role") or "").strip() + ";" + pbg[:220]).strip(";"),
             "location": ploc,
+            "home": ploc,
             "activity": "昏迷沉睡" if pstatus == "昏迷" else "静养",
             "goal": "",
             "stance": "",
@@ -58,6 +59,7 @@ def init_sim_state(snapshot: dict, cast_cards: list[dict], wb_rows: list[dict],
                 ("外貌:" + str(c.get("appearance") or "").strip()[:40]) if c.get("appearance") else "",
             ] if x),
             "location": ploc,
+            "home": ploc,
             "activity": "日常起居",
             "goal": "",
             "stance": "",
@@ -436,6 +438,12 @@ def enforce_night(sim: dict) -> int:
             continue
         if "睡" not in str(c.get("activity") or ""):
             c["activity"] = "睡眠"
+            # 夜归(浸泡实锤:自由调查线滚雪球→留学生夜宿水泥厂石灰窑深坑=行为脱设定,
+            # 名词闸挡不住这种歪法)。被强制入睡者拉回住所树立日常重力;
+            # LLM 主动安排的外宿(activity 已是睡眠,如出差宿旅馆)尊重不动。
+            home = str(c.get("home") or "").strip()
+            if home and str(c.get("location") or "") != home:
+                c["location"] = home
             n += 1
     return n
 

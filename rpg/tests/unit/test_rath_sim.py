@@ -348,3 +348,36 @@ def test_alias_resolve_strips_view_tags():
     assert resolve_cast_name(cast, "菲莉丝·卡俄斯[玩家]") == "菲莉丝·卡俄斯"
     assert resolve_cast_name(cast, "林有德(睡眠中)") == "林有德"
     assert resolve_cast_name(cast, "[玩家]") is None
+
+
+# ── 夜归(浸泡实锤:自由线滚雪球→夜宿石灰窑深坑,行为脱设定) ──────────────
+
+def test_night_curfew_pulls_forced_sleepers_home():
+    from rath.sim import enforce_night
+    sim = init_sim_state(_snapshot(), _cards(), [], clock_min=23 * 60 + 30)
+    npc = next(n for n, c in sim["cast"].items() if c.get("kind") != "player")
+    c = sim["cast"][npc]
+    home = c["home"]
+    sim.setdefault("places", []).append("水泥厂石灰窑深坑")
+    c["location"] = "水泥厂石灰窑深坑"
+    c["activity"] = "监听坑底异响"
+    assert enforce_night(sim) >= 1
+    assert c["activity"] == "睡眠" and c["location"] == home
+
+
+def test_night_curfew_respects_voluntary_lodging_and_legacy_state():
+    from rath.sim import enforce_night
+    sim = init_sim_state(_snapshot(), _cards(), [], clock_min=23 * 60 + 30)
+    names = [n for n, c in sim["cast"].items() if c.get("kind") != "player"]
+    a = sim["cast"][names[0]]
+    a["location"] = "德绍旅馆"
+    a["activity"] = "在旅馆睡下"  # LLM 主动外宿:尊重
+    if len(names) > 1:
+        b = sim["cast"][names[1]]
+        b.pop("home", None)  # 老档无 home:只改活动不瞬移
+        b["location"] = "河岸"
+        b["activity"] = "巡逻"
+    enforce_night(sim)
+    assert a["location"] == "德绍旅馆"
+    if len(names) > 1:
+        assert b["activity"] == "睡眠" and b["location"] == "河岸"
