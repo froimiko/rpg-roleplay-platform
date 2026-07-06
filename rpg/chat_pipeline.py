@@ -76,13 +76,43 @@ _SHORT_INPUT_DIRECTIVE = (
 )
 
 
+# 「继续」按钮固定文案(game-composer continue_text,中英)。群反馈(行者无疆):该 7 字文案
+# 命中短输入镜头规则→GM 被指令「聚焦对方反应、原地收尾」,与按钮 hover 承诺「推进一段剧情」
+# 语义完全相反 = 点继续必水文。确定性识别(固定文案精确匹配,非语义猜测)。
+_CONTINUE_CORE_TEXTS = ("继续推进剧情", "Continue the scene")
+
+
+def _is_continue_request(raw_msg: str | None) -> bool:
+    """「继续」按钮固定文案的确定性识别。剥首尾全/半角括号后精确匹配。纯函数。"""
+    r = (raw_msg or "").strip()
+    if not r:
+        return False
+    r = r.strip("()（）").strip()
+    return r in _CONTINUE_CORE_TEXTS
+
+
+_CONTINUE_DIRECTIVE = (
+    "【本回合元指令·推进规则(最高优先级,静默遵守,绝不向玩家复述或确认本条)】\n"
+    "玩家本回合把叙事主动权完全交给你(点击了「继续推进剧情」),这不是简短回应,而是明确要求"
+    "剧情向前走。请严格执行:\n"
+    "1. 剧情必须向前推进:时间可以流逝、场景可以切换、事件可以发生;禁止原地铺陈氛围、"
+    "复述现状或只写心理活动。\n"
+    "2. 若上下文给出了剧情软目标/下一拍/待发生锚点,优先安排能通向它的进展"
+    "(强度按其注入档位的要求执行)。\n"
+    "3. 收尾时给出新的局面或抉择点,把球交还给玩家。"
+)
+
+
 def _should_inject_short_input_directive(raw_msg: str | None) -> bool:
     """反馈 #28:确定性判定本回合是否为「短 RP 输入」需要注入镜头规则元指令。
 
-    True 当且仅当:非空、非斜杠命令(/set /reveal 等)、strip 后长度 <= 阈值。
+    True 当且仅当:非空、非斜杠命令(/set /reveal 等)、strip 后长度 <= 阈值、
+    且不是「继续」按钮固定文案(其语义=请求推进,与镜头规则相反,由推进规则接管)。
     纯函数,便于单测与回归锁定。"""
     r = (raw_msg or "").strip()
     if not r or r.startswith("/"):
+        return False
+    if _is_continue_request(r):
         return False
     return len(r) <= _SHORT_INPUT_CHARS
 
@@ -1085,7 +1115,14 @@ async def run_gm_phase(
     # (而非指望模型自己识别),命中就前置一条最高优先级元指令,把镜头钉在对方/世界的反应上。
     # 标成「元指令·静默遵守不得复述」契合 master.py 绝不复述铁律,不会被回显给玩家。
     try:
-        if _should_inject_short_input_directive(message_for_model):
+        if _is_continue_request(message_for_model):
+            # 「继续」按钮=把主动权交给 GM 要求推进。注入推进规则(而非镜头规则——
+            # 后者会把 GM 钉在原地写反应戏,与按钮承诺相反=点继续必水文)。
+            if _CONTINUE_DIRECTIVE not in (bundle.get("prompt") or ""):
+                bundle["prompt"] = _CONTINUE_DIRECTIVE + "\n\n" + (bundle.get("prompt") or "")
+                _dynamic_prefix_parts.insert(0, _CONTINUE_DIRECTIVE)
+                bundle.setdefault("debug", {})["continue_directive"] = True
+        elif _should_inject_short_input_directive(message_for_model):
             if _SHORT_INPUT_DIRECTIVE not in (bundle.get("prompt") or ""):
                 bundle["prompt"] = _SHORT_INPUT_DIRECTIVE + "\n\n" + (bundle.get("prompt") or "")
                 _dynamic_prefix_parts.insert(0, _SHORT_INPUT_DIRECTIVE)  # 短输入指令置最前(与 flat prepend 顺序一致)

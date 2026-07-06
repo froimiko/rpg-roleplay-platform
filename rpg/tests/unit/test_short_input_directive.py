@@ -41,3 +41,26 @@ def test_threshold_boundary_respects_env(monkeypatch):
     finally:
         monkeypatch.delenv("RPG_SHORT_INPUT_CHARS", raising=False)
         importlib.reload(cp)
+
+
+# 群反馈(行者无疆):「继续」按钮固定文案(7字)命中短输入镜头规则→GM 被钉在原地写
+# 反应戏,与按钮承诺「推进一段剧情」相反=点继续必水文。豁免+由推进规则接管。
+
+def test_continue_texts_recognized_and_exempt():
+    from chat_pipeline import _is_continue_request, _should_inject_short_input_directive
+    for t in ("（继续推进剧情）", "(Continue the scene)", "继续推进剧情", " （继续推进剧情） "):
+        assert _is_continue_request(t), t
+        assert not _should_inject_short_input_directive(t), t
+
+
+def test_ordinary_short_input_still_hits_lens_rule():
+    from chat_pipeline import _is_continue_request, _should_inject_short_input_directive
+    for t in ("嗯", "我点点头", "继续", "（微笑）"):
+        assert not _is_continue_request(t), t
+        assert _should_inject_short_input_directive(t), t
+
+
+def test_continue_directive_demands_forward_motion():
+    from chat_pipeline import _CONTINUE_DIRECTIVE
+    assert "推进" in _CONTINUE_DIRECTIVE
+    assert "软目标" in _CONTINUE_DIRECTIVE
