@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.57.3] - 2026-07-06
+
+### Fixed
+- **RATH 节奏矫正**:取消上一版的进展频率限制——剧情随情境自然推进,只拦截凭空捏造(新造机构/地点/装置名仍会整场拒收)。
+
 ## [1.57.2] - 2026-07-06
 
 ### Fixed
