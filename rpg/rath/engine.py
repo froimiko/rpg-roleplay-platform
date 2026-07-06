@@ -182,6 +182,7 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                     "select name, personality, appearance from character_cards "
                     "where script_id=%s and coalesce(reveal_known, true) "
                     "and coalesce(first_revealed_chapter, 0) <= %s "
+                    "and coalesce(importance, 0) >= 100 "  # 垃圾卡地板(实锤:「秘书」importance=1 混进卡司)
                     "order by importance desc nulls last limit 3",
                     (_sid, _prog + 3),
                 ).fetchall()
