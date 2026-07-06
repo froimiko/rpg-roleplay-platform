@@ -12,7 +12,7 @@ import json
 import logging
 import re
 
-from rath.npc_scene import find_fabricated_nouns
+from core.text_gates import find_fabricated_nouns
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def init_sim_state(snapshot: dict, cast_cards: list[dict], wb_rows: list[dict],
             "location": ploc,
             "activity": "昏迷沉睡" if pstatus == "昏迷" else "静养",
             "goal": "",
-            "mood": "",
+            "stance": "",
             "status": pstatus,
             "memory": [],
         }
@@ -52,14 +52,15 @@ def init_sim_state(snapshot: dict, cast_cards: list[dict], wb_rows: list[dict],
             continue
         cast[n] = {
             "kind": "npc",
-            "sheet": ";".join(x for x in [
+            # 优先用正典渲染的 sheet(_format_card,engine 传入);无则回退拼字段
+            "sheet": str(c.get("sheet") or "").strip() or ";".join(x for x in [
                 str(c.get("personality") or "").strip()[:80],
                 ("外貌:" + str(c.get("appearance") or "").strip()[:40]) if c.get("appearance") else "",
             ] if x),
             "location": ploc,
             "activity": "日常起居",
             "goal": "",
-            "mood": "",
+            "stance": "",
             "status": "",
             "memory": [],
         }
@@ -111,7 +112,7 @@ def compact_view(sim: dict) -> str:
         tag = "[玩家]" if c.get("kind") == "player" else ""
         st = f"状态:{c['status']};" if c.get("status") else ""
         lines.append(f"- {n}{tag}:在{c.get('location')};正在{c.get('activity')};{st}"
-                     f"目标:{c.get('goal') or '(无)'};心情:{c.get('mood') or '(平静)'}")
+                     f"目标:{c.get('goal') or '(无)'};态度:{c.get('stance') or '(平静)'}")
     lines.append("已知地点:" + "、".join(sim.get("places") or []))
     lines.append("剧情线:")
     for t in sim.get("threads") or []:
@@ -147,7 +148,7 @@ _SCHED_SYSTEM = """你是世界仿真的调度器:决定接下来这段时间里
 8. 原著河道是这个世界的主流:角色的本职、谈资、world_events 应与河道交织(回声/铺垫/
    亲历);当河道第一条动向在世界中自然成熟发生,输出 canon_advance: true。
 只输出严格 JSON(不要围栏):
-{"cast_updates": {"名字": {"location": "可选", "activity": "可选", "goal": "可选", "mood": "可选"}},
+{"cast_updates": {"名字": {"location": "可选", "activity": "可选", "goal": "可选", "stance": "可选"}},
  "interaction": {"participants": ["甲","乙"], "place": "已知地点", "reason": "为何相遇", "expected_outcome": "本场自然收在哪"} 或 null,
  "world_events": ["≤1条,必须直接影响列出的角色或舞台"],
  "thread_updates": [{"id": "t1", "tension_delta": -2到2, "note": "≤40字"}],
@@ -217,7 +218,7 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
             rejected.append(f"cast_updates:未知角色{name}")
             continue
         unconscious = c.get("kind") == "player" and c.get("status") in ("昏迷",)
-        for k in ("location", "activity", "goal", "mood"):
+        for k in ("location", "activity", "goal", "stance"):
             v = str(u.get(k) or "").strip()
             if not v:
                 continue
@@ -389,7 +390,7 @@ def build_director_prompts(sim: dict, interaction: dict, *, elapsed_hint: str = 
     for p in interaction.get("participants") or []:
         c = cast.get(p) or {}
         tag = "[昏迷]" if p in (interaction.get("passive") or []) else ""
-        lines.append(f"- {p}{tag}:{c.get('sheet','')[:100]};目标:{c.get('goal') or '(无)'};心情:{c.get('mood') or '(平静)'}")
+        lines.append(f"- {p}{tag}:{c.get('sheet','')[:100]};目标:{c.get('goal') or '(无)'};态度:{c.get('stance') or '(平静)'}")
     rel_facts = (sim.get("facts") or [])[-6:]
     user = ("【相遇】地点:" + str(interaction.get("place")) + ";缘由:" + str(interaction.get("reason"))
             + ";自然落点:" + str(interaction.get("expected_outcome")) + "\n【参与者】\n" + "\n".join(lines)

@@ -79,8 +79,10 @@ sim_state = {
 (v1.60.2 收口,此前 sim.py 手写过两份解析)/`get_progress_window`(进度权威,v1.60.2 收口,
 此前土算 progress_chapter)/世界书查询过 reveal 门控(v1.60.2 收口,此前裸查有剧透泄漏面)。
 
-已知平行结构(记为债务,不急改):sim_state.cast 的 goal/mood/memory 与柱子3 npc_agendas /
-私记格式平行——设计取舍(离线绝不写游戏 state),但字段命名与验收器应逐步对齐;
-find_fabricated_nouns 与 black_swan validator/npc_extract L2 同族,未来可抽公共验收层。
+v1.60.3 全部收口(用户拒绝记债务):①卡片装载=context_engine._load_characters(进度感知
++揭示门控+前沿闸)+_format_card 正典渲染,不再手查 character_cards;②sim cast 字段对齐
+柱子3议程格式(goal/stance,弃 mood);③find_fabricated_nouns 升格 core/text_gates.py
+共享验收层(npc_scene re-export 兼容)。剩余唯一取舍:sim_state 与游戏 state 物理隔离
+——这是铁律(离线绝不写游戏 state)不是债务。
 
-教训:新子系统动工前先列「平台已有能力清单」,能 import 的绝不重写。
+教训:新子系统动工前先列「平台已有能力清单」,能 import 的绝不重写;「记债务」若能当场修就当场修。

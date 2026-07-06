@@ -152,28 +152,8 @@ def build_scene_prompts(
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 
-_NOUN_SUFFIX_RE = re.compile(
-    r"[一-鿿]{1,6}(?:试验场|实验场|实验室|研究所|研究院|兵工厂|军工厂|司令部|指挥部|"
-    r"办事处|委员会|结社|教团|骑士团|情报局|安全局|管理局|档案馆|收容所|基地|要塞|"
-    r"计划|行动|工程|协议|条约|装置|机关|型号)"
-)
-
-
-def find_fabricated_nouns(text: str, known_text: str) -> list[str]:
-    """专有名词闸(剧情膨胀实锤:3拍编出G7臂甲/第七试验场/毛瑟厂密室调令):
-    机构/地点/计划/装置类后缀的词若不在已知材料里出现过 → 视为幻觉新造。纯函数。"""
-    if not text:
-        return []
-    known = known_text or ""
-    out = []
-    for m in _NOUN_SUFFIX_RE.finditer(text):
-        tok = m.group(0)
-        # 贪婪捕获会把句子前缀吞进 token(「他要去第七试验场」);判定用右对齐渐进:
-        # token 的任一右对齐子串(≥后缀+1字)在材料中出现 → 视为已知(宁漏勿误)。
-        is_known = any(tok[i:] in known for i in range(len(tok) - 2))
-        if not is_known and tok not in out:
-            out.append(tok)
-    return out
+# 名词闸已升格共享层(core/text_gates.py),此处 re-export 兼容既有 import。
+from core.text_gates import find_fabricated_nouns  # noqa: F401
 
 
 def validate_scene(raw_text: str, npc_a: str, npc_b: str,

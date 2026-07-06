@@ -58,7 +58,7 @@ def test_init_builds_cast_places_threads():
 def test_apply_updates_and_interaction():
     sim = _sim()
     out = apply_scheduler_output(sim, {
-        "cast_updates": {"林有德": {"activity": "在桌边整理笔记", "goal": "弄清少女来历", "mood": "困惑"}},
+        "cast_updates": {"林有德": {"activity": "在桌边整理笔记", "goal": "弄清少女来历", "stance": "困惑"}},
         "interaction": {"participants": ["林有德", "薇欧拉"], "place": "林有德的小屋",
                         "reason": "商量如何照料昏迷少女", "expected_outcome": "决定轮流看护"},
         "world_events": ["镇上的钟楼敲了十点,街坊照常开工"],

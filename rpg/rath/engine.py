@@ -215,14 +215,19 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
         cast_rows = []
         try:
             if _sid:
-                cast_rows = db.execute(
-                    "select name, personality, appearance from character_cards "
-                    "where script_id=%s and coalesce(reveal_known, true) "
-                    "and coalesce(first_revealed_chapter, 0) <= %s "
-                    "and coalesce(importance, 0) >= 100 "  # 垃圾卡地板(实锤:「秘书」importance=1 混进卡司)
-                    "order by importance desc nulls last limit 5",
-                    (_sid, _prog + 3),
-                ).fetchall()
+                # 正典链路(用户实锤「角色卡抽取也是自创的」):_load_characters=平台进度感知
+                # +揭示门控+前沿闸的卡片装载;_format_card=正典渲染(身份/背景/性格/秘密语义)。
+                from context_engine import _format_card
+                from context_engine.loaders import _load_characters
+                _cards_all = _load_characters(
+                    script_id=_sid, progress_chapter=_prog,
+                    foreknowledge_mode="strict", save_id=save_id) or {}
+                _ranked = sorted(
+                    ((n, c) for n, c in _cards_all.items()
+                     if int((c or {}).get("importance") or 0) >= 100),  # 垃圾卡地板(「秘书」=1)
+                    key=lambda kv: -int((kv[1] or {}).get("importance") or 0))[:5]
+                cast_rows = [{"name": n, "sheet": _format_card(n, c or {})[:260]}
+                             for n, c in _ranked]
                 # 原著河道(用户实锤:仿真跟原著0%重合——原著剧情必须是世界的主时间流)
                 canon_rows = db.execute(
                     "select chapter, summary from chapter_facts "

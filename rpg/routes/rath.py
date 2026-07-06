@@ -126,7 +126,7 @@ async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
                 "location": c.get("location") or "",
                 "activity": c.get("activity") or "",
                 "goal": c.get("goal") or "",
-                "stance": c.get("mood") or "",
+                "stance": c.get("stance") or "",
                 "status": c.get("status") or "",
                 "private_memories": (c.get("memory") or [])[-5:][::-1],
             })
