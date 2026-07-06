@@ -321,6 +321,45 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
 
 
 CANON_STALL_LIMIT = 6  # 河道滞留上限:连续N拍未自然成熟则强制前行(原著世界不等小屋)
+CANON_REFILL_THRESHOLD = 3  # 未消费段 ≤N 时低水位,该补给了
+CANON_KEEP_CONSUMED = 1  # 补给裁剪时保留的已消费段数(cursor 平移)
+
+
+def canon_refill_from(sim: dict) -> int | None:
+    """河道低水位检查:未消费段不足时返回应从哪章续拉(无需补给→None)。纯函数。
+
+    500k 浸泡前置修:beats 只在 init 装 12 段,长程仿真最迟 12×CANON_STALL_LIMIT
+    拍烧穿,之后河道空转=退回 0% 原著重合。"""
+    canon = sim.get("canon") or {}
+    beats = canon.get("beats") or []
+    if not beats:
+        return None  # 从未有过河道(无剧本材料)→ 无处可补
+    cur = int(canon.get("cursor") or 0)
+    if len(beats) - cur > CANON_REFILL_THRESHOLD:
+        return None
+    last_ch = max((int(b.get("chapter") or 0) for b in beats), default=0)
+    return (last_ch + 1) if last_ch > 0 else None
+
+
+def extend_canon(sim: dict, new_beats: list[dict]) -> int:
+    """追加河道段(只收章号大于现有最后一章的,防重)并裁剪已消费段。返回追加数。纯函数。"""
+    canon = sim.setdefault("canon", {"cursor": 0, "stall": 0, "beats": []})
+    beats = canon.setdefault("beats", [])
+    last_ch = max((int(b.get("chapter") or 0) for b in beats), default=0)
+    added = 0
+    for b in new_beats or []:
+        ch = int(b.get("chapter") or 0)
+        text = str(b.get("summary") or b.get("text") or "").strip()[:140]
+        if ch > last_ch and text:
+            beats.append({"chapter": ch, "text": text})
+            last_ch = ch
+            added += 1
+    cur = int(canon.get("cursor") or 0)
+    drop = max(0, cur - CANON_KEEP_CONSUMED)
+    if drop:
+        canon["beats"] = beats[drop:]
+        canon["cursor"] = cur - drop
+    return added
 
 
 def advance_stalled_canon(sim: dict) -> str | None:

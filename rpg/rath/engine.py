@@ -180,6 +180,7 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
         # 世界观要点(拆书审计后补):离线戏/心跳没有世界书材料会滑向平庸写实(战姬味丢失实锤)。
         # 取该剧本高优先级条目压缩成要点,喂进两个 LLM prompt。
         wb_rows = []
+        _sid = 0
         try:
             srow = db.execute(
                 "select script_id from game_saves where id=%s", (save_id,)).fetchone()
@@ -312,6 +313,19 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
     with connect() as db:
         row = db.execute("select sim_state from rath_experiments where id=%s", (int(exp_id),)).fetchone()
         sim = (row or {}).get("sim_state")
+        # 河道低水位补给:init 只装 12 段,长程仿真烧穿后河道空转=退回 0% 原著重合
+        if isinstance(sim, dict) and sim.get("cast") and _sid:
+            _refill_from = S.canon_refill_from(sim)
+            if _refill_from:
+                _more = db.execute(
+                    "select chapter, summary from chapter_facts "
+                    "where script_id=%s and chapter >= %s and coalesce(summary,'') <> '' "
+                    "order by chapter limit 8",
+                    (_sid, _refill_from),
+                ).fetchall()
+                _n_ref = S.extend_canon(sim, [dict(r) for r in (_more or [])])
+                if _n_ref:
+                    _trace(exp_id, f"原著河道补给:+{_n_ref} 段(第{_refill_from}章起续拉)", clock=new_clock)
     if not isinstance(sim, dict) or not sim.get("cast"):
         sim = S.init_sim_state(snap, [dict(r) for r in (cast_rows or [])],
                               [dict(r) for r in (wb_rows or [])], clock_min=new_clock,

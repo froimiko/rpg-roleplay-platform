@@ -255,3 +255,42 @@ def test_unconscious_player_location_settles_once():
     out = apply_scheduler_output(sim, {"cast_updates": {"菲莉丝": {"location": "毛瑟厂"}}})
     assert sim["cast"]["菲莉丝"]["location"] == "林有德的小屋"
     assert any("昏迷" in r for r in out["rejected"])
+
+
+# ── 河道低水位补给(500k 浸泡前置修:烧穿 12 段后不空转,v1.61.1) ──────────
+
+def test_canon_refill_signals_low_water_and_extend_appends():
+    from rath.sim import canon_refill_from, extend_canon, CANON_REFILL_THRESHOLD
+    sim = _sim_canon()  # 2 段,cursor=0 → 未消费 2 ≤ 阈值,应报低水位
+    assert canon_refill_from(sim) == 3  # 从最后一章(2)+1 续拉
+    n = extend_canon(sim, [
+        {"chapter": 3, "summary": "林有德随薇欧拉前往德绍容克斯工厂"},
+        {"chapter": 2, "summary": "旧章重复,必须被拒"},
+        {"chapter": 4, "summary": ""},  # 空文本,必须被拒
+    ])
+    assert n == 1
+    assert [b["chapter"] for b in sim["canon"]["beats"]] == [1, 2, 3]
+    # 补足后水位高于阈值 → 不再要求补给
+    if len(sim["canon"]["beats"]) - sim["canon"]["cursor"] > CANON_REFILL_THRESHOLD:
+        assert canon_refill_from(sim) is None
+
+
+def test_canon_refill_trims_consumed_and_shifts_cursor():
+    from rath.sim import canon_refill_from, extend_canon
+    sim = _sim_canon()
+    apply_scheduler_output(sim, {"canon_advance": True})
+    apply_scheduler_output(sim, {"canon_advance": True})  # 烧穿:cursor=2=len
+    assert canon_refill_from(sim) == 3
+    extend_canon(sim, [{"chapter": 3, "summary": "德绍之行"},
+                       {"chapter": 4, "summary": "工厂裁员风波"}])
+    c = sim["canon"]
+    # 已消费段裁剪只留 1 段,cursor 平移后指向新段(第3章)
+    assert c["beats"][c["cursor"]]["chapter"] == 3
+    assert [b["chapter"] for b in c["beats"]] == [2, 3, 4]
+    assert compact_view(sim).count("德绍之行") == 1  # 新段进入河道视图
+
+
+def test_canon_refill_none_when_never_had_beats():
+    from rath.sim import canon_refill_from
+    sim = init_sim_state(_snapshot(), _cards(), [], clock_min=0, canon_beats=[])
+    assert canon_refill_from(sim) is None
