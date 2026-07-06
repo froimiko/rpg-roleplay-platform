@@ -207,6 +207,16 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                     "order by priority desc, id asc limit 6",
                     (_sid, _prog + 3),
                 ).fetchall()
+                # 存档级世界书新增(玩家权威)同样进世界观要点(群反馈实锤:注入只查剧本表)
+                try:
+                    _ov = db.execute(
+                        "select title, content from save_worldbook_overlays "
+                        "where save_id=%s and kind='addition' order by priority desc, id desc limit 4",
+                        (save_id,),
+                    ).fetchall() or []
+                    wb_rows = list(_ov) + list(wb_rows or [])
+                except Exception:
+                    pass
         except Exception:
             wb_rows = []
         # 原著 canon 卡司(用户实锤「主角团根本没这人」):按 importance 取头部角色,

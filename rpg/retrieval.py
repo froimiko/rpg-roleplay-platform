@@ -1052,6 +1052,7 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
             wb_text = _load_worldbook_for_retrieval(
                 script_id, user_input, top_k=3, current_chapter_max=_wb_chmax,
                 seen_out=_wb_ids,
+                save_id=_resolve_save_id_from_user(user_id),
             )
             # 把本路径已注入的世界书条目【唯一 id】挂到 state(瞬态属性,不落库),供
             # NovelWorldbookProvider 跳过重叠;属性缺失时 provider 照旧全注入(无回归)。
@@ -1103,6 +1104,7 @@ def _load_worldbook_for_retrieval(
     top_k: int = 3,
     current_chapter_max: int | None = None,
     seen_out: set | None = None,
+    save_id: int | None = None,
 ) -> str:
     """通用 worldbook 注入:
     - 高优先级 entries (priority>=80) 永远进 (世界观 / 设定集类)
@@ -1115,6 +1117,25 @@ def _load_worldbook_for_retrieval(
     from platform_app.db import connect as _connect
     try:
         with _connect() as db:
+            # 存档级世界书 overlay(群反馈实锤:玩家在游戏内加的条目 GM 不认识——
+            # 注入只查剧本表,save_worldbook_overlays 从未并入)。addition=玩家权威新增,
+            # 不受章节泄漏过滤;retirement=剧本条目在本档退役。
+            _ov_add: list = []
+            _retired_ids: set = set()
+            if save_id:
+                try:
+                    _ov_rows = db.execute(
+                        "select kind, title, content, keys, priority, retired_entry_id "
+                        "from save_worldbook_overlays where save_id=%s",
+                        (int(save_id),),
+                    ).fetchall() or []
+                    for _o in _ov_rows:
+                        if _o.get("kind") == "addition":
+                            _ov_add.append(_o)
+                        elif _o.get("kind") == "retirement" and _o.get("retired_entry_id"):
+                            _retired_ids.add(int(_o["retired_entry_id"]))
+                except Exception:
+                    pass
             high = db.execute(
                 "select id, title, content, metadata from worldbook_entries "
                 "where script_id=%s and enabled=true and priority>=80 "
@@ -1124,7 +1145,14 @@ def _load_worldbook_for_retrieval(
             # task 122: 用当前 chapter 过滤
             if current_chapter_max is not None:
                 high = [r for r in high if _entry_chapter_min(r) <= current_chapter_max]
+            if _retired_ids:
+                high = [r for r in high if int(r.get("id") or 0) not in _retired_ids]
             high = high[:5]  # 过滤后取 top 5
+            # 存档新增·高优先(≥80)直接进常驻池(玩家权威,置顶)
+            for _o in _ov_add:
+                if int(_o.get("priority") or 0) >= 80:
+                    high.insert(0, {"id": None, "title": _o.get("title"),
+                                    "content": _o.get("content"), "metadata": {}})
             # 按 key 匹配
             matched = []
             if query and query.strip() and query != "开场":
@@ -1136,7 +1164,16 @@ def _load_worldbook_for_retrieval(
                 ).fetchall() or []
                 if current_chapter_max is not None:
                     matched = [r for r in matched if _entry_chapter_min(r) <= current_chapter_max]
+                if _retired_ids:
+                    matched = [r for r in matched if int(r.get("id") or 0) not in _retired_ids]
                 matched = matched[:20]
+                # 存档新增·普通优先级进 keys 匹配池(同结构参赛)
+                for _o in _ov_add:
+                    if int(_o.get("priority") or 0) < 80:
+                        matched.insert(0, {"id": None, "title": _o.get("title"),
+                                           "content": _o.get("content"),
+                                           "keys": _o.get("keys") or [],
+                                           "priority": _o.get("priority") or 50, "metadata": {}})
             picks: list[dict] = list(high)
             seen_titles = {r["title"] for r in picks}
             for r in matched:

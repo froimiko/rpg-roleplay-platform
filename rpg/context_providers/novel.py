@@ -308,9 +308,18 @@ def _project_chars_in_place(chars: dict, script_id: int | None,
                         db, int(script_id), name, progress_chapter, mode,
                         aliases=card.get("aliases") or [],
                     )
-                    out[name] = apply_projection_to_card(card, projected)
                 except Exception:
-                    out[name] = card  # 单卡投影失败 → 回退原卡
+                    projected = None
+                if projected:
+                    out[name] = apply_projection_to_card(card, projected)
+                else:
+                    # 投影不出(开局常态:无早期角色态数据)→ 摘除时代敏感字段。
+                    # 旧回退=原卡原样会把全书聚合身份(结局)泄进第1章(群反馈同族+RATH实锤)。
+                    # 「不知道此刻的他是谁」就什么都不说,好过说出结局。omniscient 不走本分支。
+                    safe = dict(card)
+                    for k in ("identity", "background", "current_status", "secrets"):
+                        safe.pop(k, None)
+                    out[name] = safe
         return out
     except Exception:
         return chars  # 连接/整体失败 → 原 chars 原样(绝不破回合)

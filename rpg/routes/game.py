@@ -838,9 +838,11 @@ async def api_chat(
                         message_for_model,
                         str(memory.get("current_objective") or ""),
                     ]))[:300]
+                    _, _wb_save_id = _resolve_persist_target(api_user)
                     wb_result = worldbook_agent.consult(
                         script_id=int(script_id_for_wb or 0),
                         query=wb_query,
+                        save_id=int(_wb_save_id) if _wb_save_id else None,  # 群反馈实锤:没传=存档级条目全盲
                         current_phase=cur_phase,
                         current_time=cur_time,
                     )
