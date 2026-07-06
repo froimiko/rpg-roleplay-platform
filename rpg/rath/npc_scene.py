@@ -101,6 +101,7 @@ def build_scene_prompts(
     location = str(player.get("current_location") or "").strip()
     wtime = str(world.get("time") or "").strip()
     ev_lines = "\n".join(f"- {e}" for e in (recent_events or [])[:4]) or "(暂无)"
+    _pname_disp = str(((state_data.get("player") or {}).get("name")) or "").strip()
     _rule3 = (
         (f"3. 本场包含玩家角色【{player_in_scene}】:由你按其【设定】驱动其自主行动。"
          "行动必须严格符合其当前状态(如昏迷则只能有微弱生理反应/本能的力量外溢/梦呓,绝不能清醒对话);"
@@ -120,8 +121,14 @@ def build_scene_prompts(
         "不强求进展也不禁止进展;**推进时必须从已有事实自然长出**,禁止为了『有新内容』而凭空发明。"
         "不要复读近期动向。\n"
         + "6. **专有名词铁律**:绝不发明新的机构/地点/组织/装置/计划的名字;只能使用档案、世界观要点、近况中出现过的名词。\n"
-        "   世界观要点里的元素可以自然进入闲谈,体现这个世界的质感。\n"
-        "7. 只输出严格 JSON(不要代码围栏),schema:\n"
+        + (f"7. **玩家角色设定神圣**:玩家角色{_pname_disp}的真实来历只有玩家自己知道。"
+           "NPC 可以困惑、好奇、开放地猜测,但**绝不为其编造具体的替代来历**"
+           "(不得把其说成实验品/某机构产物/某组织成员/某人后裔等),绝不发明指向某来历的"
+           "『证据』(记号相似/档案吻合/血统鉴定等)。谜团保持为谜团,直到玩家亲自揭示。"
+           "也不要每场都围着玩家角色转:NPC 有自己的生活、工作与烦恼。\n"
+           if _pname_disp else "")
+        + "   世界观要点里的元素可以自然进入闲谈,体现这个世界的质感。\n"
+        "8. 只输出严格 JSON(不要代码围栏),schema:\n"
         '{"transcript":[{"speaker":"名字","line":"台词或动作"}],'
         '"scene_summary":"≤120字的第三人称场景纪要(写清两人谈了什么/做了什么)",'
         '"npc_updates":{"名字":{"goal":"可选,若目标有微调","stance":"可选","private_memory":"这个角色私下会记住的一句话"}}}'

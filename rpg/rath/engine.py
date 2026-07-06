@@ -238,6 +238,9 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
             materials = _build_materials(snap, None)
             sys_p, usr_p = _build_prompts(materials)
             usr_p += f"\n\n【离线时长】玩家已离开,{elapsed_hint}。事件应体现这段时间的自然流逝。"
+            if player_name:
+                usr_p += (f"\n【玩家角色设定神圣】不得为玩家角色{player_name}编造来历/身份/标签,"
+                          "不得生成把其归类为实验品/机构产物等的事件;其谜团只属于玩家。")
             if world_context:
                 usr_p += f"\n【世界观要点(事件应符合此世界质感)】\n{world_context}"
             if directive:
