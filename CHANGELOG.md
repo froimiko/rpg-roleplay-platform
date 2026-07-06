@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.60.0] - 2026-07-06
+
+### Added
+- **RATH 原著河道**:离线世界现在以原著剧情为主时间流——角色的生活、谈资与世界事件围绕原著即将发生的动向交织,动向按时机自然发生并载入世界事实;世界不再脱离原著空转。
+
 ## [1.59.0] - 2026-07-06
 
 ### Added
