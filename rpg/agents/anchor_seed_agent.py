@@ -394,10 +394,27 @@ def get_progress_window(save_id: int, world_time_label: str | None = None,
             # 永不被判定器标记(更新速度对不上)、永不作为 steering 注入(剧情不按锚点走)。
             # pace on 时 chapter_min=last_sat(含当前章);status='pending' 过滤天然排除已发生的同章锚点。
             chapter_min = last_sat if _pace else last_sat + 1
+            # 群反馈(行者无疆):/set 显式跳进度(advance_story_progress)写 progress_chapter
+            # 可远超锚点真实到达章(set 到 ch17,锚点窗口仍停 ch7,GM 抱着"异形1开局"旧锚点
+            # 只能水文)。工具描述承诺"影响检索窗口/软引导起点章"但此分支从不读它——
+            # 进度真源 = max(锚点真实到达, 玩家显式进度)。相等/更小时不抬,不影响同章锚点逻辑。
+            _src = "satisfied"
+            try:
+                r_pc0 = db.execute(
+                    "select (worldline->>'progress_chapter')::int as pc "
+                    "from game_sessions where save_id = %s",
+                    (sid,),
+                ).fetchone()
+                _pc0 = int(r_pc0["pc"]) if r_pc0 and r_pc0.get("pc") is not None else 0
+            except Exception:
+                _pc0 = 0
+            if _pc0 > chapter_min:
+                chapter_min = _pc0
+                _src = "progress_chapter"
             return {
                 "chapter_min": chapter_min,
-                "chapter_max": last_sat + window_size,
-                "source": "satisfied",
+                "chapter_max": max(last_sat, chapter_min) + window_size,
+                "source": _src,
                 "last_satisfied_chapter": last_sat,
             }
         # 1.5 出生点 / 已推进进度(尚无 occurred 锚点时):读 worldline.progress_chapter。

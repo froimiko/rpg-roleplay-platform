@@ -63,3 +63,16 @@ class ProgressWindowIncludesSuperseded(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProgressWindowRespectsExplicitProgress(unittest.TestCase):
+    def test_last_sat_branch_lifts_to_progress_chapter(self):
+        """群反馈(行者无疆):/set 跳进度到 ch17,锚点窗口仍停 last_sat(ch7)附近,
+        GM 抱着"异形1开局"旧锚点只能水文。last_sat 分支必须读 progress_chapter
+        并取 max 抬升窗口起点(进度真源=max(锚点真实到达, 玩家显式进度))。"""
+        body = _func(SEED_PY, "get_progress_window")
+        sat_branch = body[body.find("if last_sat:"):]
+        self.assertIn("progress_chapter", sat_branch,
+                      "last_sat 分支必须读 progress_chapter(否则 /set 显式跳进度被无视)")
+        self.assertIn("_pc0 > chapter_min", sat_branch,
+                      "显式进度大于锚点楼层时抬升窗口起点(相等/更小不抬,保同章锚点逻辑)")

@@ -736,6 +736,7 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                 if anchors:
                     _src_tag = {
                         "satisfied": f"按已推进进度(原著 ch{_progress['last_satisfied_chapter']}+1..+{50})",
+                        "progress_chapter": f"按玩家显式进度(progress_chapter)锁定 ch{_ch_min}..{_ch_max}",
                         "label": f"按当前时间标签 '{_world_time}' 锁定 ch{_ch_min}..{_ch_max}",
                         "fallback": "剧本开头 ch1..30(玩家未推进任何锚点)",
                     }.get(_progress["source"], "未知")
