@@ -242,13 +242,21 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                     cast_rows = []
                     for n, c in _ranked:
                         card = dict(c or {})
+                        proj = None
                         try:
                             proj = project_character_state(
                                 db, _sid, n, _prog, "strict",
                                 aliases=card.get("aliases") or None)
-                            card = apply_projection_to_card(card, proj)
                         except Exception:
-                            pass
+                            proj = None
+                        if proj:
+                            card = apply_projection_to_card(card, proj)
+                        else:
+                            # 投影不出(开局常态:无早期角色态数据)→ 摘除时代敏感字段。
+                            # 正典回退=原卡原样会把全书聚合身份(结局)泄进第1章;
+                            # 「不知道此刻的他是谁」就什么都不说,好过说出结局。
+                            for k in ("identity", "background", "current_status", "secrets"):
+                                card.pop(k, None)
                         cast_rows.append({"name": n, "sheet": _format_card(n, card)[:260]})
                 # 原著河道(用户实锤:仿真跟原著0%重合——原著剧情必须是世界的主时间流)
                 canon_rows = db.execute(
