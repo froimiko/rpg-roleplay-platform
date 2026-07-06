@@ -86,7 +86,9 @@ async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
         if hasattr(db, "commit"):
             db.commit()
     agendas = snap.get("npc_agendas") or {}
-    # 搖光单元板:议程 NPC + 对手戏私记(来自 rath_events payload,按 NPC 聚合,最近優先)
+    # 角色动态=三源合并(用户实锤:板子只读 state 议程,而离线模式铁律不写 state → 永远空)。
+    # 源:state 议程(玩家亲玩产生) + 离线戏 npc_updates(goal/stance,最新优先) + 私记。
+    offline_updates: dict[str, dict] = {}
     private_memories: dict[str, list[str]] = {}
     ev_out = []
     from rath.engine import _clock_label
@@ -99,22 +101,33 @@ async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
             except Exception:
                 payload = {}
         for name, u in ((payload.get("npc_updates") or {}) if isinstance(payload, dict) else {}).items():
+            nm = str(name)
             pm = (u or {}).get("private_memory")
-            if pm and len(private_memories.setdefault(str(name), [])) < 8:
-                private_memories[str(name)].append(str(pm))
+            if pm and len(private_memories.setdefault(nm, [])) < 8:
+                private_memories[nm].append(str(pm))
+            # events 按 id desc 遍历 → 首见即最新,不覆盖
+            if nm not in offline_updates and isinstance(u, dict):
+                offline_updates[nm] = {k: str(u.get(k) or "") for k in ("goal", "stance")}
         ev_out.append({
             "id": int(r["id"]), "kind": r.get("kind"), "summary": r.get("summary"),
             "payload": payload if isinstance(payload, dict) else {},
             "world_clock_label": _clock_label(int(r.get("world_clock_min") or 0)),
             "created_at": str(r.get("created_at") or ""),
         })
-    fluctlights = [
-        {"name": n,
-         "goal": (a or {}).get("goal") or "",
-         "stance": (a or {}).get("stance") or "",
-         "private_memories": private_memories.get(n, [])}
-        for n, a in agendas.items() if isinstance(n, str)
-    ]
+    _names: list[str] = [n for n in agendas if isinstance(n, str)]
+    for n in list(offline_updates) + list(private_memories):
+        if n not in _names:
+            _names.append(n)
+    fluctlights = []
+    for n in _names:
+        a = agendas.get(n) or {}
+        o = offline_updates.get(n) or {}
+        fluctlights.append({
+            "name": n,
+            "goal": o.get("goal") or (a or {}).get("goal") or "",
+            "stance": o.get("stance") or (a or {}).get("stance") or "",
+            "private_memories": private_memories.get(n, []),
+        })
     trace_out = [{
         "id": int(r["id"]), "summary": r.get("summary"),
         "world_clock_label": _clock_label(int(r.get("world_clock_min") or 0)),

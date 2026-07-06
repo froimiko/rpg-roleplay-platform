@@ -358,50 +358,6 @@ function ExperimentPanel({ expId }) {
         </CSButton>
       </CSSpaceBetween>
 
-      {/* 运行日志(思考流/执行层) */}
-      <CSContainer header={<CSHeader variant="h2" description={t('rath_page.trace.desc', { defaultValue: '引擎每一步的决策与验收结果:材料装配、选角、模型产出与拒收原因。' })}>{t('rath_page.trace.title', { defaultValue: '运行日志' })}</CSHeader>}>
-        {trace.length === 0 ? (
-          <CSBox color="text-body-secondary" fontSize="body-s">{t('rath_page.trace.empty', { defaultValue: '暂无运行记录——推进一步后这里会实时滚动。' })}</CSBox>
-        ) : (
-          <div style={{ maxHeight: 260, overflowY: 'auto', fontFamily: 'var(--font-family-monospace, monospace)', fontSize: 12, lineHeight: 1.7 }}>
-            {trace.map((r) => (
-              <div key={r.id} style={{ borderBottom: '1px solid var(--color-border-divider-default, #e9ebed)', padding: '2px 0' }}>
-                <span style={{ opacity: 0.55, marginRight: 8 }}>{r.world_clock_label}</span>
-                {r.summary}
-              </div>
-            ))}
-          </div>
-        )}
-      </CSContainer>
-
-      {/* 角色动态板 */}
-      <CSContainer header={<CSHeader variant="h2">{t('rath_page.fluctlights.title', { defaultValue: '角色动态' })}</CSHeader>}>
-        {fluctlights.length === 0 ? (
-          <CSBox color="text-body-secondary" textAlign="center" padding={{ vertical: 'l' }}>
-            {t('rath_page.fluctlights.empty', { defaultValue: '尚无议程 NPC——先在这个存档里玩几回合,让角色拥有自己的目标。' })}
-          </CSBox>
-        ) : (
-          <div className="rath-fluctlight-grid">
-            {fluctlights.map((f) => (
-              <div key={f.name} className="rath-fluctlight-card">
-                <CSBox fontWeight="bold">{f.name}</CSBox>
-                {f.goal && <CSBox fontSize="body-s" margin={{ top: 'xxs' }}>{t('rath_page.fluctlights.goal_prefix', { defaultValue: '目标：' })}{f.goal}</CSBox>}
-                {f.stance && <CSBox fontSize="body-s" color="text-body-secondary">{t('rath_page.fluctlights.stance_prefix', { defaultValue: '态度：' })}{f.stance}</CSBox>}
-                {Array.isArray(f.private_memories) && f.private_memories.length > 0 && (
-                  <div style={{ marginTop: 6 }}>
-                    {f.private_memories.map((m, i) => (
-                      <div key={i} style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--text-quiet, #a8a195)', marginTop: 2 }}>
-                        {'“'}{m}{'”'}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </CSContainer>
-
       {/* 日志:顶部插入引导 + events 列表 */}
       <CSContainer header={<CSHeader variant="h2">{t('rath_page.timeline.title', { defaultValue: '日志' })}</CSHeader>}>
         <CSSpaceBetween size="s">
@@ -435,6 +391,50 @@ function ExperimentPanel({ expId }) {
           )}
         </CSSpaceBetween>
       </CSContainer>
+
+      {/* 角色动态板 */}
+      <CSContainer header={<CSHeader variant="h2">{t('rath_page.fluctlights.title', { defaultValue: '角色动态' })}</CSHeader>}>
+        {fluctlights.length === 0 ? (
+          <CSBox color="text-body-secondary" textAlign="center" padding={{ vertical: 'l' }}>
+            {t('rath_page.fluctlights.empty', { defaultValue: '尚无角色动态——推进几步或进游戏玩几回合后,这里会出现各角色的目标、态度与私记。' })}
+          </CSBox>
+        ) : (
+          <div className="rath-fluctlight-grid">
+            {fluctlights.map((f) => (
+              <div key={f.name} className="rath-fluctlight-card">
+                <CSBox fontWeight="bold">{f.name}</CSBox>
+                {f.goal && <CSBox fontSize="body-s" margin={{ top: 'xxs' }}>{t('rath_page.fluctlights.goal_prefix', { defaultValue: '目标：' })}{f.goal}</CSBox>}
+                {f.stance && <CSBox fontSize="body-s" color="text-body-secondary">{t('rath_page.fluctlights.stance_prefix', { defaultValue: '态度：' })}{f.stance}</CSBox>}
+                {Array.isArray(f.private_memories) && f.private_memories.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    {f.private_memories.map((m, i) => (
+                      <div key={i} style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--text-quiet, #a8a195)', marginTop: 2 }}>
+                        {'“'}{m}{'”'}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CSContainer>
+
+      {/* 运行日志(思考流/执行层) */}
+      <CSExpandableSection variant="container" headerText={t('rath_page.trace.title', { defaultValue: '运行日志' })} headerDescription={t('rath_page.trace.desc', { defaultValue: '引擎每一步的决策与验收结果:材料装配、选角、模型产出与拒收原因。' })}>
+        {trace.length === 0 ? (
+          <CSBox color="text-body-secondary" fontSize="body-s">{t('rath_page.trace.empty', { defaultValue: '暂无运行记录——推进一步后这里会实时滚动。' })}</CSBox>
+        ) : (
+          <div style={{ maxHeight: 260, overflowY: 'auto', fontFamily: 'var(--font-family-monospace, monospace)', fontSize: 12, lineHeight: 1.7 }}>
+            {trace.map((r) => (
+              <div key={r.id} style={{ borderBottom: '1px solid var(--color-border-divider-default, #e9ebed)', padding: '2px 0' }}>
+                <span style={{ opacity: 0.55, marginRight: 8 }}>{r.world_clock_label}</span>
+                {r.summary}
+              </div>
+            ))}
+          </div>
+        )}
+      </CSExpandableSection>
 
       <ConfirmModal
         open={archiveConfirm}

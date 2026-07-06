@@ -23,7 +23,7 @@ MAX_SCENES_PER_DAY = 12
 MAX_RUNNING_PER_USER = 2
 AUTO_PAUSE_UNVIEWED_HOURS = 72
 ACCEL_CHOICES = (1, 60, 240)
-SCENE_EVERY_N_TICKS = 2  # 每第 2 拍尝试一场对手戏
+SCENE_EVERY_N_TICKS = 1  # 每拍都演一场互动(用户实锤:落单拍只剩随机背景事件=毫无意义)
 
 
 def _trace(exp_id: int, msg: str, *, clock: int = 0) -> None:
@@ -259,7 +259,9 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
             from core.json_parse import parse_llm_json
             materials = _build_materials(snap, None)
             sys_p, usr_p = _build_prompts(materials)
-            usr_p += f"\n\n【离线时长】玩家已离开,{elapsed_hint}。事件应体现这段时间的自然流逝。"
+            usr_p += (f"\n\n【离线时长】玩家已离开,{elapsed_hint}。事件应体现这段时间的自然流逝。"
+                      "\n【关联铁律】事件必须与在场人物、当前舞台或他们的生活直接相关"
+                      "(会被他们看见/听见/影响到);不要生成与故事无关的随机路人事件。")
             if player_name:
                 usr_p += (f"\n【玩家角色设定神圣】不得为玩家角色{player_name}编造来历/身份/标签,"
                           "不得生成把其归类为实验品/机构产物等的事件;其谜团只属于玩家。")
