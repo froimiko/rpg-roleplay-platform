@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.57.2] - 2026-07-06
+
+### Fixed
+- **RATH 剧情膨胀**:离线世界不再每场戏都加码剧情——大多数时候是日常生活切片,只有间隔到了或你插入引导时才推进;凭空编造的机构/地点/装置名会被整场拒收。
+
 ## [1.57.0] - 2026-07-06
 
 ### Added
