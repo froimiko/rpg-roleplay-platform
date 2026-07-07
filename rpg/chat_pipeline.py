@@ -599,6 +599,29 @@ async def apply_player_directives_phase(
                     _tl["anchor_confidence"] = _anchor.get("score", 0.0)
                     if _anchor.get("story_phase"):
                         _tl["current_phase"] = _anchor["story_phase"]
+                    # 群反馈(白玖):/set 世界线跳转只写 timeline → 剧情跳成功但面板「当前」
+                    # 按 worldline.progress_chapter 判定仍钉开局、GM 锚点窗口/揭示天花板也
+                    # 不跟(「/set 跳章信号传播」第6缝)。显式跳转=玩家权威进度,与出生点/
+                    # advance_story_progress 同语义推进(max-only 单调,回跳不回退)。
+                    try:
+                        if _early_active_save_id:
+                            from platform_app.db import connect as _conn_jump
+                            from gm_serving.settings import (
+                                advance_progress as _adv_jump,
+                                set_user_progress_floor as _floor_jump,
+                            )
+                            with _conn_jump() as _db_jump:
+                                _adv_jump(_db_jump, int(_early_active_save_id), int(_anchor["chapter_min"]))
+                                _floor_jump(_db_jump, int(_early_active_save_id), int(_anchor["chapter_min"]))
+                            _wl_jump = state.data.setdefault("worldline", {})
+                            try:
+                                _wl_jump["progress_chapter"] = max(
+                                    int(_wl_jump.get("progress_chapter") or 0),
+                                    int(_anchor["chapter_min"]))
+                            except (TypeError, ValueError):
+                                _wl_jump["progress_chapter"] = int(_anchor["chapter_min"])
+                    except Exception as _prog_err:
+                        log.warning(f"[chat] 世界线跳转进度推进跳过(非致命): {_prog_err}")
                     directive_updates.append(
                         f"时间线锚点 → 第{_anchor['chapter_min']}-{_anchor['chapter_max']}章 · "
                         f"{_anchor['story_phase']}"
