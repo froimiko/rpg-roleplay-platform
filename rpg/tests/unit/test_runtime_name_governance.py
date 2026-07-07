@@ -39,5 +39,5 @@ def test_naming_ban_injected_names_only():
     assert i != -1
     assert "type='character'" in body
     assert "first_revealed_chapter,0) > %s" in body, "只禁未揭示的"
-    assert "importance,0) >= 40" in body and "limit 30" in body, "名单有界"
+    assert "limit 30" in body, "名单有界(纯排名,importance 刻度跨剧本不统一不设绝对下限)"
     assert "select name from" in body, "只查名字,绝不带身份字段"

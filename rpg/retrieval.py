@@ -817,8 +817,10 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                 from platform_app.db import connect as _conn_ban
                 with _conn_ban() as _db_ban:
                     _ban_rows = _db_ban.execute(
+                        # importance 刻度跨剧本不统一(拆书批次差异:有的0-100有的0-10),
+                        # 不设绝对下限,纯按排名 top30(误禁无害:名单只约束起名)。
                         "select name from kb_canon_entities where script_id=%s and type='character' "
-                        "and coalesce(first_revealed_chapter,0) > %s and coalesce(importance,0) >= 40 "
+                        "and coalesce(first_revealed_chapter,0) > %s "
                         "order by importance desc nulls last limit 30",
                         (int(script_id), int(_progress_chapter) + 3),
                     ).fetchall()
