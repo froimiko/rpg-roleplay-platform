@@ -563,3 +563,51 @@
 
 /* P0 冲突标记:标签被 AI/他处改动且本地有未保存修改 */
 .mde-tab-conflict { color: var(--warn, #e8a33d); }
+
+/* ══ 编辑器统一动效层(用户反馈:动画全缺失;与分支图同语言:缓出贝塞尔+reduced-motion)══ */
+/* 弹窗族:遮罩渐显+容器入场(轻缩放上浮) */
+.mde-qopen-scrim { animation: mdeScrimIn 140ms ease-out both; }
+.mde-qopen, .mde-history, .mde-rules, .mde-search, .mde-issues {
+  animation: mdeModalIn 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes mdeScrimIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mdeModalIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 下拉菜单(文件/编辑/工作区):自顶展开 */
+.mde-menu { animation: mdeMenuIn 130ms cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: top left; }
+@keyframes mdeMenuIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 标签页:新开渐入+悬停/激活过渡+关闭钮浮现 */
+.mde-tab { animation: mdeTabIn 160ms ease-out both; transition: background 140ms ease, color 140ms ease; }
+@keyframes mdeTabIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.mde-tab-close { opacity: 0; transition: opacity 120ms ease, color 120ms ease; }
+.mde-tab:hover .mde-tab-close, .mde-tab.active .mde-tab-close { opacity: 1; }
+/* 文件树:行 hover/选中过渡;组展开时子项渐入 */
+.mde-tree-item { transition: background 120ms ease, color 120ms ease; }
+.mde-tree-children .mde-tree-item { animation: mdeTreeIn 120ms ease-out both; }
+@keyframes mdeTreeIn { from { opacity: 0; transform: translateX(-3px); } to { opacity: 1; transform: none; } }
+.mde-tree-caret { transition: transform 140ms ease; }
+/* 窄屏右栏浮层:滑入+遮罩渐显 */
+@media (max-width: 1100px) {
+  .mde-panes:not(.right-collapsed) > .mde-right { animation: mdeSlideIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .mde-scrim { animation: mdeScrimIn 160ms ease-out both; }
+}
+@keyframes mdeSlideIn { from { transform: translateX(24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+/* 工具栏/状态栏按钮统一过渡 */
+.mde-tb-txt, .mde-sb-btn, .mde-tree-tbbtn, .mde-tree-additem, .mde-history-restore, .mde-rules-save, .mde-rules-cancel {
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease, transform 100ms ease;
+}
+.mde-tb-txt:active, .mde-sb-btn:active { transform: scale(0.97); }
+/* 搜索结果/快速打开条目 hover 过渡 */
+.mde-search-item, .mde-qopen-item, .mde-history-item { transition: background 120ms ease; }
+/* 尊重系统减少动态偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .mde-qopen-scrim, .mde-qopen, .mde-history, .mde-rules, .mde-search, .mde-issues,
+  .mde-menu, .mde-tab, .mde-tree-children .mde-tree-item, .mde-scrim,
+  .mde-panes:not(.right-collapsed) > .mde-right { animation: none; }
+  .mde-tab, .mde-tree-item, .mde-tree-caret, .mde-tab-close { transition: none; }
+}
