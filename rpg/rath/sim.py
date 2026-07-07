@@ -96,7 +96,9 @@ def init_sim_state(snapshot: dict, cast_cards: list[dict], wb_rows: list[dict],
                         "text": str(b.get("summary") or "").strip()[:140]}
                        for b in (canon_beats or []) if str(b.get("summary") or "").strip()][:12]}
     return {"clock_min": int(clock_min), "cast": cast, "places": places,
-            "facts": facts, "threads": threads, "canon": canon}
+            "facts": facts, "threads": threads, "canon": canon,
+            # v3:NPC 关系网(键="甲|乙"排序对,kind=关系词,note=最近变化)——关系变化=戏剧引擎
+            "relations": {}}
 
 
 def _derive_player_status(snapshot: dict) -> str:
@@ -118,9 +120,16 @@ def compact_view(sim: dict) -> str:
         lines.append(f"- {n}{tag}:在{c.get('location')};正在{c.get('activity')};{st}"
                      f"目标:{c.get('goal') or '(无)'};态度:{c.get('stance') or '(平静)'}")
     lines.append("已知地点:" + "、".join(sim.get("places") or []))
+    rels = sim.get("relations") or {}
+    if rels:
+        lines.append("人物关系:" + ";".join(
+            f"{k.replace('|', '与')}:{(v or {}).get('kind', '')}" for k, v in list(rels.items())[:10]))
     lines.append("剧情线:")
     for t in sim.get("threads") or []:
-        lines.append(f"  · [{t['id']}|张力{t['tension']}] {t['desc']}")
+        _stg = t.get("stage") or "rising"
+        _stg_hint = {"seed": "萌芽", "rising": "发展", "climax": "高潮·本拍应有决定性事件",
+                     "aftermath": "余波·只收尾不升级"}.get(_stg, _stg)
+        lines.append(f"  · [{t['id']}|张力{t['tension']}|{_stg_hint}] {t['desc']}")
     canon = sim.get("canon") or {}
     beats = canon.get("beats") or []
     cur = int(canon.get("cursor") or 0)
@@ -144,7 +153,9 @@ _SCHED_SYSTEM = """你是世界仿真的调度器:决定接下来这段时间里
    绝不为其编造来历/身份;其谜团只属于玩家。**绝不让任何角色研究/调查/检测玩家或其
    随身物品,不设立以玩家为对象的研究项目(灵魂锚点、血统鉴定之类);照料是日常,不是调查。**
 4. 剧情自然呼吸:可以推进也可以只是生活;推进必须从已确立事实自然长出;
-   不必每拍都有相遇(interaction 可为 null)。
+   不必每拍都有相遇(interaction 可为 null)。剧情线有生命周期(萌芽→发展→高潮→余波):
+   高潮线本拍应发生决定性事件;余波线只处理后果与情绪,不再引入新冲突。
+   人物之间的关系会因相处而变化——值得记录的变化用 relation_updates 给出(≤2条)。
 5. 有【观测者引导】时,将其翻译成剧情线/目标的调整,让世界朝该方向自然倾斜。
 6. 生活优先:角色有自己的本职与日常,调查/异象不得吞噬全部生活;除非某剧情线张力≥7,
    角色应主要处于本职与日常活动。
@@ -159,6 +170,7 @@ _SCHED_SYSTEM = """你是世界仿真的调度器:决定接下来这段时间里
  "world_events": ["≤1条,必须直接影响列出的角色或舞台"],
  "thread_updates": [{"id": "t1", "tension_delta": -2到2, "note": "≤40字"}],
  "new_threads": [{"desc": "≤60字", "tension": 1到6, "participants": ["名字"]}],
+ "relation_updates": [{"pair": ["甲","乙"], "kind": "≤12字关系词(如 挚友/心存芥蒂/暗生情愫)", "note": "≤40字这段时间关系为何变化"}],
  "new_facts": ["≤2条,只能是本窗口行动的自然结果"],
  "canon_advance": false}"""
 
@@ -352,6 +364,24 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
         if note and _gate(note, "thread.note"):
             t["desc"] = (t["desc"].split("——")[0] + "——" + note)[:120]
         applied["threads"] += 1
+    # v3 长弧:stage 由裁决层按张力确定性推进(不信 LLM 直接设),线有形状而非数字浮动。
+    # seed→rising(张力≥4)→climax(≥8)→aftermath(climax 停留≥2拍自动泄压)→平息(close_stale)。
+    for t in threads:
+        stg = t.get("stage") or ("seed" if int(t.get("tension") or 0) <= 3 else "rising")
+        tn = int(t.get("tension") or 0)
+        if stg == "seed" and tn >= 4:
+            stg = "rising"
+        if stg == "rising" and tn >= 8:
+            stg = "climax"
+            t["stage_seq"] = sim["tick_seq"]
+        elif stg == "climax" and sim["tick_seq"] - int(t.get("stage_seq") or sim["tick_seq"]) >= 2:
+            stg = "aftermath"
+            t["tension"] = min(tn, 3)  # 高潮已过,确定性泄压
+        t["stage"] = stg
+        hist = t.setdefault("tension_hist", [])
+        hist.append(int(t.get("tension") or 0))
+        if len(hist) > 12:
+            del hist[:-12]
     for nt in (data.get("new_threads") or [])[:1]:
         if len(threads) >= MAX_THREADS:
             break
@@ -361,12 +391,35 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
                 "id": f"t{len(threads) + 1}",
                 "desc": desc[:80],
                 "last_touch": sim["tick_seq"],
-                "tension": max(1, min(6, int((nt or {}).get("tension") or 3))),
+                "stage": "seed",
+                "tension": max(1, min(4, int((nt or {}).get("tension") or 3))),  # seed 期钳 ≤4
                 "participants": list(dict.fromkeys(
                     rp for rp in (resolve_cast_name(cast, p)
                                   for p in ((nt or {}).get("participants") or [])) if rp))[:3],
             })
             applied["threads"] += 1
+
+    # v3 关系网:relation_updates 验收——双方经别名归并后 ∈cast 且不同人;kind/note 过
+    # 名词闸+神圣条款闸(涉玩家的关系合法如「守护」,但探究/装置措辞照拒)。无向对键排序。
+    relations = sim.setdefault("relations", {})
+    for ru in (data.get("relation_updates") or [])[:2]:
+        if not isinstance(ru, dict):
+            continue
+        pair = [resolve_cast_name(cast, str(x)) for x in (ru.get("pair") or [])[:2]]
+        if len(pair) != 2 or not all(pair) or pair[0] == pair[1]:
+            rejected.append("relation:成员未识别")
+            continue
+        kind = str(ru.get("kind") or "").strip()[:12]
+        note = str(ru.get("note") or "").strip()[:40]
+        # 闸文本带上双方名字:探究闸靠「玩家名+探究词共现」判定,kind/note 本身无名字
+        if not kind or not _gate(" ".join(pair) + " " + kind + " " + note, "relation"):
+            continue
+        key = "|".join(sorted(pair))
+        relations[key] = {"kind": kind, "note": note, "since_seq": sim["tick_seq"]}
+        applied["relations"] = applied.get("relations", 0) + 1
+    if len(relations) > 24:  # 封顶:最老的先淘汰
+        for k in sorted(relations, key=lambda x: int(relations[x].get("since_seq") or 0))[:len(relations) - 24]:
+            relations.pop(k, None)
 
     # facts(≤2,滚动封顶)
     facts = sim.setdefault("facts", [])
@@ -502,7 +555,7 @@ def enforce_night(sim: dict) -> int:
         return 0
     hot = set()
     for t in sim.get("threads") or []:
-        if int(t.get("tension") or 0) >= 8:
+        if int(t.get("tension") or 0) >= 8 or (t.get("stage") == "climax"):
             hot.update(t.get("participants") or [])
     n = 0
     for name, c in (sim.get("cast") or {}).items():
@@ -542,8 +595,15 @@ def build_director_prompts(sim: dict, interaction: dict, *, elapsed_hint: str = 
         tag = "[昏迷]" if p in (interaction.get("passive") or []) else ""
         lines.append(f"- {p}{tag}:{c.get('sheet','')[:100]};目标:{c.get('goal') or '(无)'};态度:{c.get('stance') or '(平静)'}")
     rel_facts = (sim.get("facts") or [])[-6:]
+    # v3:两人现有关系喂给呈现层——关系是对白语气的地基(挚友与心存芥蒂说话不一样)
+    ps2 = [str(x) for x in (interaction.get("participants") or [])[:2]]
+    _rel_line = ""
+    if len(ps2) == 2:
+        _rv = (sim.get("relations") or {}).get("|".join(sorted(ps2)))
+        if _rv:
+            _rel_line = f"\n【两人关系】{_rv.get('kind', '')}" + (f"(近况:{_rv.get('note', '')})" if _rv.get("note") else "")
     user = ("【相遇】地点:" + str(interaction.get("place")) + ";缘由:" + str(interaction.get("reason"))
-            + ";自然落点:" + str(interaction.get("expected_outcome")) + "\n【参与者】\n" + "\n".join(lines)
+            + ";自然落点:" + str(interaction.get("expected_outcome")) + _rel_line + "\n【参与者】\n" + "\n".join(lines)
             + "\n【相关事实】\n" + "\n".join("· " + f for f in rel_facts)
             + (f"\n【经过时间】{elapsed_hint}" if elapsed_hint else "")
             + "\n请写出这场相遇。")

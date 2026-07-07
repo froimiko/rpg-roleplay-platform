@@ -9,6 +9,15 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.65.0] - 2026-07-07 (@ 6a9ec9c70)
+
+### Added
+- **RATH v3 — 世界厚度与桥接**:
+  - 关系网:调度层可产出 `relation_updates`(甲|乙 有序对),裁决层别名归并 + 探究闸(闸文本含双方名字)+ 封顶 24 按 since_seq 淘汰;呈现层向双人场景注入两人关系;观测台新增「人物关系」节。
+  - 剧情线长弧:确定性 stage 状态机(seed→rising(张力≥4)→climax(≥8)→aftermath(climax 停留≥2 拍自动泄压)),tension_hist 近 12 拍;新线出生 seed 且张力钳≤4;夜律豁免 climax 线;观测台 stage 徽标 + 张力 sparkline。
+  - 离线简报桥:玩家离开≥2 小时后回归,GM 材料确定性注入离线世界纪要(`rath/briefing.py`,按世界日分组,≤700 字,零 LLM,仅 running/paused 实验)——离线世界不再只靠被动召回。
+  - 观测台:原著河道进度条(cursor/total + 下一事件 tooltip + 滞留警示点)、事件按世界日分组(scene 可展开全文)。
+
 ## [1.64.1] - 2026-07-07 (@ d4b2f9c5d)
 
 ## [1.64.0] - 2026-07-07 (@ b8294a60e)

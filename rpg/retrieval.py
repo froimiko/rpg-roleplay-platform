@@ -836,6 +836,24 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
         except Exception as _ban_err:
             log.debug(f"[retrieval] 命名禁区注入跳过(非致命): {_ban_err}")
 
+        # ── 离线世界纪要(RATH→游戏桥,v3):玩家回归回合注入离线期间世界发生的事 ──
+        # 确定性聚合(rath/briefing,零 LLM);绑定了活跃 RATH 实验且间隔≥2h 才有产物。
+        try:
+            _sid_brief = _resolve_save_id_from_user(user_id)
+            if _sid_brief:
+                from platform_app.db import connect as _conn_brief
+                with _conn_brief() as _db_brief:
+                    _has_exp = _db_brief.execute(
+                        "select 1 from rath_experiments where save_id=%s and status in ('running','paused') limit 1",
+                        (int(_sid_brief),)).fetchone()
+                    if _has_exp:
+                        from rath.briefing import build_offline_briefing
+                        _brief = build_offline_briefing(_db_brief, int(_sid_brief))
+                        if _brief:
+                            parts.append(_brief)
+        except Exception as _brief_err:
+            log.debug(f"[retrieval] 离线纪要注入跳过(非致命): {_brief_err}")
+
         # ── 存档独立时间线·历史锚点 (跟上面【世界线收束·接下来的锚点】平行的另一套) ──
         # 上面那段 = 原著未来 (玩家还没推进到的剧本必然事件)
         # 下面这段 = 玩家创造的过去 (玩家在这个世界线已经做过的重要事)

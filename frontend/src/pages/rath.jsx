@@ -38,6 +38,58 @@ import { ConfirmModal } from '../tavern-app.jsx';
 const POLL_MS = 30000;
 const ACCEL_OPTIONS = [1, 60, 240];
 
+/* ── 纯函数(v3 可视化:河道提示截断/张力 sparkline 映射/事件按世界日分组)──────
+ * 均无副作用,供 vitest 直接单测(见 __tests__/rath-viz.test.jsx)。 */
+
+/** 截断长文本用于 hover 提示 / 折叠行摘要预览,末尾加省略号。maxLen 默认 60(中文语境下的经验值)。 */
+function _truncateForTip(text, maxLen = 60) {
+  const s = String(text == null ? '' : text);
+  if (s.length <= maxLen) return s;
+  const cut = Math.max(1, maxLen - 1);
+  return `${s.slice(0, cut).trimEnd()}…`;
+}
+
+/** 从 world_clock_label(如"第14日 19:40")解析出"第N日"前缀;解析不出时返回空串。 */
+function _parseWorldDayLabel(label) {
+  const m = /^(第\d+日)/.exec(String(label == null ? '' : label));
+  return m ? m[1] : '';
+}
+
+/** 按世界日分组 events,组内保持原有时序;非相邻的同日不合并(与原始顺序一致地按"day 变化"切组)。 */
+function _groupEventsByWorldDay(events) {
+  const list = Array.isArray(events) ? events : [];
+  const groups = [];
+  for (const ev of list) {
+    const day = _parseWorldDayLabel(ev && ev.world_clock_label);
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) {
+      last.events.push(ev);
+    } else {
+      groups.push({ day, events: [ev] });
+    }
+  }
+  return groups;
+}
+
+/**
+ * 把 tension_hist(≤12 个 0-10 整数)映射成定长 12 格的 sparkline 柱状数据。
+ * 数据不足 12 时在前面补占位柱(isPad,极矮/无值),保证多条剧情线对齐;
+ * 最后一根真实数据柱标 isLast,供高亮当前张力。
+ */
+function _tensionSparkline(hist, opts = {}) {
+  const { max = 10, trackHeight = 20, minHeight = 2, count = 12 } = opts;
+  const src = Array.isArray(hist) ? hist.slice(-count) : [];
+  const padCount = Math.max(0, count - src.length);
+  const padBars = Array.from({ length: padCount }, () => ({ value: null, height: minHeight, isLast: false, isPad: true }));
+  const realBars = src.map((v, i) => {
+    const n = Number(v);
+    const value = Number.isFinite(n) ? Math.max(0, Math.min(max, n)) : 0;
+    const height = Math.max(minHeight, Math.round((value / max) * trackHeight));
+    return { value, height, isLast: i === src.length - 1, isPad: false };
+  });
+  return [...padBars, ...realBars];
+}
+
 function StatCell({ label, value }) {
   return (
     <div>
@@ -128,12 +180,15 @@ function ExperimentPicker({ experiments, activeId, onSwitch, onCreated }) {
   );
 }
 
-/* ── 单条日志事件(事件 / 互动 / 引导,互动可展开 transcript)────────────── */
+/* ── 单条日志事件(事件 / 互动 / 引导,互动可展开 transcript,长纪要可展开查看全文)── */
 function EventRow({ ev }) {
   const { t } = useTranslation();
   const isScene = ev.kind === 'scene';
   const isDirective = ev.kind === 'directive';
   const transcript = (ev.payload && Array.isArray(ev.payload.transcript)) ? ev.payload.transcript : [];
+  const summary = ev.summary || '';
+  const previewSummary = isScene ? _truncateForTip(summary, 60) : summary;
+  const summaryTruncated = isScene && previewSummary !== summary;
   const badgeColor = isDirective ? 'blue' : (isScene ? 'green' : 'grey');
   const badgeText = isDirective
     ? t('rath_page.event.kind_directive', { defaultValue: '引导' })
@@ -142,16 +197,18 @@ function EventRow({ ev }) {
     <CSSpaceBetween direction="horizontal" size="xs" alignItems="center">
       <CSBadge color={badgeColor}>{badgeText}</CSBadge>
       <CSBox color="text-body-secondary" fontSize="body-s">{ev.world_clock_label}</CSBox>
-      <CSBox>{ev.summary || t('rath_page.event.no_summary', { defaultValue: '(无摘要)' })}</CSBox>
+      <CSBox>{previewSummary || t('rath_page.event.no_summary', { defaultValue: '(无摘要)' })}</CSBox>
     </CSSpaceBetween>
   );
-  if (!isScene || transcript.length === 0) {
+  const expandable = isScene && (transcript.length > 0 || summaryTruncated);
+  if (!expandable) {
     return <div className="rath-event-row">{body}</div>;
   }
   return (
     <div className="rath-event-row">
       <CSExpandableSection headerText={body} variant="footer">
         <CSSpaceBetween size="xs">
+          {summaryTruncated && <CSBox fontSize="body-s">{summary}</CSBox>}
           {transcript.map((line, i) => (
             <div key={i} style={{ fontSize: 13 }}>
               <strong>{line.speaker || '?'}</strong>{'：'}{line.line}
@@ -160,6 +217,35 @@ function EventRow({ ev }) {
         </CSSpaceBetween>
       </CSExpandableSection>
     </div>
+  );
+}
+
+/* ── 剧情线张力 sparkline(12 格 2px 竖条,当前值高亮)────────────────────── */
+function ThreadSparkline({ hist }) {
+  const bars = _tensionSparkline(hist);
+  const barW = 2;
+  const gap = 2;
+  const trackH = 20;
+  const w = bars.length * (barW + gap) - gap;
+  return (
+    <svg width={w} height={trackH} viewBox={`0 0 ${w} ${trackH}`} className="rath-spark" aria-hidden="true">
+      {bars.map((b, i) => (
+        <rect
+          key={i}
+          x={i * (barW + gap)}
+          y={trackH - b.height}
+          width={barW}
+          height={b.height}
+          rx={1}
+          style={{
+            fill: b.isPad
+              ? 'var(--muted-3, #4d4842)'
+              : (b.isLast ? 'var(--accent, #c96442)' : 'var(--muted-2, #6b655e)'),
+            opacity: b.isPad ? 0.5 : 1,
+          }}
+        />
+      ))}
+    </svg>
   );
 }
 
@@ -197,6 +283,9 @@ function ExperimentPanel({ expId }) {
   const events = detail?.events || [];
   const trace = detail?.trace || [];
   const threads = detail?.threads || [];
+  const relations = detail?.relations || [];
+  const canon = detail?.canon || null;
+  const eventGroups = _groupEventsByWorldDay(events);
   // 推进后快轮询(实时看到运行日志):点击推进一步后 2 分钟内每 5s 拉一次
   const fastPollUntilRef = useRef(0);
   useEffect(() => {
@@ -330,6 +419,39 @@ function ExperimentPanel({ expId }) {
             }
           />
         </CSColumnLayout>
+
+        {canon && (
+          <div className="rath-canon-row">
+            <CSBox fontSize="body-s" color="text-body-secondary">
+              {canon.current_chapter != null
+                ? t('rath_page.canon.progress', {
+                    defaultValue: `原著河道 第${canon.current_chapter}章 · ${canon.cursor}/${canon.total}`,
+                    chapter: canon.current_chapter, cursor: canon.cursor, total: canon.total,
+                  })
+                : t('rath_page.canon.finished', {
+                    defaultValue: `原著河道 已读完 · ${canon.cursor}/${canon.total}`,
+                    cursor: canon.cursor, total: canon.total,
+                  })}
+            </CSBox>
+            <div
+              className="rath-canon-bar-wrap"
+              {...(canon.next_text ? { 'data-tip': _truncateForTip(canon.next_text, 60) } : {})}
+            >
+              <div className="rath-canon-bar-track">
+                <div
+                  className="rath-canon-bar-fill"
+                  style={{ width: `${canon.total > 0 ? Math.min(100, Math.max(0, (canon.cursor / canon.total) * 100)) : 0}%` }}
+                />
+              </div>
+              {canon.stall >= 4 && (
+                <span
+                  className="rath-canon-bar-stall"
+                  data-tip={t('rath_page.canon.stall_tip', { defaultValue: `滞留 ${canon.stall} 拍未推进`, stall: canon.stall })}
+                />
+              )}
+            </div>
+          </div>
+        )}
       </CSContainer>
 
       {/* 世界运行开关 */}
@@ -386,8 +508,17 @@ function ExperimentPanel({ expId }) {
               {t('rath_page.timeline.empty', { defaultValue: '尚无日志——点「推进一步」触发第一次自动推进。' })}
             </CSBox>
           ) : (
-            <CSSpaceBetween size="xs">
-              {events.map((ev) => <EventRow key={ev.id} ev={ev} />)}
+            <CSSpaceBetween size="s">
+              {eventGroups.map((g, gi) => (
+                <div key={gi}>
+                  {g.day && (
+                    <div className="rath-day-header">{g.day}</div>
+                  )}
+                  <CSSpaceBetween size="xs">
+                    {g.events.map((ev) => <EventRow key={ev.id} ev={ev} />)}
+                  </CSSpaceBetween>
+                </div>
+              ))}
             </CSSpaceBetween>
           )}
         </CSSpaceBetween>
@@ -396,13 +527,24 @@ function ExperimentPanel({ expId }) {
       {/* 角色动态板 */}
       <CSContainer header={<CSHeader variant="h2">{t('rath_page.fluctlights.title', { defaultValue: '角色动态' })}</CSHeader>}>
         {threads.length > 0 && (
-          <CSBox margin={{ bottom: 's' }}>
-            {threads.map((th) => (
-              <CSBox key={th.id} fontSize="body-s" color="text-body-secondary">
-                {t('rath_page.threads.prefix', { defaultValue: '剧情线' })} · {th.desc}（{t('rath_page.threads.tension', { defaultValue: '张力' })} {th.tension}/10）
-              </CSBox>
-            ))}
-          </CSBox>
+          <div className="rath-threads">
+            {threads.map((th) => {
+              const stage = th.stage || 'rising';
+              const stageLabel = {
+                seed: t('rath_page.threads.stage_seed', { defaultValue: '萌芽' }),
+                rising: t('rath_page.threads.stage_rising', { defaultValue: '发展' }),
+                climax: t('rath_page.threads.stage_climax', { defaultValue: '高潮' }),
+                aftermath: t('rath_page.threads.stage_aftermath', { defaultValue: '余波' }),
+              }[stage] || t('rath_page.threads.stage_rising', { defaultValue: '发展' });
+              return (
+                <div key={th.id} className="rath-thread-row">
+                  <span className={`rath-stage-tag rath-stage-tag--${stage}`}>{stageLabel}</span>
+                  <span className="rath-thread-desc">{th.desc}</span>
+                  <ThreadSparkline hist={th.tension_hist} />
+                </div>
+              );
+            })}
+          </div>
         )}
         {fluctlights.length === 0 ? (
           <CSBox color="text-body-secondary" textAlign="center" padding={{ vertical: 'l' }}>
@@ -433,6 +575,24 @@ function ExperimentPanel({ expId }) {
             ))}
           </div>
         )}
+
+        <div className="rath-relations">
+          <CSBox variant="h3" margin={{ bottom: 'xs' }}>{t('rath_page.relations.title', { defaultValue: '人物关系' })}</CSBox>
+          {relations.length === 0 ? (
+            <CSBox color="text-body-secondary" fontSize="body-s">
+              {t('rath_page.relations.empty', { defaultValue: '关系尚在形成' })}
+            </CSBox>
+          ) : (
+            <CSSpaceBetween size="xs">
+              {relations.map((r, i) => (
+                <div key={`${r.a}-${r.b}-${i}`} className="rath-relation-row">
+                  <CSBox fontSize="body-s">{r.a} — {r.b}{r.kind ? `：${r.kind}` : ''}</CSBox>
+                  {r.note && <CSBox fontSize="body-s" color="text-body-secondary">{r.note}</CSBox>}
+                </div>
+              ))}
+            </CSSpaceBetween>
+          )}
+        </div>
       </CSContainer>
 
       {/* 运行日志(思考流/执行层) */}
@@ -546,7 +706,93 @@ export default function RathPage() {
           padding: 6px 0;
         }
         .rath-event-row:last-child { border-bottom: none; }
+
+        /* 原著河道进度条 */
+        .rath-canon-row { margin-top: 12px; }
+        .rath-canon-bar-wrap { position: relative; margin-top: 6px; padding-right: 4px; }
+        .rath-canon-bar-track {
+          height: 4px;
+          background: rgba(255, 255, 255, 0.06);
+          border-radius: 999px;
+          overflow: hidden;
+        }
+        .rath-canon-bar-fill {
+          height: 100%;
+          background: var(--accent, #c96442);
+          border-radius: 999px;
+          transition: width var(--m-slow, 240ms) var(--m-out, cubic-bezier(0.16, 1, 0.3, 1));
+        }
+        .rath-canon-bar-stall {
+          position: absolute;
+          right: 0;
+          top: 50%;
+          width: 6px; height: 6px;
+          border-radius: 50%;
+          background: var(--warn, #d4b366);
+          transform: translate(50%, -50%);
+          box-shadow: 0 0 0 2px var(--panel-2, #282623);
+        }
+
+        /* 剧情线:阶段徽标 + 张力 sparkline */
+        .rath-threads { margin-bottom: 12px; display: grid; gap: 2px; }
+        .rath-thread-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 5px 0;
+        }
+        .rath-stage-tag {
+          flex-shrink: 0;
+          display: inline-block;
+          font-size: 11px;
+          line-height: 1.6;
+          padding: 1px 8px;
+          border-radius: 999px;
+          border: 1px solid var(--border, #3a352e);
+          color: var(--muted, #968f85);
+          white-space: nowrap;
+          transition: color var(--m-fast, 100ms) ease, border-color var(--m-fast, 100ms) ease, background-color var(--m-fast, 100ms) ease;
+        }
+        .rath-stage-tag--climax {
+          color: var(--accent, #c96442);
+          border-color: var(--accent-edge, rgba(201, 100, 66, 0.42));
+          background: var(--accent-soft, rgba(201, 100, 66, 0.14));
+        }
+        .rath-stage-tag--aftermath {
+          color: var(--muted-2, #6b655e);
+          opacity: 0.9;
+        }
+        .rath-thread-desc {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 13px;
+          color: var(--muted, #968f85);
+        }
+        .rath-spark { flex-shrink: 0; display: block; }
+
+        /* 人物关系 */
+        .rath-relations { margin-top: 16px; }
+        .rath-relation-row {
+          border-bottom: 1px solid var(--border, #3a352e);
+          padding: 6px 0;
+        }
+        .rath-relation-row:last-child { border-bottom: none; }
+
+        /* 事件按世界日分组的组头 */
+        .rath-day-header {
+          font-size: 12px;
+          letter-spacing: 0.03em;
+          color: var(--muted, #968f85);
+          padding: 4px 0 6px;
+          border-bottom: 1px dashed var(--border, #3a352e);
+          margin-bottom: 4px;
+        }
       `}</style>
     </div>
   );
 }
+
+export { _groupEventsByWorldDay, _parseWorldDayLabel, _tensionSparkline, _truncateForTip };

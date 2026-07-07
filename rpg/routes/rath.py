@@ -130,7 +130,9 @@ async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
                 "status": c.get("status") or "",
                 "private_memories": (c.get("memory") or [])[-5:][::-1],
             })
-        threads_out = [{"id": t.get("id"), "desc": t.get("desc"), "tension": t.get("tension")}
+        threads_out = [{"id": t.get("id"), "desc": t.get("desc"), "tension": t.get("tension"),
+                        "stage": t.get("stage") or "rising",
+                        "tension_hist": (t.get("tension_hist") or [])[-12:]}
                        for t in (sim.get("threads") or [])]
     else:
         # 兜底(仿真态未初始化):旧三源合并
@@ -153,8 +155,25 @@ async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
         "world_clock_label": _clock_label(int(r.get("world_clock_min") or 0)),
         "created_at": str(r.get("created_at") or ""),
     } for r in (trace_rows or [])]
+    # v3:关系网+河道进度(观测台可视化数据)
+    relations_out = []
+    canon_out = None
+    if sim:
+        for k, v in (sim.get("relations") or {}).items():
+            a, _, b = k.partition("|")
+            relations_out.append({"a": a, "b": b, "kind": (v or {}).get("kind") or "",
+                                  "note": (v or {}).get("note") or ""})
+        _cn = sim.get("canon") or {}
+        _beats = _cn.get("beats") or []
+        _cur = int(_cn.get("cursor") or 0)
+        canon_out = {
+            "cursor": _cur, "total": len(_beats), "stall": int(_cn.get("stall") or 0),
+            "current_chapter": (_beats[_cur].get("chapter") if _cur < len(_beats) else None),
+            "next_text": (_beats[_cur].get("text") if _cur < len(_beats) else ""),
+        }
     return {"ok": True, "experiment": _expose(dict(exp)), "events": ev_out,
-            "trace": trace_out, "fluctlights": fluctlights, "threads": threads_out}
+            "trace": trace_out, "fluctlights": fluctlights, "threads": threads_out,
+            "relations": relations_out, "canon": canon_out}
 
 
 @router.post("/api/rath/experiments/{exp_id}/tick")

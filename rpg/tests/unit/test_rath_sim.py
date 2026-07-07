@@ -454,3 +454,57 @@ def test_stale_threads_closed_and_recorded():
     # 高张力/近期触及的线不关
     sim["threads"] = [{"id": "t3", "desc": "活跃线", "tension": 5, "last_touch": 1}]
     assert close_stale_threads(sim) == []
+
+
+# ── v3:关系网/长弧/离线简报(用户末班请求「RATH 更完善」) ──────────────────
+
+def test_relation_updates_arbitrated_with_alias_and_gate():
+    sim = _sim_fullname_player()
+    npc = next(n for n, c in sim["cast"].items() if c.get("kind") != "player")
+    out = apply_scheduler_output(sim, {"relation_updates": [
+        {"pair": ["菲莉丝", npc], "kind": "守护", "note": "彻夜照料后生出责任感"},
+        {"pair": ["不存在的人", npc], "kind": "同僚", "note": ""},
+    ]})
+    assert out["applied"].get("relations") == 1
+    key = "|".join(sorted(["菲莉丝·卡俄斯", npc]))
+    assert sim["relations"][key]["kind"] == "守护"
+    assert any("relation:成员未识别" in r for r in out["rejected"])
+    # 探究措辞照拒(神圣条款贯穿关系层)
+    out2 = apply_scheduler_output(sim, {"relation_updates": [
+        {"pair": ["菲莉丝", npc], "kind": "研究对象", "note": "想调查她的来历"}]})
+    assert out2["applied"].get("relations") in (None, 0)
+
+
+def test_thread_stage_lifecycle_deterministic():
+    sim = _sim_canon()
+    t = sim["threads"][0]
+    t["tension"] = 3
+    t.pop("stage", None)
+    apply_scheduler_output(sim, {"thread_updates": [{"id": t["id"], "tension_delta": 1}]})
+    assert t["stage"] == "rising"  # seed→rising(张力≥4)
+    t["tension"] = 7
+    apply_scheduler_output(sim, {"thread_updates": [{"id": t["id"], "tension_delta": 2}]})
+    assert t["stage"] == "climax"  # ≥8 触发,+2 被夹成 +1 → 8
+    # climax 停留 2 拍后自动转 aftermath 且泄压
+    apply_scheduler_output(sim, {"thread_updates": [{"id": t["id"], "tension_delta": 0}]})
+    apply_scheduler_output(sim, {"thread_updates": [{"id": t["id"], "tension_delta": 0}]})
+    assert t["stage"] == "aftermath"
+    assert t["tension"] <= 3
+    assert len(t.get("tension_hist") or []) >= 3
+
+
+def test_new_thread_born_as_seed_capped():
+    sim = _sim_canon()
+    apply_scheduler_output(sim, {"new_threads": [{"desc": "码头传来陌生船队的消息", "tension": 6}]})
+    nt = sim["threads"][-1]
+    assert nt["stage"] == "seed" and nt["tension"] <= 4
+
+
+def test_director_prompt_carries_relation():
+    from rath.sim import build_director_prompts
+    sim = _sim_canon()
+    ps = [n for n in sim["cast"]][:2]
+    sim["relations"]["|".join(sorted(ps))] = {"kind": "心存芥蒂", "note": "上周争执未解"}
+    _, user = build_director_prompts(sim, {"participants": ps, "place": "茶摊", "reason": "偶遇",
+                                           "expected_outcome": "不欢而散"})
+    assert "心存芥蒂" in user and "上周争执未解" in user
