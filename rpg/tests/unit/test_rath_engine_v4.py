@@ -73,6 +73,9 @@ def test_player_active_auto_resume_checks_branch_commits_gap():
     assert "pause_reason='player_active'" in resume_block.replace(" ", "")
     assert "branch_commits" in resume_block
     assert "interval '2 hours'" in resume_block
+    # 赛条件回归(353 prod e2e 实锤):暂停发生在回合起点,回合 commit ~90s 后才落库,
+    # ticker 在间隙扫描时 branch_commits 还是旧值→秒恢复。paused_at 自身必须≥2h。
+    assert "t.paused_at < now() - interval '2 hours'" in resume_block
     assert "pause_reason=null" in resume_block.replace(" ", "")
     assert "last_tick_at=now()" in resume_block.replace(" ", "")
     assert '"玩家离开约2小时,世界继续"' in body

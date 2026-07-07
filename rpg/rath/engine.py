@@ -733,6 +733,7 @@ def run_due_ticks() -> int:
             update rath_experiments t
                set status='running', pause_reason=null, paused_at=null, last_tick_at=now()
              where t.status='paused' and t.pause_reason='player_active'
+               and t.paused_at < now() - interval '2 hours'
                and (select max(bc.created_at) from branch_commits bc where bc.save_id = t.save_id)
                    < now() - interval '2 hours'
             returning t.id
