@@ -4437,7 +4437,9 @@
       "continue": "Continue from here",
       "activate": "Switch to this branch",
       "delete_subtree": "Delete subtree"
-    }
+    },
+    "gap": "… {{n}} turns",
+    "gap_tip": "Click to expand collapsed turns"
   },
   "feedback_page": {
     "header_title": "Support & Feedback",

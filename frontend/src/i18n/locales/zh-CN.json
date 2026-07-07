@@ -4434,7 +4434,9 @@
       "continue": "从此继续",
       "activate": "切到此分支",
       "delete_subtree": "删除子树"
-    }
+    },
+    "gap": "⋯ {{n}} 个回合",
+    "gap_tip": "点击展开被折叠的回合"
   },
   "feedback_page": {
     "header_title": "支持与反馈",

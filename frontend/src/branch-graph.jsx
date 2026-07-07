@@ -123,10 +123,11 @@ function _assignColumns(nodes) {
       columns[col] = cid;
     }
     columnOf.set(cid, col);
+    // 列回收(群反馈:754 commits/83 refs 长局档,回滚/重试的死枝各占一列且永不
+    // 释放 → totalColumns 累计到几十,graphW=列数×columnW 把右侧内容推爆)。
+    // 叶子(无 child)处理完即释放其列 → 并行列数回到「真实并发分支数」。
+    if (!childrenOf.has(cid)) columns[col] = null;
   }
-
-  // 释放最末尾的 column (如果一个 column 的最后 commit 没 child 了,可以视作 done)
-  // 但 graph 是只读快照,不需要回收;直接返回。
 
   // 返回每个 commit 的 (column, 行号 row=index in sorted_desc).
   // 我们要新的在顶 (turn_index 大的在上),所以反转 sorted.
@@ -138,7 +139,47 @@ function _assignColumns(nodes) {
   });
 
   const totalColumns = columns.length;
-  return { sortedDesc, columnOf, rows, totalColumns };
+  const childCount = new Map();
+  for (const [pid, kids] of childrenOf) childCount.set(pid, kids.length);
+  return { sortedDesc, columnOf, rows, totalColumns, childCount };
+}
+
+// ── 线性段折叠(群反馈:754 行全量渲染) ─────────────────────────────
+// 信息价值在分叉结构:连续「单父单子、无 ref、非 active/selected、未删除」的
+// 回合折叠为一个 gap 胶囊(点击展开)。必须显示:头/根/有 ref/active/selected/
+// 分叉点及其直接 child(段落视觉锚)/deleted。连续 ≥MIN_GAP 才折。
+const MIN_GAP = 4;
+
+function _buildDisplayList(sortedDesc, { refsByTarget, activeId, selectedId, childCount, expandedGaps }) {
+  const keep = new Set();
+  sortedDesc.forEach((n, i) => {
+    const cid = n.commit_id ?? n.id;
+    const pid = n.parent_id ?? n.parent ?? null;
+    if (i === 0 || pid == null || n.deleted) keep.add(cid);
+    if (refsByTarget && refsByTarget.has(cid)) keep.add(cid);
+    if (cid === activeId || cid === selectedId) keep.add(cid);
+    if ((childCount.get(cid) || 0) > 1) keep.add(cid);
+    if (pid != null && (childCount.get(pid) || 0) > 1) keep.add(cid);
+  });
+  const items = [];
+  let run = [];
+  const flush = () => {
+    if (!run.length) return;
+    const gapKey = `gap-${run[0].commit_id ?? run[0].id}`;
+    if (run.length >= MIN_GAP && !(expandedGaps && expandedGaps.has(gapKey))) {
+      items.push({ type: "gap", key: gapKey, nodes: run });
+    } else {
+      for (const m of run) items.push({ type: "commit", node: m });
+    }
+    run = [];
+  };
+  for (const n of sortedDesc) {
+    const cid = n.commit_id ?? n.id;
+    if (keep.has(cid)) { flush(); items.push({ type: "commit", node: n }); }
+    else run.push(n);
+  }
+  flush();
+  return items;
 }
 
 // ── 过滤辅助:沿 HEAD 溯源拿 ancestor chain ─────────────────────────
@@ -197,7 +238,19 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
     return m;
   }, [refs]);
 
-  const { sortedDesc, columnOf, rows, totalColumns } = useMemoB(() => _assignColumns(nodes), [nodes]);
+  const { sortedDesc, columnOf, totalColumns, childCount } = useMemoB(() => _assignColumns(nodes), [nodes]);
+  const [expandedGaps, setExpandedGaps] = useStateB(() => new Set());
+  const displayItems = useMemoB(
+    () => _buildDisplayList(sortedDesc, { refsByTarget, activeId, selectedId, childCount, expandedGaps }),
+    [sortedDesc, refsByTarget, activeId, selectedId, childCount, expandedGaps]);
+  // 行号=展示列表序;被折叠的 commit 无行号(边跨段连到最近可见祖先,虚线示省略)
+  const rows = useMemoB(() => {
+    const m = new Map();
+    displayItems.forEach((it, i) => {
+      if (it.type === "commit") m.set(it.node.commit_id ?? it.node.id, i);
+    });
+    return m;
+  }, [displayItems]);
 
   if (nodes.length === 0) {
     return (
@@ -218,7 +271,7 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
   };
 
   const graphW = conf.leftPad * 2 + Math.max(1, totalColumns) * conf.columnW;
-  const graphH = sortedDesc.length * conf.rowH;
+  const graphH = displayItems.length * conf.rowH;
 
   // 用 SVG 画分支线 + dot。SVG 高度 = graphH;每行右侧是 React DOM 渲染的 meta 区。
   // 整体结构 (按 variant):
@@ -237,27 +290,36 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
     return `M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`;
   }
 
-  // 构造所有 edges (commit → parent)
+  // 构造 edges:可见 commit → 最近【可见】祖先(中间被折叠的用虚线示省略)
+  const byId = new Map();
+  for (const n of sortedDesc) byId.set(n.commit_id ?? n.id, n);
   const edges = [];
-  for (const n of sortedDesc) {
+  for (const it of displayItems) {
+    if (it.type !== "commit") continue;
+    const n = it.node;
     const cid = n.commit_id ?? n.id;
-    const pid = n.parent_id ?? n.parent ?? null;
+    let pid = n.parent_id ?? n.parent ?? null;
+    let skipped = false;
+    while (pid != null && !rows.has(pid)) {
+      const p = byId.get(pid);
+      if (!p) { pid = null; break; }
+      pid = p.parent_id ?? p.parent ?? null;
+      skipped = true;
+    }
     if (pid == null) continue;
     const childCol = columnOf.get(cid);
     const parentCol = columnOf.get(pid);
     if (childCol == null || parentCol == null) continue;
-    const childRow = rows.get(cid);
-    const parentRow = rows.get(pid);
-    if (childRow == null || parentRow == null) continue;
     const fromX = conf.leftPad + childCol * conf.columnW + conf.columnW / 2;
-    const fromY = childRow * conf.rowH + conf.rowH / 2;
+    const fromY = rows.get(cid) * conf.rowH + conf.rowH / 2;
     const toX = conf.leftPad + parentCol * conf.columnW + conf.columnW / 2;
-    const toY = parentRow * conf.rowH + conf.rowH / 2;
+    const toY = rows.get(pid) * conf.rowH + conf.rowH / 2;
     edges.push({
       key: `e-${pid}-${cid}`,
       d: _pathBetween(fromX, fromY, toX, toY),
       color: _colorForColumn(childCol),
       deleted: n.deleted,
+      dashed: skipped || n.deleted,
     });
   }
 
@@ -275,11 +337,12 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
           {edges.map(e => (
             <path key={e.key} d={e.d}
               stroke={e.color} strokeWidth={2}
-              strokeDasharray={e.deleted ? "3 3" : null}
+              strokeDasharray={e.dashed ? "3 3" : null}
               fill="none" opacity={e.deleted ? 0.4 : 0.9}
             />
           ))}
-          {sortedDesc.map(n => {
+          {displayItems.filter(it => it.type === "commit").map(it => {
+            const n = it.node;
             const cid = n.commit_id ?? n.id;
             const col = columnOf.get(cid);
             const row = rows.get(cid);
@@ -306,9 +369,24 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
           })}
         </svg>
         {/* 右侧内容:每行一个 div,左 padding = graphW + 间距 */}
-        {sortedDesc.map(n => {
+        {displayItems.map((it, row) => {
+          if (it.type === "gap") {
+            return (
+              <div key={it.key} className="bg-row bg-gap"
+                style={{ position: "relative", height: conf.rowH, paddingLeft: graphW + 6,
+                         fontSize: conf.font, cursor: "pointer", opacity: 0.75 }}
+                onClick={() => setExpandedGaps(prev => { const nx = new Set(prev); nx.add(it.key); return nx; })}
+                title={t('branch_graph.gap_tip', { defaultValue: '点击展开被折叠的回合' })}>
+                <div className="bg-row-inner">
+                  <span className="bg-message muted-2">
+                    {t('branch_graph.gap', { n: it.nodes.length, defaultValue: '⋯ {{n}} 个回合' })}
+                  </span>
+                </div>
+              </div>
+            );
+          }
+          const n = it.node;
           const cid = n.commit_id ?? n.id;
-          const row = rows.get(cid);
           const isActive = cid === activeId;
           const isSelected = cid === selectedId;
           const turnIdx = n.turn_index ?? null;
@@ -403,4 +481,4 @@ function _fmtTime(ts) {
   } catch (_) { return ""; }
 }
 
-export { BranchGraph };
+export { BranchGraph, _assignColumns, _buildDisplayList };
