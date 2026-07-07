@@ -1812,6 +1812,14 @@ function TopBar({ state, saveUpdatedAt, onOpenTweaks, onOpenSearch, onOpenHistor
   // 存档切换时（saveId 变化）才重新拉取，避免每次 render 重复请求。
   const saveId = state?._raw?.save_id ?? null;
   const [currentChapter, setCurrentChapter] = useStateA(null);
+  // 白玖实锤:面板「回到此节点」成功后广播 game-state-refresh,但顶栏章号只挂 saveId
+  // 依赖 → rewind 后顶栏停在旧章(数据层已回退,纯显示滞后)。监听同一事件重拉。
+  const [chapterTick, setChapterTick] = useStateA(0);
+  useEffectA(() => {
+    const bump = () => setChapterTick((k) => k + 1);
+    window.addEventListener("game-state-refresh", bump);
+    return () => window.removeEventListener("game-state-refresh", bump);
+  }, []);
   useEffectA(() => {
     if (!saveId) { setCurrentChapter(null); return; }
     let cancelled = false;
@@ -1821,7 +1829,7 @@ function TopBar({ state, saveUpdatedAt, onOpenTweaks, onOpenSearch, onOpenHistor
       .then((json) => { if (!cancelled && json) setCurrentChapter(json.current_chapter ?? null); })
       .catch(() => { if (!cancelled) setCurrentChapter(null); });
     return () => { cancelled = true; };
-  }, [saveId]);
+  }, [saveId, chapterTick]);
   const chapter = currentChapter ? t('game.app.topbar.chapter', { n: currentChapter }) : "";
   const phase = state?.world?.timeline?.current_phase || "";
   return (
