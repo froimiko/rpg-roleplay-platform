@@ -14,6 +14,9 @@ def test_briefing_deterministic_and_bounded():
     assert "branch_commits" in BR and "greatest" in BR, (
         "kb_native 档不写 flat messages,玩家活动须以 branch_commits 为主源(353 prod 实锤)")
     assert "retired_at_commit is null" in BR, "尊重 tombstone"
+    assert "order by id desc" in BR and "reversed" in BR, (
+        "离线很久时最近的事优先入选(取最新60条反转,预算从最新日组往前装)")
+    assert "截断保底" in BR, "最新日组独自超预算不返回 None"
     body = BR[BR.find("def build_offline_briefing"):]
     assert "不要一口气复述全部" in body, "GM 指令:自然提及不照本宣科"
     assert "call_agent" not in BR and "llm" not in BR.lower().replace("零 llm", ""), "零 LLM 确定性拼装"

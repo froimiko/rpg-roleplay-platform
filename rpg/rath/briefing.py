@@ -40,16 +40,19 @@ def build_offline_briefing(db, save_id: int) -> str | None:
         "select extract(epoch from (now() - %s))/60 as m", (since,)).fetchone()
     if float((gap or {}).get("m") or 0) < MIN_GAP_MINUTES:
         return None
+    # 取【最新】60 条再反转回时间正序:离线很久时窗口内事件可能远超预算,
+    # 回归的玩家该听到的是最近的事,不是刚离开时的旧闻。
     rows = db.execute(
         r"""
         select logical_key, story_time, summary from kb_events
         where save_id = %s and logical_key like 'rath\_%%'
           and retired_at_commit is null and created_at > %s
           and coalesce(summary, '') <> ''
-        order by id asc limit 60
+        order by id desc limit 60
         """,
         (int(save_id), since),
     ).fetchall()
+    rows = list(reversed(rows or []))
     if not rows:
         return None
     by_day: dict[str, list[str]] = {}
@@ -65,17 +68,22 @@ def build_offline_briefing(db, save_id: int) -> str | None:
             by_day[day].insert(0, txt[:160])  # 场景优先且给更长篇幅
         elif len(by_day[day]) < 4:
             by_day[day].append(txt[:100])
-    lines = ["=== 离线世界纪要(玩家不在场期间,世界自行发生的事) ==="]
-    used = len(lines[0])
-    for day in order:
-        items = by_day[day][:4]
-        seg = f"◆ {day}\n" + "\n".join("  · " + t for t in items)
+    header = "=== 离线世界纪要(玩家不在场期间,世界自行发生的事) ==="
+    segs = [f"◆ {day}\n" + "\n".join("  · " + t for t in by_day[day][:4]) for day in order]
+    # 预算从最新的日组往前装(最近的事优先入选),输出仍按时间正序。
+    picked: list[str] = []
+    used = len(header)
+    for seg in reversed(segs):
         if used + len(seg) > MAX_BRIEF_CHARS:
             break
-        lines.append(seg)
+        picked.append(seg)
         used += len(seg)
-    if len(lines) == 1:
+    picked.reverse()
+    if not picked and segs:
+        picked = [segs[-1][:MAX_BRIEF_CHARS]]  # 最新日组独自超预算:截断保底,不空手而归
+    if not picked:
         return None
+    lines = [header, *picked]
     lines.append(
         "(以上是已发生的事实。让 NPC 在自然时机提及/谈论它们——寒暄、闲聊、汇报;"
         "不要一口气复述全部,更不要说「你不在的时候」这种打破沉浸的话。)")
