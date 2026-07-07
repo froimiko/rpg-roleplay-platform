@@ -614,13 +614,26 @@ export function TwoCardDrawer({ open, character, persona, onClose, onSavePersona
   const [spVal, setSpVal] = useState(systemPrompt || '');
   const [spEditing, setSpEditing] = useState(false);
   const [spSaving, setSpSaving] = useState(false);
+  // portal 分支退场动效:open 变 false 后不立刻卸载,先带 closing class 渲染 160ms 再真正消失。
+  const [visible, setVisible] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const prevOpenRef = useRef(open);
+  useEffect(() => {
+    const wasOpen = prevOpenRef.current;
+    prevOpenRef.current = open;
+    if (open) { setVisible(true); setClosing(false); return; }
+    if (!wasOpen) return; // 从未打开过(如初始 open=false),无需退场
+    setClosing(true);
+    const timer = setTimeout(() => { setVisible(false); setClosing(false); }, 160);
+    return () => clearTimeout(timer);
+  }, [open]);
 
   useEffect(() => { setForm(cardFormInit(persona)); setEditing(false); }, [persona, open]);
   useEffect(() => { setSpVal(systemPrompt || ''); setSpEditing(false); }, [systemPrompt, open]);
   const u = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  // 非 inline(独立页 portal):open=false 不渲染。inline:始终渲染,靠 collapsed 类收起。
-  if (!inline && !open) return null;
+  // 非 inline(独立页 portal):open=false 且退场动效已结束(visible=false)才不渲染。inline:始终渲染,靠 collapsed 类收起。
+  if (!inline && !open && !visible) return null;
   const personaName = (persona && persona.name) || t('tavern_app.drawer.persona_fallback');
 
   const doSave = async () => {
@@ -789,7 +802,7 @@ export function TwoCardDrawer({ open, character, persona, onClose, onSavePersona
   }
   return createPortal(
     <div className="tv-drawer-backdrop" onClick={onClose}>
-      <div className="tv-drawer" onClick={(e) => e.stopPropagation()}>{head}{body}</div>
+      <div className={'tv-drawer' + (closing ? ' closing' : '')} onClick={(e) => e.stopPropagation()}>{head}{body}</div>
     </div>,
     document.body,
   );

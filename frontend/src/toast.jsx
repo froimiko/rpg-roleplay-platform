@@ -86,17 +86,24 @@ export function createToastChannel(opts = {}) {
       const unsub = chan.subscribe((t) => {
         setItems((arr) => [...arr, t]);
         if (t.duration > 0) {
-          setTimeout(() => setItems((arr) => arr.filter((x) => x.id !== t.id)), t.duration);
+          setTimeout(() => dismissRef.current(t.id), t.duration);
         }
       });
       return unsub;
     }, []);
-    const dismiss = (id) => setItems((arr) => arr.filter((x) => x.id !== id));
+    // 两段式退场(动效审计:入场有 pl-toast-in,消失瞬间卸载):先标 _closing 播 .m-exit-down,
+    // 100ms 后真正移除。dismissRef 供超时闭包引用最新实现。
+    const dismiss = (id) => {
+      setItems((arr) => arr.map((x) => x.id === id && !x._closing ? { ...x, _closing: true } : x));
+      setTimeout(() => setItems((arr) => arr.filter((x) => x.id !== id)), 110);
+    };
+    const dismissRef = React.useRef(dismiss);
+    dismissRef.current = dismiss;
     if (!items.length) return null;
     const node = (
       <div className="pl-toast-stack" aria-live="polite">
         {items.map((t) => (
-          <div key={`toast-${t.id}`} className={`pl-toast pl-toast-${t.kind}`}>
+          <div key={`toast-${t.id}`} className={`pl-toast pl-toast-${t.kind}${t._closing ? ' m-exit-down' : ''}`}>
             <span className={`pl-toast-icon dot ${t.kind === 'ok' ? 'ok' : t.kind === 'warn' ? 'warn' : t.kind === 'danger' ? 'danger' : 'info'}`} />
             <div className="pl-toast-body">
               <div className="pl-toast-msg">{t.message}</div>

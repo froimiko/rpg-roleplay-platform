@@ -192,7 +192,7 @@
 
 /* ── 顶部横幅 Flashbar ─────────────────────────────────────────────────── */
 .aw-flashbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-.aw-flash { display: flex; align-items: flex-start; gap: 10px; padding: 11px 14px; border-radius: 10px; font-size: 13px; border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--text-quiet); }
+.aw-flash { display: flex; align-items: flex-start; gap: 10px; padding: 11px 14px; border-radius: 10px; font-size: 13px; border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--text-quiet); animation: m-slide-down var(--m-base) var(--m-out) both; }
 .aw-flash-ic { flex: none; font-size: 12px; margin-top: 1px; }
 .aw-flash-content { flex: 1; }
 .aw-flash-x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px; }

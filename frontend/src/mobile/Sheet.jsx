@@ -12,7 +12,7 @@
  * 注:本组件只承载「class-based .sheet」写法的站点。纯 inline-style 写的抽屉(不同 scrim 透明度/
  * 圆角/无滑入动画)若强迁会改变视觉,按语义统一铁律保留原样,不在此收口。
  */
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 /* ── 通用底抽屉 ──────────────────────────────────────────────────────
@@ -28,6 +28,22 @@ import { useTranslation } from 'react-i18next';
  * 未过阈值回弹。手势只挂在顶部 handle(touchAction:none),不影响 body 滚动。
  */
 export function Sheet({ open, title, hint, onClose, maxHeight, zIndex, children }) {
+  // 动效审计修复:此前渲染初帧即带 .show → CSS 滑入过渡没有起点帧,从未真正播放;
+  // 关闭即卸载 → 无退场。改为:挂载后双 rAF 再加 .show(入场),关闭先去 .show 播
+  // 退场(CSS .34s),380ms 后卸载。API 不变。
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      let r2 = 0;
+      const r1 = requestAnimationFrame(() => { r2 = requestAnimationFrame(() => setShown(true)); });
+      return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
+    }
+    setShown(false);
+    const t = setTimeout(() => setMounted(false), 380);  // ≥ CSS .34s 过渡
+    return () => clearTimeout(t);
+  }, [open]);
   const [dy, setDy] = useState(0);
   const [dragging, setDragging] = useState(false);
   const start = useRef(0);
@@ -49,7 +65,7 @@ export function Sheet({ open, title, hint, onClose, maxHeight, zIndex, children 
     setDy((d) => { if (d > 110 && onClose) onClose(); return 0; });
   }, [onClose]);
 
-  if (!open) return null;
+  if (!mounted) return null;
   const sheetStyle = {
     ...(maxHeight != null ? { maxHeight } : {}),
     ...(dy > 0 ? { transform: `translateY(${dy}px)` } : {}),
@@ -57,7 +73,7 @@ export function Sheet({ open, title, hint, onClose, maxHeight, zIndex, children 
   };
   return (
     <div
-      className="sheet-wrap show"
+      className={"sheet-wrap" + (shown ? " show" : "")}
       style={zIndex != null ? { zIndex } : undefined}
       onClick={onClose}
     >
@@ -106,9 +122,8 @@ export function ConfirmSheet({
   const { t } = useTranslation();
   const resolvedConfirmLabel = confirmLabel ?? t('common.confirm');
   const resolvedCancelLabel = cancelLabel ?? t('common.cancel');
-  if (!open) return null;
   return (
-    <Sheet open title={title} onClose={onCancel}>
+    <Sheet open={open} title={title} onClose={onCancel}>
       {body && <div className="confirm-note">{body}</div>}
       <div className="sheet-actions" style={{ marginTop: 8 }}>
         <button className="sheet-btn" onClick={onCancel}>{resolvedCancelLabel}</button>

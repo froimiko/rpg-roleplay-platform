@@ -169,7 +169,7 @@
 }
 
 /* 精致 lightbox（覆盖 AvatarImg 内置的，可全局用）*/
-.mlb-backdrop { position: fixed; inset: 0; z-index: 9000; background: rgba(10,9,8,.9); display: flex; align-items: center; justify-content: center; animation: mlb-fade .2s ease; overscroll-behavior: contain; }
+.mlb-backdrop { position: fixed; inset: 0; z-index: 9000; background: rgba(10,9,8,.9); display: flex; align-items: center; justify-content: center; animation: mlb-fade var(--m-base) ease; overscroll-behavior: contain; }
 @keyframes mlb-fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ── 触屏：无 hover，悬停才浮现的控件改为常驻可见 ────────────── */
@@ -243,7 +243,7 @@
   position: fixed; inset: 0; z-index: 10000;
   background: rgba(10, 9, 8, .92);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 14px; padding: 24px; animation: mlb-fade .18s ease;
+  gap: 14px; padding: 24px; animation: mlb-fade var(--m-base) ease;
   overscroll-behavior: contain;
 }
 .ilb__stage { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 96vw; }

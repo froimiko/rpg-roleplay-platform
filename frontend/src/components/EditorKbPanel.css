@@ -10,6 +10,7 @@
   background: rgba(0, 0, 0, .42);
   display: flex;
   justify-content: flex-end;
+  animation: m-fade-in var(--m-base) var(--m-out) both;
 }
 
 .mde-kb-drawer {
@@ -21,6 +22,11 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: mdeKbIn var(--m-base) var(--m-out) both;
+}
+@keyframes mdeKbIn {
+  from { transform: translateX(16px); opacity: .4; }
+  to   { transform: none; opacity: 1; }
 }
 
 .mde-kb-head {
@@ -84,7 +90,7 @@
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
-  transition: background .12s ease, border-color .12s ease, color .12s ease;
+  transition: background var(--m-fast) ease, border-color var(--m-fast) ease, color var(--m-fast) ease;
 }
 .mde-kb-audit-btn:hover:not(:disabled) {
   border-color: var(--accent, #c96442);

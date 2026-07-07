@@ -17,7 +17,8 @@ if (typeof document !== 'undefined' && !document.getElementById(AMP_POP_STYLE_ID
 .amp-pop{display:flex;flex-direction:column;min-width:280px;max-width:420px;
   background:var(--panel,#211f1d);border:1px solid var(--line,#36322d);
   border-radius:var(--r-3,8px);overflow:hidden;color:var(--text,#ebe7df);
-  font-family:var(--font-sans,system-ui);font-size:13px;box-shadow:var(--shadow-3,0 8px 28px rgba(0,0,0,.4));}
+  font-family:var(--font-sans,system-ui);font-size:13px;box-shadow:var(--shadow-3,0 8px 28px rgba(0,0,0,.4));
+  transform-origin:top right;animation:m-pop-menu var(--m-fast,100ms) var(--m-out,cubic-bezier(0.16,1,0.3,1)) forwards;}
 .amp-pop-head{padding:8px 10px;border-bottom:1px solid var(--line-soft,#2a2724);background:var(--bg-deep,#131211);}
 .amp-pop-search{width:100%;box-sizing:border-box;padding:5px 10px;background:rgba(255,255,255,0.04);
   border:1px solid var(--line-soft,#2a2724);border-radius:6px;color:var(--text,#ebe7df);font-size:12.5px;outline:none;font-family:inherit;}

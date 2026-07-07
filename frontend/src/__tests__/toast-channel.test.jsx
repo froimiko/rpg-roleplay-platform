@@ -75,6 +75,9 @@ describe('createToastChannel', () => {
     act(() => { ch.fire('短暂提示', { kind: 'ok', duration: 1000 }); });
     expect(screen.getByText('短暂提示')).toBeTruthy();
     act(() => { vi.advanceTimersByTime(1000); });
+    // 两段式退场(动效审计):到期先标 _closing 播退场动画,再 110ms 真正卸载
+    expect(document.body.querySelector('.m-exit-down')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(120); });
     expect(screen.queryByText('短暂提示')).toBeNull();
   });
 

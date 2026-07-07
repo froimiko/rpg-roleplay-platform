@@ -46,7 +46,7 @@ export default function DetailDrawer({ open, title, onClose, width = 460, closeL
     <>
       <div
         onClick={onClose}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000 }}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, animation: 'm-fade-in var(--m-fast) ease-out both' }}
       />
       <div
         ref={drawerRef}
@@ -59,6 +59,7 @@ export default function DetailDrawer({ open, title, onClose, width = 460, closeL
         background: 'var(--panel, #211f1d)', borderLeft: '1px solid var(--line, #36322d)',
         boxShadow: '-8px 0 28px rgba(0,0,0,.45)', zIndex: 1001,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        animation: 'm-pop-in var(--m-base) var(--m-out) both',
       }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px',

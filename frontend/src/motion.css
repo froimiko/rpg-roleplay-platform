@@ -47,6 +47,10 @@
 @keyframes m-stream-cursor {
   50% { opacity: 0.2; }
 }
+@keyframes m-slide-right {
+  from { opacity: 0.4; transform: translateX(16px); }
+  to   { opacity: 1; transform: none; }
+}
 @keyframes m-stagger {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: none; }
@@ -394,4 +398,22 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+
+/* ---------------- 全站共享外壳(动效审计 2026-07-07:Modal/toast 裸奔) ---------------- */
+/* Modal.jsx 底座 = 全站危险确认弹窗(ConfirmDialog 等)共用外壳 */
+.pl-modal-backdrop { animation: m-fade-in var(--m-fast) ease-out both; }
+.pl-modal { animation: m-pop-in var(--m-base) var(--m-out) both; }
+/* 通用退场 helper:JS 关闭前加 .m-exit,等 --m-fast 后卸载(toast/抽屉复用) */
+.m-exit { animation: m-fade-out var(--m-fast) var(--m-in) forwards !important; }
+.m-exit-down { animation: m-exit-down var(--m-fast) var(--m-in) forwards !important; }
+@keyframes m-exit-down {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* tooltip 380ms hover delay 同样清零(通配 duration 覆盖不了 transition-delay) */
+  [data-tip]:hover::before, [data-tip]:hover::after { transition-delay: 0ms !important; }
 }
