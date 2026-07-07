@@ -7065,20 +7065,20 @@
       }
     },
     "md_editor_agent": {
-      "title": "助手",
-      "empty_title": "改这个剧本,直接动库",
-      "hint": "让 AI 帮你改这个剧本 —— 例如「把这个角色的性格改得更阴郁」「给这章正文润色」「新建一条世界书:XX」。AI 会直接改库(危险操作会先让你确认)。",
-      "error_generic": "出错了",
+      "title": "写作搭档",
+      "empty_title": "一句话改稿",
+      "hint": "例如:把这个角色写得更阴郁 / 给这一章润色 / 新建一条世界书。改动先给你预览,写入前需要你确认。",
+      "error_generic": "请求失败,请重试",
       "tool_status": {
         "running": "执行中…",
         "error": "失败",
         "done": "完成"
       },
-      "confirm_prompt": "AI 想执行 {{tool}}(覆盖写入)",
+      "confirm_prompt": "以下改动将覆盖写入({{tool}})",
       "confirm_approve": "确认执行",
       "undo_btn": "撤销此次改动",
       "undone": "已撤销",
-      "undo_ok": "已撤销,正文已恢复改前内容",
+      "undo_ok": "已撤销,恢复为改前内容",
       "undo_fail": "撤销失败",
       "panel": {
         "plan": "写作计划",
@@ -7094,15 +7094,15 @@
         "truncated": "(预览已截断,落库为完整内容)"
       },
       "continue_btn": "续写到正文(光标处)",
-      "continue_btn_title": "把输入框作为指令(可空),让 AI 在当前正文光标处续写 / 选中段改写。也可在编辑器里按 ⌘K。",
+      "continue_btn_title": "输入框内容作为续写指令(可留空)。光标处续写,选中一段则改写。快捷键 ⌘K。",
       "continue_hint": "或在正文按 ⌘K",
-      "placeholder_with_script": "让 AI 改这个剧本…(改角色卡 / 世界书 / 正文)",
+      "placeholder_with_script": "想怎么改?正文 / 角色卡 / 世界书…",
       "placeholder_no_script": "先选剧本",
       "model_label": "模型",
       "model_inherit": "跟随默认模型",
       "doc": {
         "only_txt_md": "只支持 .txt / .md 文档",
-        "attached": "已附加「{{name}}」，在下方说出要求（如「拆成章节」）",
+        "attached": "已附加「{{name}}」——在下方输入处理方式,如「拆成章节」",
         "fail": "文档上传失败",
         "drop_here": "松手上传 · txt / md 文档",
         "uploading": "上传中…",
@@ -7111,16 +7111,16 @@
       "tool_args": "参数",
       "tool_result": "结果",
       "subagent": {
-        "title": "子代理写作",
-        "output": "子模型产出"
+        "title": "委派写作",
+        "output": "委派稿"
       },
       "conv": {
         "history": "历史",
         "new": "新对话",
         "empty": "暂无历史对话",
-        "untitled": "(空对话)"
+        "untitled": "(未命名)"
       },
-      "editor_diff_hint": "改动已在编辑器中以绿(增)/红(删)展示 —— 在编辑器顶栏点「全部批准 / 拒绝」。",
+      "editor_diff_hint": "改动已标注在编辑器里(绿增红删),顶栏可全部批准或拒绝。",
       "ref": {
         "add": "@ 引用",
         "add_tip": "引用章节/角色卡/世界书作为上下文",

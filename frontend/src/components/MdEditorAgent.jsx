@@ -209,7 +209,7 @@ function MdeToolBlock({ tc, t, busy, onUndo, canUndo }) {
         onClick={() => hasDetail && setOpen((o) => !o)} aria-expanded={open}>
         <span className={'mde-tool-ind ' + status} aria-hidden="true" />
         <span className="mde-tool-title">
-          {isSub ? t('components.md_editor_agent.subagent.title', { defaultValue: '子代理写作' }) : toolLabel(tc.tool)}
+          {isSub ? t('components.md_editor_agent.subagent.title', { defaultValue: '委派写作' }) : toolLabel(tc.tool)}
           {subModel ? <span className="mde-tool-model">{subModel}</span> : null}
         </span>
         <span className="mde-tool-state">{statusText}</span>
@@ -226,7 +226,7 @@ function MdeToolBlock({ tc, t, busy, onUndo, canUndo }) {
           {resStr ? (
             <div className="mde-tool-sec">
               <div className="mde-tool-seclabel">{isSub
-                ? t('components.md_editor_agent.subagent.output', { defaultValue: '子模型产出' })
+                ? t('components.md_editor_agent.subagent.output', { defaultValue: '委派稿' })
                 : t('components.md_editor_agent.tool_result', { defaultValue: '结果' })}</div>
               <pre className="mde-tool-pre">{resStr}</pre>
             </div>
@@ -589,7 +589,7 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
         ? await window.api?.scripts?.undoChapter?.(scriptId, info.ci)
         : await window.api?.scripts?.undoEdit?.(scriptId, info.table, info.id);
       if (r && r.ok) {
-        window.__apiToast?.(t('components.md_editor_agent.undo_ok', { defaultValue: '已撤销,已恢复改前内容' }), { kind: 'ok' });
+        window.__apiToast?.(t('components.md_editor_agent.undo_ok', { defaultValue: '已撤销,恢复为改前内容' }), { kind: 'ok' });
         setMessages((m) => m.map((msg, i) => i === msgIdx
           ? { ...msg, tools: (msg.tools || []).map((tc, j) => j === toolIdx ? { ...tc, undone: true } : tc) }
           : msg));
@@ -737,7 +737,7 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
         </div>
       )}
       <div className="mde-agent-head">
-        <span className="mde-agent-head-icon">AI</span>
+        <span className="mde-agent-head-icon">✎</span>
         <span className="mde-agent-head-title">{t('components.md_editor_agent.title')}{activeTab ? ` · ${activeTab.label}` : ''}</span>
         <button type="button" className={'mde-agent-headbtn' + (showConvList ? ' active' : '')}
           onClick={toggleConvList} title={t('components.md_editor_agent.conv.history', { defaultValue: '历史对话' })}>
@@ -801,7 +801,7 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
       <div className="mde-agent-msgs" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="mde-agent-empty">
-            <span className="mde-agent-empty-glyph" aria-hidden="true">AI</span>
+            <span className="mde-agent-empty-glyph" aria-hidden="true">✎</span>
             <div className="mde-agent-empty-title">{t('components.md_editor_agent.empty_title', { defaultValue: '改这个剧本,直接动库' })}</div>
             <div className="mde-agent-empty-hint">{t('components.md_editor_agent.hint')}</div>
           </div>

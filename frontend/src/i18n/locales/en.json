@@ -7068,20 +7068,20 @@
       }
     },
     "md_editor_agent": {
-      "title": "Assistant",
-      "empty_title": "Edit this script, straight to the database",
-      "hint": "Ask the AI to edit this script — e.g. \"make this character more brooding\", \"polish the prose in this chapter\", \"add a new Worldbook entry: XX\". The AI writes directly to the database (destructive actions require your confirmation).",
-      "error_generic": "Something went wrong",
+      "title": "Writing partner",
+      "empty_title": "Edit with one line",
+      "hint": "e.g. make this character darker / polish this chapter / add a worldbook entry. Changes are previewed and need your approval before writing.",
+      "error_generic": "Request failed, try again",
       "tool_status": {
         "running": "Running…",
         "error": "Failed",
         "done": "Done"
       },
-      "confirm_prompt": "The AI wants to run {{tool}} (overwrites saved data)",
+      "confirm_prompt": "This change overwrites content ({{tool}})",
       "confirm_approve": "Run",
       "undo_btn": "Undo this change",
       "undone": "Undone",
-      "undo_ok": "Undone — chapter restored to its previous content",
+      "undo_ok": "Undone — restored the previous content",
       "undo_fail": "Undo failed",
       "panel": {
         "plan": "Writing plan",
@@ -7097,15 +7097,15 @@
         "truncated": "(preview truncated; full content will be saved)"
       },
       "continue_btn": "Continue writing (at cursor)",
-      "continue_btn_title": "Use the input box as an instruction (optional) and let the AI continue writing at the current cursor position, or rewrite the selected passage. You can also press ⌘K in the editor.",
+      "continue_btn_title": "Input is used as the writing instruction (optional). Continues at cursor, or rewrites the selection. Shortcut: Cmd+K.",
       "continue_hint": "or press ⌘K in the editor",
-      "placeholder_with_script": "Ask the AI to edit this script… (characters, Worldbook, prose)",
+      "placeholder_with_script": "What to change? Prose / cards / worldbook…",
       "placeholder_no_script": "Select a script first",
       "model_label": "Model",
       "model_inherit": "Follow default model",
       "doc": {
         "only_txt_md": "Only .txt / .md files",
-        "attached": "Attached “{{name}}” — say what to do below (e.g. “split into chapters”)",
+        "attached": "Attached “{{name}}” — type what to do with it, e.g. “split into chapters”",
         "fail": "Document upload failed",
         "drop_here": "Drop to upload · txt / md",
         "uploading": "Uploading…",
@@ -7114,16 +7114,16 @@
       "tool_args": "Args",
       "tool_result": "Result",
       "subagent": {
-        "title": "Sub-agent writing",
-        "output": "Sub-model output"
+        "title": "Delegated writing",
+        "output": "Delegated draft"
       },
       "conv": {
         "history": "History",
         "new": "New chat",
         "empty": "No past conversations",
-        "untitled": "(empty)"
+        "untitled": "(untitled)"
       },
-      "editor_diff_hint": "Changes shown in the editor as green (added) / red (removed) — click “Approve all / Reject” at the editor top.",
+      "editor_diff_hint": "Changes are marked in the editor (green add / red del). Approve or reject all from the top bar.",
       "ref": {
         "add": "@ Reference",
         "add_tip": "Pin a chapter / card / worldbook entry as context",

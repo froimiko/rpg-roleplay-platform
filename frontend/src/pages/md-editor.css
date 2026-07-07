@@ -611,3 +611,12 @@
   .mde-panes:not(.right-collapsed) > .mde-right { animation: none; }
   .mde-tab, .mde-tree-item, .mde-tree-caret, .mde-tab-close { transition: none; }
 }
+
+/* ── agent 侧栏动效补齐(与平台动效语言一致) ── */
+.mde-agent-confirm { animation: mdeModalIn 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.mde-tool-body { animation: mdeTreeIn 140ms ease-out both; }
+.mde-agent-confirm-btns button { transition: background 140ms ease, color 140ms ease, border-color 140ms ease, transform 100ms ease; }
+.mde-agent-confirm-btns button:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .mde-agent-confirm, .mde-tool-body { animation: none; }
+}
