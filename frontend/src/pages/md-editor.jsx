@@ -710,7 +710,7 @@ function WritingRules({ scriptId, onClose }) {
     <div className="mde-qopen-scrim" onMouseDown={onClose}>
       <div className="mde-rules" onMouseDown={(e) => e.stopPropagation()}>
         <div className="mde-rules-head">{t('md_editor.rules.title', { defaultValue: '写作规范(注入 AI 上下文,务必遵守)' })}</div>
-        <div className="mde-rules-desc">{t('md_editor.rules.desc', { defaultValue: '像给 AI 立的规矩:风格/人称/视角、连贯禁忌、命名约定…AI 续写/改写时最高优先遵守。' })}</div>
+        <div className="mde-rules-desc">{t('md_editor.rules.desc', { defaultValue: '这部剧本的写作规矩:风格/人称/视角、连贯禁忌、命名约定…续写与改写时最高优先遵守。' })}</div>
         {text === null ? <div className="mde-qopen-empty">{t('common.loading')}</div>
           : <textarea className="mde-rules-ta" value={text} onChange={(e) => setText(e.target.value)}
               placeholder={t('md_editor.rules.placeholder', { defaultValue: '例:全程第三人称限制视角(只跟主角)；禁止上帝视角剧透；地名统一用「云墟城」不用「云墟」；台词不带现代网络词。' })} />}
@@ -760,7 +760,7 @@ function ProblemsPanel({ scriptId, reloadKey, onJump, onClose, onCountChange }) 
         </div>
         {issues === null ? <div className="mde-qopen-empty">{t('common.loading')}</div>
           : issues.length === 0 ? (
-            <div className="mde-problems-empty">{t('md_editor.problems.empty', { defaultValue: '暂无审稿问题。让 AI 通读/查矛盾/查伏笔回收后会在这里列出。' })}</div>
+            <div className="mde-problems-empty">{t('md_editor.problems.empty', { defaultValue: '暂无审稿问题。跑一次「复审本章」,矛盾与伏笔回收问题会列在这里。' })}</div>
           ) : (
             <ul className="mde-problems-list">
               {issues.map((it) => (
@@ -1324,7 +1324,7 @@ export default function MdEditorPage() {
         <div className="mde-tb-spacer" />
         {scriptId && active && active.kind === 'chapter' && <button className={'mde-tb-txt' + (autoComplete ? ' on' : '')} data-tip={t('md_editor.ghost.tip', { defaultValue: '内联续写:打字停顿后给灰色续写建议,Tab 采纳(用你自己的模型)' })} title={t('md_editor.ghost.btn', { defaultValue: 'AI 续写' })} onClick={toggleAutoComplete}>{t('md_editor.ghost.btn', { defaultValue: 'AI 续写' })}{autoComplete ? ' ·开' : ''}</button>}
         {scriptId && <button className={'mde-tb-txt' + (issueCount > 0 ? ' has-badge' : '')} data-tip={t('md_editor.problems.tip', { defaultValue: 'AI 审稿发现的问题(可跳转章节)' })} title={t('md_editor.problems.btn', { defaultValue: '问题' })} onClick={() => setIssuesOpen(true)}>{t('md_editor.problems.btn', { defaultValue: '问题' })}{issueCount > 0 ? <span className="mde-tb-badge">{issueCount}</span> : null}</button>}
-        {scriptId && <button className="mde-tb-txt" data-tip={t('md_editor.rules.tip', { defaultValue: '给 AI 立写作规范(注入上下文)' })} title={t('md_editor.rules.btn', { defaultValue: '写作规范' })} onClick={() => setRulesOpen(true)}>{t('md_editor.rules.btn', { defaultValue: '写作规范' })}</button>}
+        {scriptId && <button className="mde-tb-txt" data-tip={t('md_editor.rules.tip', { defaultValue: '写作规范:每次生成都会遵守' })} title={t('md_editor.rules.btn', { defaultValue: '写作规范' })} onClick={() => setRulesOpen(true)}>{t('md_editor.rules.btn', { defaultValue: '写作规范' })}</button>}
         {scriptId && <button className={'mde-tb-txt' + (kbBadge && !kbBadge.ready ? ' has-badge' : '')} data-tip={t('md_editor.kb.tip', { defaultValue: '本剧本知识库健康度与重建(摘要精炼/世界书充实/复核卡/嵌入)' })} title={t('md_editor.kb.title', { defaultValue: '知识库中心' })} onClick={() => setKbOpen(true)}>{t('md_editor.kb.title', { defaultValue: '知识库中心' })}{kbBadge && !kbBadge.ready ? <span className="mde-tb-badge">{kbBadge.stale_count}</span> : null}</button>}
         {active && active.dirty && <button className="mde-save" onClick={() => saveTab(active.key)} disabled={active.saving}>{active.saving ? t('md_editor.save_btn.saving') : t('md_editor.save_btn.save')}</button>}
         <button className={'mde-tb-ic' + (rightOpen ? ' on' : '')} data-tip={rightOpen ? t('md_editor.panel.hide_ai') : t('md_editor.panel.show_ai')} title={rightOpen ? t('md_editor.panel.hide_ai') : t('md_editor.panel.show_ai')} onClick={toggleRight}><TbIcon name="panelRight" /></button>

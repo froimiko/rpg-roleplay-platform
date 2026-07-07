@@ -44,13 +44,15 @@
 .mde-tb-ic:hover { background: var(--panel-2, #282623); color: var(--text, #ebe7df); }
 .mde-tb-ic:focus-visible { outline: 2px solid var(--accent, #b5654a); outline-offset: 1px; }
 .mde-tb-ic.on { color: var(--accent, #b5654a); }
-/* 顶栏图标即时提示(原生 title 慢/不稳,改 data-tip CSS 浮层) */
-.mde-topbar [data-tip] { position: relative; }
-.mde-topbar [data-tip]:hover::after {
-  content: attr(data-tip); position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%);
-  white-space: nowrap; background: var(--panel, #211f1d); color: var(--text, #ebe7df);
-  border: 1px solid var(--line, #36322d); border-radius: 5px; padding: 3px 8px; font-size: 11px;
-  z-index: 4000; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+/* 顶栏提示朝下锚定:复用全局 tooltip 体系(motion.css [data-tip]),仅翻转方向。
+   历史 bug(用户截图):此处旧手写 hover::after 设 top、全局版设 bottom,属性合并后
+   top+bottom 同时生效 → 绝对定位伪元素被垂直拉伸成横贯按钮上下的黑条。
+   修=删手写版,作用域内等价于全局 data-tip-pos="below" 变体(含箭头翻转)。 */
+.mde-topbar [data-tip]::after { bottom: auto; top: calc(100% + 6px); }
+.mde-topbar [data-tip]::before {
+  bottom: auto; top: 100%; margin-top: 3px; margin-bottom: 0;
+  border-right: 0; border-bottom: 0;
+  border-left: 1px solid var(--line, #36322d); border-top: 1px solid var(--line, #36322d);
 }
 .mde-tb-divider { width: 1px; height: 18px; background: var(--line, #36322d); margin: 0 4px; }
 
