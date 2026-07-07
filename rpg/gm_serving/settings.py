@@ -163,8 +163,10 @@ def realign_progress_signals(db, save_id: int, target_chapter: int) -> int:
         (t, t, save_id),
     )
     relocked = db.execute(
+        # variant_description 列 NOT NULL default ''(e2e 实锤:置 null 违约 500——老
+        # rewind 端点原 SQL 就带这个雷,一直在生产静默炸),按平台惯例写空串。
         "update save_anchor_states set status='pending', occurred_at_turn=null, "
-        "variant_description=null, drift_score=0, updated_at=now() "
+        "variant_description='', drift_score=0, updated_at=now() "
         "where save_id=%s and source_chapter > %s and status in ('occurred','variant') "
         "returning id",
         (save_id, t),

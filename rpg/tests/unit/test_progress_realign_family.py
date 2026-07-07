@@ -21,6 +21,7 @@ def test_realign_covers_full_signal_family():
     assert "'{progress_chapter}', to_jsonb(%s::int)" in body, "A:progress 显式设(可降)"
     assert "least(coalesce((worldline->>'user_progress_floor')" in body, "A:floor clamp 到 ≤target(M3)"
     assert "status='pending'" in body and "source_chapter > %s" in body, "C:未来章锚点重锁"
+    assert "variant_description=''" in body, "列 NOT NULL default '',置 null 违约(e2e 实锤 500)"
     assert "recompute_visible_set" in body, "frontier 收缩(flag on)"
 
 
