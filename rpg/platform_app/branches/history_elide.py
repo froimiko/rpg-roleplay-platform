@@ -104,69 +104,67 @@ def elide_save(db, save_id: int, *, min_history: int = MIN_HISTORY_TO_ELIDE,
                dry_run: bool = False) -> dict[str, Any]:
     """单存档 compaction(调用方须持该 save 的 advisory lock,与回合/分支操作互斥)。
 
-    可裁剪 = 有后代 ∧ 非保护集 ∧ 未裁剪 ∧ history≥min_history。
-    单条 UPDATE 纯 SQL 原子改写(不经 python 读回,防大 blob 往返)。"""
+    可裁剪 = 有后代 ∧ 非保护集 ∧ 未裁剪 ∧ history≥min_history ∧ **前缀实测通过**。
+    前缀实测(268 e2e 实锤:重试/换稿会让树上同回合存在多个正文版本,4.2% 与后代
+    前缀不符——不猜语义,实测不符跳过保持全量):DB 端一次投影每 commit 的
+    md5(content#role) 数组(不传大 blob),内存自底向上传播供体序列做前缀比对。"""
     prot = protected_commit_ids(db, int(save_id))
     rows = db.execute(
         """
-        select c.id,
-               jsonb_array_length(coalesce(c.state_snapshot->'history','[]'::jsonb)) as n,
-               pg_column_size(c.state_snapshot) as bytes
-        from branch_commits c
-        where c.save_id = %s
-          and c.state_snapshot is not null
-          and not (c.state_snapshot ? '_history_elided')
-          and jsonb_array_length(coalesce(c.state_snapshot->'history','[]'::jsonb)) >= %s
-          and exists (select 1 from branch_commits k
-                      where k.save_id = %s and k.parent_id = c.id)
+        select id, parent_id,
+               (state_snapshot ? '_history_elided') as elided,
+               jsonb_array_length(coalesce(state_snapshot->'history','[]'::jsonb)) as n,
+               pg_column_size(state_snapshot) as bytes,
+               case when not (state_snapshot ? '_history_elided') then
+                 (select coalesce(array_agg(
+                          md5(coalesce(t.e->>'content','') || '#' || coalesce(t.e->>'role','')) order by t.o),
+                        '{}'::text[])
+                    from jsonb_array_elements(state_snapshot->'history') with ordinality t(e, o))
+               end as hcr
+        from branch_commits
+        where save_id = %s and state_snapshot is not null
         """,
-        (int(save_id), int(min_history), int(save_id)),
+        (int(save_id),),
     ).fetchall()
-    todo = [r for r in (rows or []) if int(r["id"]) not in prot]
-    bytes_before = sum(int(r["bytes"] or 0) for r in todo)
+    nodes = {int(r["id"]): dict(r) for r in (rows or [])}
+    children: dict[int | None, list[int]] = {}
+    for nid, nd in nodes.items():
+        children.setdefault(nd.get("parent_id"), []).append(nid)
+    # 自底向上传播「供体序列」:node 的供体 = 子孙中最近的未裁剪 commit 的 hcr(取最长)。
+    donor_seq: dict[int, list | None] = {}
+
+    def _resolve_donor(nid: int) -> list | None:
+        if nid in donor_seq:
+            return donor_seq[nid]
+        best = None
+        for cid in children.get(nid, []):
+            c = nodes[cid]
+            seq = c["hcr"] if (not c["elided"] and c["hcr"] is not None) else _resolve_donor(cid)
+            if seq is not None and (best is None or len(seq) > len(best)):
+                best = seq
+        donor_seq[nid] = best
+        return best
+
+    import sys
+    sys.setrecursionlimit(max(10000, len(nodes) * 2 + 100))
+    todo, skipped = [], 0
+    bytes_before = 0
+    for nid, nd in nodes.items():
+        if (nid in prot or nd["elided"] or int(nd["n"] or 0) < int(min_history)
+                or nid not in children):  # 无子=叶子(供体,必须全量)
+            continue
+        seq = _resolve_donor(nid)
+        my = nd["hcr"] or []
+        if seq is None or len(seq) < len(my) or list(seq[:len(my)]) != list(my):
+            skipped += 1
+            continue
+        todo.append(nid)
+        bytes_before += int(nd["bytes"] or 0)
     if dry_run:
         return {"save_id": int(save_id), "elided": 0, "candidates": len(todo),
+                "skipped_prefix_mismatch": skipped,
                 "bytes_before": bytes_before, "dry_run": True}
-    n_done = n_skipped = 0
-    for r in todo:
-        # 前缀实测(268 e2e 实锤:重试/换稿会让树上同回合存在多个正文版本,4.2% 的
-        # commit 与后代前缀不符——对这些不猜语义,实测 content/role 前缀不成立就跳过
-        # 保持全量,保证已裁剪集合的绝对无损)。比对在 DB 内做(只传 bool 不回传大 blob)。
-        ok = db.execute(
-            """
-            with cand as (
-                select state_snapshot->'history' as h,
-                       jsonb_array_length(state_snapshot->'history') as n
-                from branch_commits where id = %s and save_id = %s
-            ),
-            donor as (
-                with recursive d as (
-                    select id, parent_id, state_snapshot, 1 as depth
-                      from branch_commits where save_id = %s and parent_id = %s
-                    union all
-                    select c.id, c.parent_id, c.state_snapshot, d.depth + 1
-                      from branch_commits c join d on c.parent_id = d.id
-                     where c.save_id = %s
-                )
-                select state_snapshot->'history' as h from d
-                where not (state_snapshot ? '_history_elided')
-                  and jsonb_array_length(coalesce(state_snapshot->'history','[]'::jsonb))
-                      >= (select n from cand)
-                order by depth asc limit 1
-            )
-            select coalesce(bool_and(
-                     a.e->>'content' is not distinct from b.e->>'content'
-                     and a.e->>'role' is not distinct from b.e->>'role'), false) as ok
-            from cand, donor,
-                 lateral jsonb_array_elements(cand.h) with ordinality a(e, i),
-                 lateral jsonb_array_elements(donor.h) with ordinality b(e, i2)
-            where a.i = b.i2 and a.i <= (select n from cand)
-            """,
-            (int(r["id"]), int(save_id), int(save_id), int(r["id"]), int(save_id)),
-        ).fetchone()
-        if not (ok and ok.get("ok")):
-            n_skipped += 1
-            continue
+    for nid in todo:
         db.execute(
             """
             update branch_commits
@@ -178,9 +176,8 @@ def elide_save(db, save_id: int, *, min_history: int = MIN_HISTORY_TO_ELIDE,
              where id = %s and save_id = %s
                and not (state_snapshot ? '_history_elided')
             """,
-            (int(r["id"]), int(save_id)),
+            (nid, int(save_id)),
         )
-        n_done += 1
-    return {"save_id": int(save_id), "elided": n_done, "candidates": len(todo),
-            "skipped_prefix_mismatch": n_skipped,
+    return {"save_id": int(save_id), "elided": len(todo), "candidates": len(todo) + skipped,
+            "skipped_prefix_mismatch": skipped,
             "bytes_before": bytes_before, "protected": len(prot)}

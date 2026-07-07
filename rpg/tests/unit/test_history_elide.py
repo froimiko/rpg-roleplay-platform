@@ -11,8 +11,9 @@ def test_elide_protects_rebuild_donors():
     body = HE[HE.find("def elide_save("):]
     assert "protected_commit_ids" in HE
     assert "active_commit_id" in HE and "target_commit_id" in HE, "活跃头+全部 ref 目标受保护"
-    assert "exists (select 1 from branch_commits k" in body, "只裁有后代的(叶子=供体必须全量)"
-    assert "not (c.state_snapshot ? '_history_elided')" in body, "幂等:已裁剪不重裁"
+    assert "nid not in children" in body, "只裁有后代的(叶子=供体必须全量)"
+    assert "list(seq[:len(my)]) != list(my)" in body, "前缀实测:content/role hash 不符跳过"
+    assert 'nd["elided"]' in body, "幂等:已裁剪不重裁(投影阶段过滤)"
     assert "MIN_HISTORY_TO_ELIDE = 20" in HE
 
 
