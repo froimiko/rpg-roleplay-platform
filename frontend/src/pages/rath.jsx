@@ -6,12 +6,15 @@
  * 与玩家正在玩的存档 state 无关(存档只被只读地取材料)。
  *
  * 布局:
- *   顶部 — 实验选择/创建区(无实验→存档下拉+启动按钮;有实验→下拉切换)。
+ *   顶部 — 实验选择/创建区(无实验→存档下拉+启动按钮+只读预检卡片;有实验→下拉切换)。
  *   实验面板(选中后 GET 详情,30s 轮询):
- *     · 状态行卡片:世界时间 + 加速档 SegmentedControl + 世界运行 Toggle(自动推进说明)。
- *     · 操作条:推进一步 / 归档(二次确认)。
+ *     · 状态行卡片:世界时间 + 加速档 SegmentedControl + 世界运行 Toggle(自动推进说明 + 暂停原因徽标)。
+ *     · 操作条:推进一步 / 进入游戏(先暂停再走 window.__openContinue) / 归档(二次确认)。
  *     · 角色动态板:fluctlights 卡片网格(goal/stance/private_memories)。
  *     · 日志:顶部引导插入行(单行输入+按钮) + events 列表(新在上),互动事件可展开 transcript。
+ *
+ * 可见性门控(P0):document.hidden 时详情轮询整段跳过(不发请求,不续 last_viewed_at),
+ * 回到前台立即补拉一次;可见时的请求带 ?active=1,与被动轮询区分「真的在看」。
  *
  * 403(flag 未开放)→ 整页空态提示,不渲染任何操作 UI。
  */
@@ -90,6 +93,48 @@ function _tensionSparkline(hist, opts = {}) {
   return [...padBars, ...realBars];
 }
 
+/* ── 预检 tier 徽标 / 暂停原因徽标文案映射(纯函数,供 vitest 直接单测)──────
+ * 均返回 {key, fallback} 或 null,组件里配合 t(key, {defaultValue: fallback}) 使用,
+ * 未知取值时兜底成灰色徽标而非崩溃。 */
+
+const PREFLIGHT_TIER_META = {
+  full: { color: 'green', key: 'rath_page.preflight.tier_full', fallback: '材料齐全' },
+  degraded: { color: 'blue', key: 'rath_page.preflight.tier_degraded', fallback: '部分退化' },
+  free: { color: 'grey', key: 'rath_page.preflight.tier_free', fallback: '自由演化' },
+};
+/** GET /api/rath/preflight 的 tier 字段 → 徽标颜色 + i18n key/兜底文案。未知 tier 兜底灰色徽标,显示原始值。 */
+function _preflightTierMeta(tier) {
+  return PREFLIGHT_TIER_META[tier] || { color: 'grey', key: null, fallback: String(tier == null ? '' : tier) };
+}
+
+const PAUSE_REASON_META = {
+  user: { key: 'rath_page.pause_reason.user', fallback: '已暂停' },
+  player_active: { key: 'rath_page.pause_reason.player_active', fallback: '你在游玩，世界让路' },
+  unviewed: { key: 'rath_page.pause_reason.unviewed', fallback: '久未查看已休眠' },
+  no_model: { key: 'rath_page.pause_reason.no_model', fallback: '无可用模型' },
+};
+/** rath_experiments.pause_reason 枚举 → 徽标文案;未知/空值返回 null(不渲染徽标)。 */
+function _pauseReasonMeta(reason) {
+  return PAUSE_REASON_META[reason] || null;
+}
+
+/**
+ * 可见性门控(P0):后台标签不应发详情轮询请求——document.hidden 为真时返回 false。
+ * 纯函数,接收 document 对象(或等价 {hidden} 形状)方便单测,不直接读全局。
+ * `doc` 缺失时保守地当作可见(SSR/无 document 环境不拦截)。
+ */
+function _shouldFetchOnPoll(doc) {
+  return !(doc && doc.hidden);
+}
+
+/**
+ * GET /api/rath/preflight 响应 → 规范化 preflight 对象;`ok!==true`(含 404/未部署/网络异常,
+ * fetch 层已把这些统一 catch 成同一形状)一律返回 null,前端据此静默隐藏卡片、不阻断建实验。
+ */
+function _normalizePreflightResponse(r) {
+  return (r && r.ok === true) ? r : null;
+}
+
 function StatCell({ label, value }) {
   return (
     <div>
@@ -99,12 +144,57 @@ function StatCell({ label, value }) {
   );
 }
 
+/* ── 建实验前的只读预检卡片(纯展示组件,preflight=null 时不渲染)───────────────
+ * tier 徽标(材料齐全/部分退化/自由演化)+ can_create=false 时的拒绝原因 + warnings 列表。 */
+function PreflightCard({ preflight }) {
+  const { t } = useTranslation();
+  if (!preflight) return null;
+  const meta = _preflightTierMeta(preflight.tier);
+  return (
+    <div className="rath-preflight-card" data-testid="rath-preflight-card">
+      <CSSpaceBetween size="xs">
+        <CSSpaceBetween direction="horizontal" size="xs" alignItems="center">
+          <CSBadge color={meta.color}>{meta.key ? t(meta.key, { defaultValue: meta.fallback }) : meta.fallback}</CSBadge>
+          <CSBox color="text-body-secondary" fontSize="body-s">
+            {t('rath_page.preflight.summary', {
+              defaultValue: `河道 ${preflight.river?.beats ?? 0} 拍 · 角色 ${preflight.cast?.count ?? 0} 人 · 世界书 ${preflight.worldbook?.count ?? 0} 条`,
+              beats: preflight.river?.beats ?? 0,
+              cast: preflight.cast?.count ?? 0,
+              worldbook: preflight.worldbook?.count ?? 0,
+            })}
+          </CSBox>
+        </CSSpaceBetween>
+        {preflight.can_create === false && preflight.reason && (
+          <CSAlert type="warning">{preflight.reason}</CSAlert>
+        )}
+        {Array.isArray(preflight.warnings) && preflight.warnings.length > 0 && (
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {preflight.warnings.map((w, i) => (
+              <li key={i}><CSBox fontSize="body-s" color="text-body-secondary">{w}</CSBox></li>
+            ))}
+          </ul>
+        )}
+      </CSSpaceBetween>
+    </div>
+  );
+}
+
+/* ── 暂停原因徽标(纯展示组件,reason 未知/为空时不渲染)───────────────────── */
+function PauseReasonBadge({ reason }) {
+  const { t } = useTranslation();
+  const meta = _pauseReasonMeta(reason);
+  if (!meta) return null;
+  return <CSBadge color="grey">{t(meta.key, { defaultValue: meta.fallback })}</CSBadge>;
+}
+
 /* ── 实验选择/创建条 ─────────────────────────────────────────────── */
 function ExperimentPicker({ experiments, activeId, onSwitch, onCreated }) {
   const { t } = useTranslation();
   const [saves, setSaves] = useState(null);
   const [pickedSaveId, setPickedSaveId] = useState(null);
   const [creating, setCreating] = useState(false);
+  // 选中存档后的只读预检(材料充足度)。404/异常一律静默隐藏,不阻断既有建实验流程。
+  const [preflight, setPreflight] = useState(null);
 
   useEffect(() => {
     if (experiments.length > 0) return; // 已有实验时不必拉存档列表
@@ -117,6 +207,16 @@ function ExperimentPicker({ experiments, activeId, onSwitch, onCreated }) {
       .catch(() => { if (alive) setSaves([]); });
     return () => { alive = false; };
   }, [experiments.length]);
+
+  useEffect(() => {
+    setPreflight(null);
+    if (!pickedSaveId) return;
+    let alive = true;
+    window.api.rath.preflight(pickedSaveId)
+      .then((r) => { if (alive) setPreflight(_normalizePreflightResponse(r)); })
+      .catch(() => { if (alive) setPreflight(null); });
+    return () => { alive = false; };
+  }, [pickedSaveId]);
 
   const saveOptions = (saves || []).map((s) => ({
     value: String(s.id),
@@ -171,10 +271,17 @@ function ExperimentPicker({ experiments, activeId, onSwitch, onCreated }) {
             loadingText={t('common.loading')}
             statusType={saves == null ? 'loading' : 'finished'}
           />
-          <CSButton variant="primary" disabled={!pickedSaveId || creating} loading={creating} onClick={doCreate}>
+          <CSButton
+            variant="primary"
+            disabled={!pickedSaveId || creating || preflight?.can_create === false}
+            loading={creating}
+            onClick={doCreate}
+          >
             {t('rath_page.picker.launch_btn', { defaultValue: '启动实验' })}
           </CSButton>
         </CSSpaceBetween>
+
+        <PreflightCard preflight={preflight} />
       </CSSpaceBetween>
     </CSContainer>
   );
@@ -260,9 +367,13 @@ function ExperimentPanel({ expId }) {
   const [archiveConfirm, setArchiveConfirm] = useState(false);
   const pollRef = useRef(null);
 
+  // 可见性感知(P0):后台标签不发详情请求——既省掉整读 state_snapshot 的开销,也不再
+  // 无条件续命 last_viewed_at(否则「标签开着不看」会让 72h 无人看自动暂停永远触发不了)。
+  // 页面可见时才带 ?active=1(真正的「看」),回到前台立即补拉一次。
   const load = useCallback(async (silent) => {
+    if (typeof document !== 'undefined' && !_shouldFetchOnPoll(document)) return; // 后台标签:静默跳过,不发请求
     try {
-      const r = await window.api.rath.detail(expId);
+      const r = await window.api.rath.detail(expId, { active: true });
       if (!r || r.ok === false) throw new Error(r?.error || t('rath_page.toast.load_failed', { defaultValue: '加载实验失败' }));
       setDetail(r);
       setLoadErr(null);
@@ -277,6 +388,12 @@ function ExperimentPanel({ expId }) {
     pollRef.current = setInterval(() => load(true), POLL_MS);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, [expId, load]);
+
+  useEffect(() => {
+    const onVisible = () => { if (typeof document !== 'undefined' && _shouldFetchOnPoll(document)) load(true); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [load]);
 
   const exp = detail?.experiment;
   const fluctlights = detail?.fluctlights || [];
@@ -301,7 +418,14 @@ function ExperimentPanel({ expId }) {
     try {
       // 后端已异步化:立即返回 started,推进在后台完成(约1分钟),日志轮询自然刷出。
       const r = await window.api.rath.tick(expId);
-      if (!r || r.ok === false) {
+      if (r && r.reason === 'no_model') {
+        // 无可用模型(BYOK 缺失):后端已自动暂停实验(pause_reason='no_model'),
+        // danger toast 引导去配置模型,而非笼统的"未执行"。
+        window.__apiToast?.(
+          t('rath_page.toast.no_model', { defaultValue: '无可用模型,实验已自动暂停——请到 设置→模型 配置凭据' }),
+          { kind: 'danger', duration: 4200 },
+        );
+      } else if (!r || r.ok === false) {
         window.__apiToast?.(t('rath_page.toast.tick_declined', { defaultValue: '本次推进未执行' }), { kind: 'warn', detail: r?.error || r?.reason });
       } else {
         window.__apiToast?.(t('rath_page.toast.tick_started', { defaultValue: '已开始推进,运行日志实时可见(约1分钟完成)' }), { kind: 'ok', duration: 3600 });
@@ -343,6 +467,30 @@ function ExperimentPanel({ expId }) {
       window.dispatchEvent(new CustomEvent('rpg-rath-archived', { detail: { id: expId } }));
     } catch (e) {
       window.__apiToast?.(t('rath_page.toast.action_failed', { defaultValue: '操作失败' }), { kind: 'danger', detail: e?.message });
+    }
+  };
+
+  // 进入游戏(P1):运行中时先暂停(等成功)再跳转,避免离线世界和玩家回合并发写同一存档;
+  // 已暂停/已归档时直接跳转。跳转走全局 __openContinue 契约(platform-app.jsx),按
+  // save_kind 分流酒馆/游戏台,与「继续」按钮全站同一入口。
+  const [entering, setEntering] = useState(false);
+  const doEnterGame = async () => {
+    if (entering || !exp) return;
+    setEntering(true);
+    try {
+      if (exp.status === 'running') {
+        const r = await window.api.rath.pause(expId);
+        if (!r || r.ok === false) throw new Error(r?.error || t('rath_page.toast.action_failed', { defaultValue: '操作失败' }));
+        setDetail((d) => (d ? { ...d, experiment: r.experiment } : d));
+      }
+      window.__openContinue?.({ id: exp.save_id, save_kind: exp.save_kind });
+    } catch (e) {
+      window.__apiToast?.(
+        t('rath_page.toast.enter_game_failed', { defaultValue: '暂停世界失败,未进入游戏' }),
+        { kind: 'danger', detail: e?.message },
+      );
+    } finally {
+      setEntering(false);
     }
   };
 
@@ -457,9 +605,12 @@ function ExperimentPanel({ expId }) {
       {/* 世界运行开关 */}
       <CSContainer>
         <CSSpaceBetween size="xs">
-          <CSToggle checked={running} disabled={statusBusy} onChange={doPauseResume}>
-            {t('rath_page.run_toggle.label', { defaultValue: '世界运行' })}
-          </CSToggle>
+          <CSSpaceBetween direction="horizontal" size="xs" alignItems="center">
+            <CSToggle checked={running} disabled={statusBusy} onChange={doPauseResume}>
+              {t('rath_page.run_toggle.label', { defaultValue: '世界运行' })}
+            </CSToggle>
+            {!running && <PauseReasonBadge reason={exp.pause_reason} />}
+          </CSSpaceBetween>
           <CSBox color="text-body-secondary" fontSize="body-s">
             {t('rath_page.run_toggle.hint', {
               defaultValue: `开启时每 ${tickIntervalMinutes} 分钟自动推进一次 · 今日 ${exp.ticks_today ?? 0}/${budget.ticks_per_day ?? 48} 次`,
@@ -472,13 +623,21 @@ function ExperimentPanel({ expId }) {
       </CSContainer>
 
       {/* 操作条 */}
-      <CSSpaceBetween direction="horizontal" size="xs">
-        <CSButton variant="primary" loading={ticking} onClick={doTick}>
-          {t('rath_page.action.tick', { defaultValue: '推进一步' })}
-        </CSButton>
-        <CSButton onClick={() => setArchiveConfirm(true)}>
-          {t('rath_page.action.archive', { defaultValue: '归档' })}
-        </CSButton>
+      <CSSpaceBetween size="xs">
+        <CSSpaceBetween direction="horizontal" size="xs">
+          <CSButton variant="primary" loading={ticking} onClick={doTick}>
+            {t('rath_page.action.tick', { defaultValue: '推进一步' })}
+          </CSButton>
+          <CSButton iconName="caret-right-filled" loading={entering} onClick={doEnterGame}>
+            {t('rath_page.action.enter_game', { defaultValue: '进入游戏' })}
+          </CSButton>
+          <CSButton onClick={() => setArchiveConfirm(true)}>
+            {t('rath_page.action.archive', { defaultValue: '归档' })}
+          </CSButton>
+        </CSSpaceBetween>
+        <CSBox color="text-body-secondary" fontSize="body-s">
+          {t('rath_page.action.enter_game_hint', { defaultValue: '暂停世界并进入该存档游玩;离开约2小时后世界自动继续' })}
+        </CSBox>
       </CSSpaceBetween>
 
       {/* 日志:顶部插入引导 + events 列表 */}
@@ -707,6 +866,13 @@ export default function RathPage() {
         }
         .rath-event-row:last-child { border-bottom: none; }
 
+        /* 建实验前的只读预检卡片 */
+        .rath-preflight-card {
+          border: 1px solid var(--border, #3a352e);
+          border-radius: 8px;
+          padding: 10px 14px;
+        }
+
         /* 原著河道进度条 */
         .rath-canon-row { margin-top: 12px; }
         .rath-canon-bar-wrap { position: relative; margin-top: 6px; padding-right: 4px; }
@@ -795,4 +961,8 @@ export default function RathPage() {
   );
 }
 
-export { _groupEventsByWorldDay, _parseWorldDayLabel, _tensionSparkline, _truncateForTip };
+export {
+  _groupEventsByWorldDay, _parseWorldDayLabel, _tensionSparkline, _truncateForTip,
+  _preflightTierMeta, _pauseReasonMeta, _shouldFetchOnPoll, _normalizePreflightResponse,
+  ExperimentPanel, PreflightCard, PauseReasonBadge,
+};

@@ -826,10 +826,14 @@
     rath: {
       // 本用户 running/paused 实验列表(≤10 条)
       list: () => GET(`/api/rath/experiments`),
+      // 绑定已有存档新建实验前的只读预检:材料充足度(河道/卡司/世界书)+ can_create/reason。
+      // 404/异常前端一律静默隐藏(后端灰度上线中,未部署时不阻断建实验)。
+      preflight: (saveId) => GET(`/api/rath/preflight`, { save_id: saveId }),
       // 绑定已有存档新建实验 body {save_id}
       create: (body) => POST(`/api/rath/experiments`, body),
-      // 实验详情(含 fluctlights + events);后端顺带 bump last_viewed_at
-      detail: (id) => GET(`/api/rath/experiments/${id}`),
+      // 实验详情(含 fluctlights + events)。仅 opts.active=1 时后端才 bump last_viewed_at
+      // (被动轮询不续命,72h 无人看自动暂停才生效——见前端可见性门控)。
+      detail: (id, opts) => GET(`/api/rath/experiments/${id}`, opts && opts.active ? { active: 1 } : undefined),
       // 手动立即演算一拍(计入每日预算;409=未到期或预算已尽)
       tick: (id) => POST(`/api/rath/experiments/${id}/tick`, {}),
       pause: (id) => POST(`/api/rath/experiments/${id}/pause`, {}),

@@ -725,6 +725,46 @@ async def api_chat(
                 },
             )
 
+    # RATH v4(A7):玩家回合自动暂停——玩家回归本身就证明"不在场演化"该让位,离线世界
+    # 在玩家仍活跃时继续跑没有意义(且吃 tick 预算)。非致命 try/except,绝不阻断聊天;
+    # 只在拿到 active save id 处做一次 CAS 式 UPDATE,命中才落 trace。ticker(run_due_ticks)
+    # 侧对称:玩家离场约 2h(该 save 最新 branch_commit 距今)后自动 resume。
+    if api_user:
+        try:
+            # 热路径纪律:绝大多数用户没有 RATH 实验,先做一次 (user_id,status) 索引点查
+            # (idx_rath_exp_user,~恒空),只有真有 running 实验才解析激活存档——优先复用
+            # 请求体里的 client_save_id,缺失才读 runtime(runtime 行含大快照,能省则省)。
+            from platform_app.db import connect as _rath_connect
+            with _rath_connect() as _rath_db:
+                _rath_running = _rath_db.execute(
+                    "select id, save_id, world_clock_min from rath_experiments "
+                    "where user_id=%s and status='running'",
+                    (api_user["id"],),
+                ).fetchall()
+            if _rath_running:
+                _rath_sid = int(client_save_id or 0)
+                if not _rath_sid:
+                    from platform_app import runtime as _rath_runtime
+                    _rath_rt = _rath_runtime.read_runtime(user_id=api_user["id"])
+                    _rath_sid = int((_rath_rt or {}).get("save_id") or 0)
+                _rath_hits = [r for r in _rath_running if int(r["save_id"]) == _rath_sid]
+                if _rath_hits:
+                    with _rath_connect() as _rath_db:
+                        _rath_db.execute(
+                            "update rath_experiments set status='paused', pause_reason='player_active', "
+                            "paused_at=now(), last_tick_at=now() "
+                            "where id = any(%s) and status='running'",
+                            ([int(r["id"]) for r in _rath_hits],),
+                        )
+                        if hasattr(_rath_db, "commit"):
+                            _rath_db.commit()
+                    from rath.engine import _trace as _rath_trace
+                    for _r in _rath_hits:
+                        _rath_trace(int(_r["id"]), "玩家回归,世界暂停",
+                                    clock=int(_r.get("world_clock_min") or 0))
+        except Exception:
+            pass
+
     _chat_start_time = time.time()
 
     # 多用户隔离：当前用户的 run_id 自增、stop_event 清零

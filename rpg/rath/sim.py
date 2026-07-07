@@ -26,7 +26,8 @@ UNCONSCIOUS_MARKERS = ("昏迷", "沉睡", "深度睡眠", "无意识")
 # ── 初始化 ───────────────────────────────────────────────────────────
 
 def init_sim_state(snapshot: dict, cast_cards: list[dict], wb_rows: list[dict],
-                   *, clock_min: int = 0, canon_beats: list[dict] | None = None) -> dict:
+                   *, clock_min: int = 0, canon_beats: list[dict] | None = None,
+                   canon_locations: list[str] | None = None) -> dict:
     """从游戏快照+canon 卡司+世界书确定性构建初始 sim_state。纯函数。"""
     player = (snapshot or {}).get("player") or {}
     pname = str(player.get("name") or "").strip() or "玩家"
@@ -68,9 +69,17 @@ def init_sim_state(snapshot: dict, cast_cards: list[dict], wb_rows: list[dict],
         }
 
     places = [ploc]
+    # D2:地点白名单独立源优先(kb_canon_entities type=location,engine.py 按 importance
+    # 排名+reveal 闸取来的独立查询结果)——审计实锤:半数已玩剧本世界书标题不含「地点」
+    # 类关键词,只靠下面的世界书标题扫描几乎收不到地点(无职转生5条地点条目0条命中)。
+    for nm in canon_locations or []:
+        nm = str(nm or "").strip()
+        if nm and nm not in places:
+            places.append(nm)
+    # 世界书标题关键词扫描保留作补充(不互斥):部分剧本世界书本就用「地点·XX」命名,
+    # 且这条路径不依赖 kb_canon_entities 是否已提取覆盖该剧本。
     for r in wb_rows or []:
         t = str(r.get("title") or "")
-        # 世界书地点类条目入白名单(标题去分类前缀)
         if any(k in t for k in ("地点", "场所", "城", "镇", "村", "宅", "厂", "馆", "宫")):
             nm = t.split("·")[-1].strip()
             if nm and nm not in places:
@@ -114,16 +123,25 @@ def _derive_player_status(snapshot: dict) -> str:
 
 def compact_view(sim: dict) -> str:
     lines = [f"世界钟:{sim.get('clock_min', 0)}分钟"]
+    active = _active_cast_names(sim)  # B11:决策槽位分配器——只给活跃 cast 全量卡片
+    stable: list[str] = []
     for n, c in (sim.get("cast") or {}).items():
+        if n not in active:
+            stable.append(n)
+            continue
         tag = "[玩家]" if c.get("kind") == "player" else ""
         st = f"状态:{c['status']};" if c.get("status") else ""
         lines.append(f"- {n}{tag}:在{c.get('location')};正在{c.get('activity')};{st}"
                      f"目标:{c.get('goal') or '(无)'};态度:{c.get('stance') or '(平静)'}")
+    if stable:
+        lines.append(f"(状态稳定:{'、'.join(stable)})")
     lines.append("已知地点:" + "、".join(sim.get("places") or []))
     rels = sim.get("relations") or {}
     if rels:
+        # B7:预览按最近触及(since_seq 降序)排序,超10对时新/热关系不再被挤出窗口
+        _top_rels = sorted(rels.items(), key=lambda kv: -int((kv[1] or {}).get("since_seq") or 0))[:10]
         lines.append("人物关系:" + ";".join(
-            f"{k.replace('|', '与')}:{(v or {}).get('kind', '')}" for k, v in list(rels.items())[:10]))
+            f"{k.replace('|', '与')}:{(v or {}).get('kind', '')}" for k, v in _top_rels))
     lines.append("剧情线:")
     for t in sim.get("threads") or []:
         _stg = t.get("stage") or "rising"
@@ -138,6 +156,12 @@ def compact_view(sim: dict) -> str:
         lines.append("原著河道(这个世界正在/即将发生的主流事件):")
         for b in nxt:
             lines.append(f"  → {b['text']}")
+    hist = canon.get("history") or []
+    if hist:
+        # B8:canon 里程碑独立展示,不与 facts 的 FIFO 滚动共池竞争
+        lines.append("原著进程(已发生,里程碑):")
+        for h in hist[-3:]:
+            lines.append(f"  ✓ {h}")
     lines.append("已确立事实(节选):")
     for f in (sim.get("facts") or [])[-8:]:
         lines.append(f"  · {f}")
@@ -156,6 +180,9 @@ _SCHED_SYSTEM = """你是世界仿真的调度器:决定接下来这段时间里
    不必每拍都有相遇(interaction 可为 null)。剧情线有生命周期(萌芽→发展→高潮→余波):
    高潮线本拍应发生决定性事件;余波线只处理后果与情绪,不再引入新冲突。
    人物之间的关系会因相处而变化——值得记录的变化用 relation_updates 给出(≤2条)。
+   当现有剧情线均已进入余波或平息、且「已确立事实」里出现新的矛盾苗头时,应给出1条
+   new_threads;若所有剧情线张力长期偏低,也应主动构思一条贴近日常生活的新线(不必是
+   冲突,邻里琐事/旧友来访皆可),避免世界只剩最初那一条线空转。
 5. 有【观测者引导】时,将其翻译成剧情线/目标的调整,让世界朝该方向自然倾斜。
 6. 生活优先:角色有自己的本职与日常,调查/异象不得吞噬全部生活;除非某剧情线张力≥7,
    角色应主要处于本职与日常活动。
@@ -175,10 +202,29 @@ _SCHED_SYSTEM = """你是世界仿真的调度器:决定接下来这段时间里
  "canon_advance": false}"""
 
 
+def _climax_director_notes(sim: dict) -> list[str]:
+    """高潮兑现导演指令(B2,Façade beat 导演范式)。上一拍若某高潮线未获任何覆盖其
+    参与者的 interaction,裁决层会记一次「饥饿」计数(见 apply_scheduler_output);
+    计数≥1 时下一拍调度 prompt 里显式插入一行确定性指令,逼该线的兑现不再靠随缘。"""
+    starve = sim.get("_climax_starve") or {}
+    by_id = {t.get("id"): t for t in (sim.get("threads") or [])}
+    notes = []
+    for tid, cnt in starve.items():
+        if int(cnt or 0) < 1:
+            continue
+        t = by_id.get(tid)
+        if t and t.get("stage") == "climax":
+            notes.append(f"【导演指令:剧情线「{str(t.get('desc') or '')[:24]}」处于高潮,"
+                         f"本拍应演出其参与者的决定性一场】")
+    return notes
+
+
 def build_scheduler_prompts(sim: dict, *, elapsed_hint: str, directive: str = "",
                             world_context: str = "") -> tuple[str, str]:
+    director_notes = "\n".join(_climax_director_notes(sim))
     user = (f"【经过时间】{elapsed_hint}\n【世界现状】\n{compact_view(sim)}\n"
             + (f"【世界观要点】\n{world_context}\n" if world_context else "")
+            + (f"{director_notes}\n" if director_notes else "")
             + (f"【观测者引导】{directive}\n" if directive else "")
             + "请给出这段时间的调度。")
     return _SCHED_SYSTEM, user
@@ -246,6 +292,90 @@ def resolve_cast_name(names, raw: str) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
+def _near_hit(text: str, pkeys: list[str], words: tuple[str, ...], *, window: int = 15) -> bool:
+    """近邻窗口共现判定(B9,浸泡实锤误伤修复:探究闸/装置闸旧判定=玩家名与词表任意
+    字符串共现即触发一整句,常见词高误伤——「薇欧拉调查账目」同句提到玩家即被整体拒收。
+    改判:玩家名(或简称)须出现在文本中,且触发词与其中某次出现的词距≤window 字内,
+    或该词后紧跟属格(「的来历/的身世/……」,覆盖代词间接指代、玩家名与触发词隔句的情形)。
+    宁漏勿误:既有真阳性用例的短句距离天然 ≤window,不受影响。"""
+    if not text or not pkeys:
+        return False
+    p_positions: list[int] = []
+    for p in pkeys:
+        start = 0
+        while True:
+            i = text.find(p, start)
+            if i < 0:
+                break
+            p_positions.append(i)
+            start = i + 1
+    if not p_positions:
+        return False
+    for w in words:
+        start = 0
+        while True:
+            i = text.find(w, start)
+            if i < 0:
+                break
+            if re.match(r"的(来历|身世|秘密|血统|真相|过去)", text[i + len(w): i + len(w) + 6]):
+                return True
+            if any(abs(i - p) <= window for p in p_positions):
+                return True
+            start = i + 1
+    return False
+
+
+def _dup_fact(text: str, existing: list[str], *, prefix: int = 10) -> bool:
+    """facts 入队前重复检查(B8,浸泡实锤:纯 FIFO 无查重,近义重复文本挤占窗口)。
+    简单前缀/包含判定(不上语义相似度,保持零 IO 确定性):文本前 prefix 字互为前缀,
+    或整段互相包含,视为重复。宁可漏放一条相近表述,不做重语义判断。"""
+    t = (text or "").strip()
+    if not t:
+        return True
+    for e in existing or []:
+        ee = (e or "").strip()
+        if not ee:
+            continue
+        if t in ee or ee in t:
+            return True
+        if t[:prefix] and ee[:prefix] and (t.startswith(ee[:prefix]) or ee.startswith(t[:prefix])):
+            return True
+    return False
+
+
+def _push_canon_history(sim: dict, text: str) -> None:
+    """canon 里程碑独立保存(B8):前行动向另存 canon.history(上限24),独立于 facts
+    的 FIFO 滚动截断——避免场景纪要把「原著进程」里程碑挤出 compact_view 窗口。"""
+    canon = sim.setdefault("canon", {})
+    hist = canon.setdefault("history", [])
+    hist.append(str(text or "")[:140])
+    if len(hist) > 24:
+        del hist[:-24]
+
+
+def _active_cast_names(sim: dict) -> set[str]:
+    """决策槽位分配器(B11:AI Metropolis 几何依赖调度 + Affordable GA 缓存范式的轻量
+    移植)。只有「活跃」cast 才值得占用调度 prompt 的全量卡片槽位:近3拍内
+    location/goal/activity 变过、或在场于任一现存(非平息)剧情线、或是上一拍相遇的
+    参与者、或是玩家本人。其余压成一行名单——schema/裁决不变,LLM 仍可对名单里任何人
+    下 cast_updates,只是 prompt 呈现更省 token、少漂移。"""
+    seq = int(sim.get("tick_seq") or 0)
+    active: set[str] = set()
+    for n, c in (sim.get("cast") or {}).items():
+        if c.get("kind") == "player":
+            active.add(n)
+            continue
+        lc = c.get("last_changed_seq")
+        # 缺失=未知(新实验首拍/旧实验升级后首拍)——未知视为活跃,冷启动给全量卡片,
+        # 裁决层随 cast_updates 打上 seq 后自然收敛到「近3拍变过才活跃」。
+        if lc is None or seq - int(lc) <= 3:
+            active.add(n)
+    for t in sim.get("threads") or []:
+        active.update(t.get("participants") or [])
+    active.update(sim.get("_last_interaction_participants") or [])
+    return active
+
+
 def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") -> dict:
     """裁决层(确定性单写者):逐字段验收 → 落 sim_state。返回 {applied:…, rejected:[原因]}。
     玩家状态守恒与名词闸在这里代码强制。纯函数(原地改 sim)。"""
@@ -253,36 +383,55 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
     applied = {"cast": 0, "events": [], "interaction": None, "threads": 0, "facts": 0}
     cast = sim.setdefault("cast", {})
     sim["tick_seq"] = int(sim.get("tick_seq") or 0) + 1  # 拍序(僵尸线判定的时钟)
-    known = _whitelist(sim, world_context)
 
     _pname = next((n for n, c in cast.items() if c.get("kind") == "player"), "")
     # 全名+首段简称都算提及玩家(「菲莉丝·卡俄斯」→「菲莉丝」,防简称绕过装置闸)
     _pkeys = [x for x in {_pname, _pname.split("·")[0] if _pname else ""} if len(x) >= 2]
     _APPARATUS = ("共振", "能量转移", "能量核心", "激活条件", "装置")
     # 探究闸(浸泡实锤:「灵魂锚点研究」=解释玩家来历的装置新形态,词表打地鼠打不完;
-    # 根因=任何以玩家为对象的探究项目都在滑向解释。玩家名+探究词共现一律拒收,宁严勿松)
+    # 根因=任何以玩家为对象的探究项目都在滑向解释。玩家名+探究词近邻共现一律拒收,宁严勿松)
     _PROBE = ("锚点", "锚定", "来历", "身世", "血统", "研究", "调查", "检测", "鉴定", "解析", "档案")
     # 夜间外出闸(浸泡实锤:夜律拍首拉回家,同拍调度又把人派去水泥厂搜查=夜归被覆盖。
-    # 夜间低张力角色拒收「离家」位置变更;回家方向放行;高张力线参与者豁免)
+    # 夜间低张力角色拒收「离家」位置变更;回家方向放行;高张力/高潮线参与者豁免)
     _m = int(sim.get("clock_min") or 0) % 1440
     _night = _m >= NIGHT_START or _m < NIGHT_END
     _hot = {p for t in (sim.get("threads") or [])
-            if int(t.get("tension") or 0) >= 8 for p in (t.get("participants") or [])}
+            if int(t.get("tension") or 0) >= 8 or t.get("stage") == "climax"
+            for p in (t.get("participants") or [])}
+    # B2 前置:上一拍持续到本拍的高潮线「饥饿」计数(见函数尾部 threads 段的收尾记账)
+    _climax_starve_prev = dict(sim.get("_climax_starve") or {})
 
     def _gate(text: str, what: str) -> bool:
         t = str(text or "")
+        # B5:惰性求值——每次调用当场重拼白名单,防同拍内本已被接受的新地点/事实
+        # 因用函数开头那份旧快照判定而被"自我拒收"(单次裁决内的白名单过期)
+        known = _whitelist(sim, world_context)
         fab = find_fabricated_nouns(t, known)
         if fab:
             rejected.append(f"{what}:新造名词{'/'.join(fab[:2])}")
             return False
         # 玩家设定神圣旁路闸(浸泡实锤:铭牌共振玩家头顶能量=给玩家力量建解释装置)
-        if _pkeys and any(p in t for p in _pkeys) and any(k in t for k in _APPARATUS):
+        # B9:近邻窗口判定替代整句字符串共现,降低"薇欧拉调查账目"式的高频词误伤
+        if _near_hit(t, _pkeys, _APPARATUS):
             rejected.append(f"{what}:围绕玩家搭建解释装置")
             return False
-        if _pkeys and any(p in t for p in _pkeys) and any(k in t for k in _PROBE):
+        if _near_hit(t, _pkeys, _PROBE):
             rejected.append(f"{what}:以玩家为对象的探究(神圣条款)")
             return False
         return True
+
+    def _feed_tension(participants: list[str]) -> None:
+        """B1:张力喂养对冲源(世界侧事件对张力零反馈=玩家缺席线卡seed恒0)。canon
+        前行/相遇成立均是"世界在动"的确定性信号,对涉及的现存线 +1(封顶8,低于衰减前
+        的自由升压上限,避免自动喂养单独把线顶进/顶穿高潮)。余波/平息线不再喂养。"""
+        pset = set(participants or [])
+        if not pset:
+            return
+        for t in sim.get("threads") or []:
+            if t.get("stage") in ("aftermath", "settled"):
+                continue
+            if pset & set(t.get("participants") or []):
+                t["tension"] = min(8, int(t.get("tension") or 0) + 1)
 
     # cast_updates(键先过别名归并:简称/全名互认)
     for name, u in (data.get("cast_updates") or {}).items():
@@ -317,6 +466,37 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
                 continue
             c[k] = v[:80]
             applied["cast"] += 1
+            if k in ("location", "goal", "activity"):
+                # B11:决策槽位分配器的活跃度时间戳——近3拍内变过即视为"活跃"
+                c["last_changed_seq"] = sim["tick_seq"]
+
+    # B2 前置:高潮线连续≥2拍无覆盖(饥饿计数≥2)且 top-2 参与者本拍同地点 →
+    # 裁决层直接补设 interaction(不同地点则什么都不做,只留给下一拍的 prompt 指令,
+    # 不硬造移动)。只在本拍模型自己没给出覆盖该线的 interaction 时插入,不抢别的相遇。
+    for _t in (sim.get("threads") or []):
+        if _t.get("stage") != "climax" or int(_climax_starve_prev.get(_t.get("id")) or 0) < 2:
+            continue
+        _tp = [p for p in (_t.get("participants") or []) if p in cast][:2]
+        _cur_it = data.get("interaction") if isinstance(data.get("interaction"), dict) else None
+        _cur_ps = set()
+        if _cur_it:
+            for x in (_cur_it.get("participants") or []):
+                rp = resolve_cast_name(cast, str(x))
+                if rp:
+                    _cur_ps.add(rp)
+        if _cur_ps & set(_tp):
+            continue  # 已被本拍模型自己给出的 interaction 覆盖
+        if len(_tp) == 2:
+            _loc0 = str(cast[_tp[0]].get("location") or "").strip()
+            _loc1 = str(cast[_tp[1]].get("location") or "").strip()
+            if _loc0 and _loc0 == _loc1:
+                data = dict(data or {})
+                data["interaction"] = {
+                    "participants": _tp, "place": _loc0,
+                    "reason": f"剧情线「{str(_t.get('desc') or '')[:20]}」到了必须兑现的关口",
+                    "expected_outcome": "给出决定性的进展或转折",
+                }
+                break  # 每拍只强插一场
 
     # interaction
     it = data.get("interaction")
@@ -330,7 +510,18 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
         place = str(it.get("place") or "").strip()
         unconscious_active = [p for p in ps if cast[p].get("kind") == "player"
                               and cast[p].get("status") == "昏迷"]
-        if len(ps) == 2 and (place in (sim.get("places") or []) or _gate(place, "相遇地点")):
+        _homes = {str(cast[p].get("home") or "").strip() for p in ps if p in cast}
+        # B4:夜间外出闸补齐——之前只挡 cast_updates.location,同拍 interaction.place
+        # 却能绕过去演出深夜外出场景,自相矛盾。非 hot 双人+夜间+地点非双方家一律拒收,
+        # 降级为一条中性事实(参照 canon_advance 失败路径"只记录不生成"的写法)。
+        _night_violation = (len(ps) == 2 and _night and place
+                            and not any(p in _hot for p in ps) and place not in _homes)
+        if _night_violation:
+            rejected.append(f"interaction:夜间外出(非双方home){place}")
+            _fb = f"{ps[0]}与{ps[1]}本约在{place}相见,因夜深作罢,各自留宿"[:100]
+            if _gate(_fb, "interaction_night_fallback"):
+                sim.setdefault("facts", []).append(_fb)
+        elif len(ps) == 2 and (place in (sim.get("places") or []) or _gate(place, "相遇地点")):
             # 昏迷玩家可以是场景的对象(被照料/被谈论),不作为主动方——呈现层约束
             applied["interaction"] = {
                 "participants": ps, "place": place or cast[ps[0]].get("location") or "",
@@ -338,8 +529,24 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
                 "expected_outcome": str(it.get("expected_outcome") or "")[:80],
                 "passive": unconscious_active,
             }
+            _feed_tension(ps)  # B1:相遇成立=世界侧对冲信号,喂养涉及的现存线
         elif it:
             rejected.append("interaction:参与者/地点未过验收")
+    # B11:上一拍相遇参与者(决策槽位分配器读取),每拍覆盖式记录(无相遇则清空,不留陈迹)
+    sim["_last_interaction_participants"] = (
+        list(applied["interaction"]["participants"]) if applied.get("interaction") else [])
+
+    # B2 记账:本拍(拍首已判定的)高潮线是否被覆盖——覆盖则清零,否则饥饿计数+1。
+    # 最终是否保留写回 sim,在下方 stage 生命周期循环算出本拍最终 stage 后再过滤
+    # (线若本拍恰好转入 aftermath,不再需要"高潮兑现"提示,计数随之清除)。
+    _climax_new_starve: dict = {}
+    _applied_it_ps = set((applied.get("interaction") or {}).get("participants") or [])
+    for _t in (sim.get("threads") or []):
+        if _t.get("stage") != "climax":
+            continue
+        _tid = _t.get("id")
+        _covered = bool(_applied_it_ps & set(_t.get("participants") or []))
+        _climax_new_starve[_tid] = 0 if _covered else int(_climax_starve_prev.get(_tid) or 0) + 1
 
     # world_events(≤1,名词闸)
     for ev in (data.get("world_events") or [])[:1]:
@@ -382,6 +589,10 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
         hist.append(int(t.get("tension") or 0))
         if len(hist) > 12:
             del hist[:-12]
+    # B2 记账落定:只保留本拍(生命周期推进后)最终仍是 climax 的线的饥饿计数——
+    # 若本拍恰好转入 aftermath,不再需要"高潮兑现"提示,计数随 stage 变化一并清除。
+    sim["_climax_starve"] = {tid: cnt for tid, cnt in _climax_new_starve.items()
+                             if by_id.get(tid, {}).get("stage") == "climax"}
     for nt in (data.get("new_threads") or [])[:1]:
         if len(threads) >= MAX_THREADS:
             break
@@ -425,7 +636,9 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
     facts = sim.setdefault("facts", [])
     for f in (data.get("new_facts") or [])[:2]:
         t = str(f or "").strip()
-        if t and _gate(t, "new_fact"):
+        # B8:入队前查重(简单前缀/包含判定)——近义重复文本不再加速把真正的新信息挤出
+        # compact_view 最近8条窗口
+        if t and _gate(t, "new_fact") and not _dup_fact(t, facts):
             facts.append(t[:120])
             applied["facts"] += 1
     if len(facts) > MAX_FACTS:
@@ -437,11 +650,13 @@ def apply_scheduler_output(sim: dict, data: dict, *, world_context: str = "") ->
     cur = int(canon.get("cursor") or 0)
     if data.get("canon_advance") and cur < len(beats):
         sim.setdefault("facts", []).append("【原著进程】" + beats[cur]["text"])
+        _push_canon_history(sim, beats[cur]["text"])  # B8:里程碑独立保存,不受 facts FIFO 挤出
         canon["cursor"] = cur + 1
         canon["stall"] = 0
         applied["canon_advance"] = True
         applied["canon_text"] = beats[cur]["text"]
         applied["canon_anchored"] = anchor_cast_to_beat(sim, beats[cur]["text"])
+        _feed_tension(applied["canon_anchored"])  # B1:河道前行=世界侧对冲信号,喂养涉及的现存线
     else:
         canon["stall"] = int(canon.get("stall") or 0) + 1
         applied["canon_advance"] = False
@@ -503,6 +718,7 @@ def advance_stalled_canon(sim: dict) -> str | None:
     sim.setdefault("facts", []).append("【原著进程】" + text)
     if len(sim["facts"]) > MAX_FACTS:
         sim["facts"] = sim["facts"][-MAX_FACTS:]
+    _push_canon_history(sim, text)  # B8:强制前行同样是里程碑,独立保存不受 facts FIFO 挤出
     canon["cursor"] = cur + 1
     canon["stall"] = 0
     anchor_cast_to_beat(sim, text)
@@ -557,6 +773,10 @@ def enforce_night(sim: dict) -> int:
     for t in sim.get("threads") or []:
         if int(t.get("tension") or 0) >= 8 or (t.get("stage") == "climax"):
             hot.update(t.get("participants") or [])
+    # B3:夜律认原著行程——goal 带「(原著行程)」标记的角色(anchor_cast_to_beat 写入)
+    # 不受夜律管辖,否则刚被锚定去异地过夜的原著卡司会被强制拉回家,与河道主线自相矛盾。
+    hot.update(n for n, c in (sim.get("cast") or {}).items()
+               if str(c.get("goal") or "").startswith("(原著行程)"))
     n = 0
     for name, c in (sim.get("cast") or {}).items():
         if name in hot or c.get("status") == "昏迷":

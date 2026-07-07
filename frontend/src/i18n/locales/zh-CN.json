@@ -912,6 +912,7 @@
       "md_editor": "剧本编辑器",
       "md_editor_sub": "剧本/角色卡/章节/时间线内联编辑",
       "tavern": "酒馆",
+      "rath": "RATH",
       "settings_account": "账号与数据迁移"
     },
     "search": {
@@ -4308,6 +4309,118 @@
       "new_chat_failed": "新建对话失败",
       "start_chat_failed": "开始对话失败",
       "skill_imported": "已生成角色卡「{{name}}」"
+    }
+  },
+  "rath_page": {
+    "header": {
+      "title": "RATH",
+      "description": "离线活世界实验:玩家不在时,世界仍按有界规则继续运转。"
+    },
+    "denied_header": "RATH 未对当前账号开放",
+    "denied_body": "RATH 实验未对当前账号开放",
+    "load_error_header": "加载失败",
+    "picker": {
+      "untitled_save": "未命名存档",
+      "paused_suffix": "(已暂停)",
+      "switch_placeholder": "切换实验",
+      "intro_title": "离线世界仍在继续",
+      "intro_desc": "给一个存档开一场有界实验:你离开之后,世界按真实时间继续运转,议程 NPC 会真的互相对话、留下痕迹——回来问问他们,他们记得。",
+      "save_placeholder": "选择一个存档",
+      "no_saves": "暂无存档",
+      "launch_btn": "启动实验"
+    },
+    "preflight": {
+      "tier_full": "材料齐全",
+      "tier_degraded": "部分退化",
+      "tier_free": "自由演化",
+      "summary": "河道 {{beats}} 拍 · 角色 {{cast}} 人 · 世界书 {{worldbook}} 条"
+    },
+    "event": {
+      "kind_directive": "引导",
+      "kind_scene": "互动",
+      "kind_heartbeat": "事件",
+      "no_summary": "(无摘要)"
+    },
+    "toast": {
+      "create_failed": "建立实验失败",
+      "created": "实验已启动",
+      "load_failed": "加载实验失败",
+      "tick_declined": "本次推进未执行",
+      "tick_started": "已开始推进,运行日志实时可见(约1分钟完成)",
+      "tick_failed": "推进请求失败",
+      "no_model": "无可用模型,实验已自动暂停——请到 设置→模型 配置凭据",
+      "paused": "已暂停",
+      "resumed": "已恢复",
+      "action_failed": "操作失败",
+      "archived": "实验已归档",
+      "enter_game_failed": "暂停世界失败,未进入游戏"
+    },
+    "stat": {
+      "clock": "世界时间",
+      "clock_hint": "时间流速 {{accel}}× — 现实 1 分钟 ≈ 世界 {{accel}} 分钟;推进一步 ≈ 世界 1 小时",
+      "accel": "时间流速"
+    },
+    "canon": {
+      "progress": "原著河道 第{{chapter}}章 · {{cursor}}/{{total}}",
+      "finished": "原著河道 已读完 · {{cursor}}/{{total}}",
+      "stall_tip": "滞留 {{stall}} 拍未推进"
+    },
+    "run_toggle": {
+      "label": "世界运行",
+      "hint": "开启时每 {{minutes}} 分钟自动推进一次 · 今日 {{ticksToday}}/{{ticksPerDay}} 次"
+    },
+    "pause_reason": {
+      "user": "已暂停",
+      "player_active": "你在游玩，世界让路",
+      "unviewed": "久未查看已休眠",
+      "no_model": "无可用模型"
+    },
+    "action": {
+      "tick": "推进一步",
+      "enter_game": "进入游戏",
+      "enter_game_hint": "暂停世界并进入该存档游玩;离开约2小时后世界自动继续",
+      "archive": "归档"
+    },
+    "timeline": {
+      "title": "日志",
+      "empty": "尚无日志——点「推进一步」触发第一次自动推进。"
+    },
+    "directive": {
+      "placeholder": "在此刻插入一条引导,影响之后的世界演化…",
+      "insert_btn": "插入引导",
+      "hint": "最新一条引导生效;历史引导保留在日志中。",
+      "inserted": "引导已插入,从当前时间点开始生效",
+      "fail": "插入失败"
+    },
+    "fluctlights": {
+      "title": "角色动态",
+      "empty": "尚无角色动态——推进几步或进游戏玩几回合后,这里会出现各角色的目标、态度与私记。",
+      "player_tag": "(玩家)",
+      "goal_prefix": "目标：",
+      "stance_prefix": "态度："
+    },
+    "threads": {
+      "stage_seed": "萌芽",
+      "stage_rising": "发展",
+      "stage_climax": "高潮",
+      "stage_aftermath": "余波"
+    },
+    "relations": {
+      "title": "人物关系",
+      "empty": "关系尚在形成"
+    },
+    "trace": {
+      "title": "运行日志",
+      "desc": "引擎每一步的决策与验收结果:材料装配、选角、模型产出与拒收原因。",
+      "empty": "暂无运行记录——推进一步后这里会实时滚动。"
+    },
+    "archive_confirm": {
+      "title": "归档这场实验？",
+      "body": "归档后实验停止运行,已产生的观测记录仍会保留,但不能再恢复运行。"
+    },
+    "mobile": {
+      "desktop_only_title": "RATH 观测台",
+      "desktop_only_desc": "请在桌面端使用"
     }
   },
   "tavern_app": {

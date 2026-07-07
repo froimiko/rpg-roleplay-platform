@@ -2224,6 +2224,14 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # 持续演化的 sim_state(cast/places/facts/threads),文字只是投影。
         "alter table rath_experiments add column if not exists sim_state jsonb",
     ]),
+    (96, "rath_pause_reason_and_briefing_cursor", [
+        # RATH v4:暂停语义分类(pause_reason 枚举 user/player_active/unviewed/no_model,
+        # 观测台可解释"为什么停了")+ paused_at(暂停时刻,resume 时清空)+
+        # last_briefed_at(离线简报游标,修复短间隔玩家永久错过纪要窗口)。纯增列。
+        "alter table rath_experiments add column if not exists pause_reason text",
+        "alter table rath_experiments add column if not exists paused_at timestamptz",
+        "alter table rath_experiments add column if not exists last_briefed_at timestamptz",
+    ]),
 ]
 
 

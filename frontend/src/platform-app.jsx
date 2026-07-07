@@ -4137,8 +4137,10 @@ const getCSModules = (t) => [
     ] },
   // RATH:离线活世界实验,与「酒馆」平级、同在「游玩/Play」分类下
   // (docs/design/rath_observation_deck_v0.md)。页面是 Platform 内嵌子页 #rath。
-  // 开发期灰度:adminOnly —— 非 admin 不见导航项、直链 #rath 也被 ADMIN_PAGES 守卫挡下
-  // (后端 API 另有 rath_experiment flag 双保险)。对全体开放时删掉这一行即可。
+  // 开发期灰度:adminOnly —— 非 admin 不见导航项;直链 #rath 由 entries/platform.jsx 的
+  // `<AdminGuard><RathPage /></AdminGuard>` 路由级拦截(与 admin-* 页面同款,真实生效,
+  // 非仅隐藏菜单)。后端 API 另有 rath_experiment flag 第三道防线。对全体开放时,删掉这一行
+  // 的 adminOnly 并把 entries/platform.jsx 里的 AdminGuard 包裹一并去掉即可。
   { id: 'rath', label: t('platform.nav.rath', { defaultValue: 'RATH' }), group: t('platform.nav.group_play'), adminOnly: true,
     pages: ['rath'],
     sub: [

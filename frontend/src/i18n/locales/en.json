@@ -821,6 +821,7 @@
       "md_editor": "Script Editor",
       "md_editor_sub": "Inline editing of scripts, cards, chapters & timeline",
       "tavern": "Tavern",
+      "rath": "RATH",
       "settings_account": "Account & Data Migration"
     },
     "search": {
@@ -4308,6 +4309,118 @@
       "still_generating": "Still generating — please wait",
       "regenerating": "Regenerating…",
       "retry_failed": "Retry failed"
+    }
+  },
+  "rath_page": {
+    "header": {
+      "title": "RATH",
+      "description": "Offline living-world experiment: while you're away, the world keeps running under bounded rules."
+    },
+    "denied_header": "RATH is not available for this account",
+    "denied_body": "The RATH experiment is not open for this account",
+    "load_error_header": "Failed to load",
+    "picker": {
+      "untitled_save": "Untitled save",
+      "paused_suffix": " (paused)",
+      "switch_placeholder": "Switch experiment",
+      "intro_title": "The offline world keeps going",
+      "intro_desc": "Start a bounded experiment on a save: after you leave, the world keeps running on real time, and agenda-driven NPCs actually talk to each other and leave traces — come back and ask them, they'll remember.",
+      "save_placeholder": "Choose a save",
+      "no_saves": "No saves yet",
+      "launch_btn": "Launch experiment"
+    },
+    "preflight": {
+      "tier_full": "Fully stocked",
+      "tier_degraded": "Partially degraded",
+      "tier_free": "Free-form evolution",
+      "summary": "River {{beats}} beats · Cast {{cast}} · Worldbook {{worldbook}} entries"
+    },
+    "event": {
+      "kind_directive": "Directive",
+      "kind_scene": "Scene",
+      "kind_heartbeat": "Event",
+      "no_summary": "(no summary)"
+    },
+    "toast": {
+      "create_failed": "Failed to create experiment",
+      "created": "Experiment started",
+      "load_failed": "Failed to load experiment",
+      "tick_declined": "This tick was not run",
+      "tick_started": "Advancing — watch the log in real time (about 1 minute)",
+      "tick_failed": "Tick request failed",
+      "no_model": "No model available — the experiment has been auto-paused. Go to Settings → Models to configure credentials.",
+      "paused": "Paused",
+      "resumed": "Resumed",
+      "action_failed": "Action failed",
+      "archived": "Experiment archived",
+      "enter_game_failed": "Failed to pause the world — did not enter the game"
+    },
+    "stat": {
+      "clock": "World clock",
+      "clock_hint": "Speed {{accel}}× — 1 real minute ≈ {{accel}} world minutes; one tick advances ≈ 1 world hour",
+      "accel": "Time speed"
+    },
+    "canon": {
+      "progress": "Source river Chapter {{chapter}} · {{cursor}}/{{total}}",
+      "finished": "Source river finished · {{cursor}}/{{total}}",
+      "stall_tip": "Stalled for {{stall}} ticks"
+    },
+    "run_toggle": {
+      "label": "World running",
+      "hint": "Auto-advances every {{minutes}} min while on · {{ticksToday}}/{{ticksPerDay}} today"
+    },
+    "pause_reason": {
+      "user": "Paused",
+      "player_active": "You're playing — the world stepped aside",
+      "unviewed": "Dormant after a long time unseen",
+      "no_model": "No model available"
+    },
+    "action": {
+      "tick": "Advance one step",
+      "enter_game": "Enter game",
+      "enter_game_hint": "Pauses the world and enters this save to play; the world resumes automatically about 2 hours after you leave",
+      "archive": "Archive"
+    },
+    "timeline": {
+      "title": "Log",
+      "empty": "No log yet — click \"Advance one step\" to trigger the first automatic tick."
+    },
+    "directive": {
+      "placeholder": "Insert a directive at this moment to steer the world going forward…",
+      "insert_btn": "Insert directive",
+      "hint": "The latest directive takes effect; past directives stay in the log.",
+      "inserted": "Directive inserted, effective from the current moment",
+      "fail": "Failed to insert"
+    },
+    "fluctlights": {
+      "title": "Character activity",
+      "empty": "No character activity yet — advance a few steps or play a few turns in-game, and each character's goals, stance, and private memories will show up here.",
+      "player_tag": " (player)",
+      "goal_prefix": "Goal: ",
+      "stance_prefix": "Stance: "
+    },
+    "threads": {
+      "stage_seed": "Seed",
+      "stage_rising": "Rising",
+      "stage_climax": "Climax",
+      "stage_aftermath": "Aftermath"
+    },
+    "relations": {
+      "title": "Relationships",
+      "empty": "Relationships are still forming"
+    },
+    "trace": {
+      "title": "Run log",
+      "desc": "Every decision and acceptance result the engine makes: material assembly, casting, model output, and rejection reasons.",
+      "empty": "No run log yet — it fills in real time after you advance a step."
+    },
+    "archive_confirm": {
+      "title": "Archive this experiment?",
+      "body": "Archiving stops the experiment; observation records made so far are kept, but it can no longer be resumed."
+    },
+    "mobile": {
+      "desktop_only_title": "RATH observation deck",
+      "desktop_only_desc": "Please use the desktop app"
     }
   },
   "tavern_app": {

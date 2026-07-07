@@ -183,6 +183,30 @@ export function MobileRoot({ page = 'profile', setPage }) {
   // 当前路由视图
   const renderRoute = () => {
     if (page === 'admin' || (page || '').startsWith('admin-')) return <MobileAdmin nav={nav} />;
+    // RATH 观测台桌面专属(密集轮询面板/大量数据可视化,未做移动适配)——给出明确的居中
+    // 空态说明,而不是像之前那样静默落到「未识别 page → 通用占位」显示裸 page id。
+    if (page === 'rath') {
+      return (
+        <>
+          <PageHeader title={t('rath_page.header.title', { defaultValue: 'RATH' })} onBack={() => goRoute(TAB_ROOT[tab] || 'profile')} />
+          <div className="pl-body">
+            <div className="pl-pad">
+              <div className="pl-empty" style={{ padding: '64px 20px', textAlign: 'center' }}>
+                <div style={{ width: 56, height: 56, borderRadius: 16, margin: '0 auto 16px', display: 'grid', placeItems: 'center', background: 'var(--panel-2)', color: 'var(--muted)' }}>
+                  <Icon name="layers" size={26} />
+                </div>
+                <div style={{ fontSize: 15, color: 'var(--text-quiet)', marginBottom: 6 }}>
+                  {t('rath_page.mobile.desktop_only_title', { defaultValue: 'RATH 观测台' })}
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 280, margin: '0 auto' }}>
+                  {t('rath_page.mobile.desktop_only_desc', { defaultValue: '请在桌面端使用' })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      );
+    }
     const Comp = MOBILE_PAGES[page];
     if (Comp) return <Comp nav={nav} />;
     const isRoot = ROOT_PAGES.has(page) || page === TAB_ROOT[tab];

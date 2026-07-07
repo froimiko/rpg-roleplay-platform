@@ -1,7 +1,9 @@
 """routes/rath.py — RATH·搖光观测台 API(docs/design/rath_observation_deck_v0.md §2)。
 
 全端点 require user + feature flag `rath_experiment`(默认关,灰度验后开)。
-GET 详情 bump last_viewed_at(72h 无人看自动 pause 的依据)。
+last_viewed_at(72h 无人看自动 pause 的依据)语义:GET 详情仅带 `?active=1`(前台
+主动打开)才 bump,被动轮询不续命;POST 交互端点(tick/pause/resume/directive/accel)
+一律 bump;GET 列表端点从不 bump。
 """
 from __future__ import annotations
 
@@ -22,6 +24,19 @@ def _deny() -> JSONResponse:
     return JSONResponse({"ok": False, "error": "RATH 实验未对当前账号开放"}, status_code=403)
 
 
+@router.get("/api/rath/preflight")
+async def api_rath_preflight(save_id: int, user=Depends(get_current_user)):
+    """D4:建实验前预检——材料分层(tier)+ 拒建闸(酒馆档/IDOR)+ 具体化 warnings。
+    契约见 scratchpad/rath_v4_contracts.md,字段一个不能少/拼错(前端已按此接好 UI)。"""
+    if not _flag_ok(user):
+        return _deny()
+    from rath.engine import preflight
+    out = preflight(int(user["id"]), int(save_id))
+    if not out.get("ok"):
+        return JSONResponse(out, status_code=404)
+    return out
+
+
 @router.get("/api/rath/experiments")
 async def api_rath_list(user=Depends(get_current_user)):
     if not _flag_ok(user):
@@ -30,9 +45,13 @@ async def api_rath_list(user=Depends(get_current_user)):
     from rath.engine import _expose
     init_db()
     with connect() as db:
+        # A5:列表端点是被动轮询,不 bump last_viewed_at(72h 无人看自动 pause 只认真的
+        # "看详情"/交互;否则任何只翻列表的前端模式都会让实验永不触发自动暂停)。
         rows = db.execute(
-            "select * from rath_experiments where user_id=%s and status in ('running','paused') "
-            "order by id desc limit 10",
+            "select t.*, s.save_kind from rath_experiments t "
+            "join game_saves s on s.id = t.save_id "
+            "where t.user_id=%s and t.status in ('running','paused') "
+            "order by t.id desc limit 10",
             (int(user["id"]),),
         ).fetchall()
     return {"ok": True, "experiments": [_expose(dict(r)) for r in (rows or [])]}
@@ -53,13 +72,15 @@ async def api_rath_create(request: Request, user=Depends(get_current_user)):
 
 def _own_exp(db, exp_id: int, user_id: int):
     return db.execute(
-        "select * from rath_experiments where id=%s and user_id=%s",
+        "select t.*, s.save_kind from rath_experiments t "
+        "join game_saves s on s.id = t.save_id "
+        "where t.id=%s and t.user_id=%s",
         (int(exp_id), int(user_id)),
     ).fetchone()
 
 
 @router.get("/api/rath/experiments/{exp_id}")
-async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
+async def api_rath_detail(exp_id: int, active: int = 0, user=Depends(get_current_user)):
     if not _flag_ok(user):
         return _deny()
     from platform_app.db import connect, init_db
@@ -69,8 +90,11 @@ async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
         exp = _own_exp(db, exp_id, user["id"])
         if not exp:
             return JSONResponse({"ok": False, "error": "实验不存在"}, status_code=404)
-        db.execute(
-            "update rath_experiments set last_viewed_at=now() where id=%s", (int(exp_id),))
+        # A5:只有前台"我正盯着这个实验"的主动请求(?active=1)才续 72h 无人看的命,
+        # 被动轮询(前端每隔几秒刷一次详情)不算"看"。
+        if active == 1:
+            db.execute(
+                "update rath_experiments set last_viewed_at=now() where id=%s", (int(exp_id),))
         events = db.execute(
             "select id, kind, summary, payload, world_clock_min, created_at from rath_events "
             "where exp_id=%s and kind <> 'trace' order by id desc limit 30",
@@ -82,7 +106,13 @@ async def api_rath_detail(exp_id: int, user=Depends(get_current_user)):
             "where exp_id=%s and kind='trace' order by id desc limit 40",
             (int(exp_id),),
         ).fetchall()
-        snap, _commit = _read_snapshot(db, int(exp["save_id"]))
+        # P2(A10):sim_state 已含 cast 时它是角色动态的权威源,下面 agendas 兜底路径根本
+        # 用不上 snap——省一次 runtime_checkouts/branch_commits 整读(高频轮询端点减负)。
+        _sim_pre = exp.get("sim_state") if isinstance(exp.get("sim_state"), dict) else None
+        if _sim_pre and (_sim_pre.get("cast") or {}):
+            snap: dict = {}
+        else:
+            snap, _commit = _read_snapshot(db, int(exp["save_id"]))
         if hasattr(db, "commit"):
             db.commit()
     agendas = snap.get("npc_agendas") or {}
@@ -185,6 +215,10 @@ async def api_rath_tick(exp_id: int, user=Depends(get_current_user)):
     with connect() as db:
         if not _own_exp(db, exp_id, user["id"]):
             return JSONResponse({"ok": False, "error": "实验不存在"}, status_code=404)
+        # A5:POST 交互端点一律 bump(手动点了"推进"就是主动在看)。
+        db.execute("update rath_experiments set last_viewed_at=now() where id=%s", (int(exp_id),))
+        if hasattr(db, "commit"):
+            db.commit()
     # 异步化(用户实锤:同步跑两次 LLM 需 60-100s,前端超时误报失败):
     # 立即返回 started,tick 在后台线程跑完落日志,前端轮询自然刷出。
     import asyncio
@@ -223,22 +257,55 @@ async def api_rath_action(exp_id: int, action: str, request: Request, user=Depen
                 "values (%s, 'directive', %s, %s)",
                 (int(exp_id), directive, int(exp.get("world_clock_min") or 0)),
             )
+            # A5:交互端点一律 bump last_viewed_at。
+            db.execute(
+                "update rath_experiments set last_viewed_at=now() where id=%s", (int(exp_id),))
             row = exp
         elif action == "accel":
             body = await request.json()
             accel = int(body.get("accel") or 0)
             if accel not in ACCEL_CHOICES:
                 return JSONResponse({"ok": False, "error": f"accel 只能是 {ACCEL_CHOICES}"}, status_code=400)
+            # accel 联动(契约):tick_interval_sec = clamp(1800*60/accel, 600, 3600)
+            # → 240x=600s,60x=1800s,1x=3600s。不联动的话高倍速下单拍会吞掉数天
+            # (run_due_ticks 每 60s 才扫一次,固定 1800s 间隔配 240x accel 一拍=5世界日)。
+            interval_sec = max(600, min(3600, (1800 * 60) // accel))
             row = db.execute(
-                "update rath_experiments set accel=%s where id=%s returning *",
-                (accel, int(exp_id)),
+                "update rath_experiments set accel=%s, tick_interval_sec=%s, "
+                "last_viewed_at=now() where id=%s returning *",
+                (accel, interval_sec, int(exp_id)),
             ).fetchone()
-        else:
-            status = {"pause": "paused", "resume": "running", "archive": "archived"}[action]
+            row = dict(row)
+            row["save_kind"] = exp.get("save_kind")
+        elif action == "pause":
+            # 手动暂停:pause_reason='user'(区别于 unviewed/no_model/player_active 三种
+            # 自动暂停)。paused_at/last_tick_at 同置 now()——冻结钟基准,防 resume 时
+            # 按整段暂停时长 banking 世界时。
             row = db.execute(
-                "update rath_experiments set status=%s, last_viewed_at=now() where id=%s returning *",
-                (status, int(exp_id)),
+                "update rath_experiments set status='paused', pause_reason='user', "
+                "paused_at=now(), last_tick_at=now(), last_viewed_at=now() "
+                "where id=%s returning *",
+                (int(exp_id),),
             ).fetchone()
+            row = dict(row)
+            row["save_kind"] = exp.get("save_kind")
+        elif action == "resume":
+            row = db.execute(
+                "update rath_experiments set status='running', pause_reason=null, "
+                "paused_at=null, last_tick_at=now(), last_viewed_at=now() "
+                "where id=%s returning *",
+                (int(exp_id),),
+            ).fetchone()
+            row = dict(row)
+            row["save_kind"] = exp.get("save_kind")
+        else:  # archive
+            row = db.execute(
+                "update rath_experiments set status='archived', last_viewed_at=now() "
+                "where id=%s returning *",
+                (int(exp_id),),
+            ).fetchone()
+            row = dict(row)
+            row["save_kind"] = exp.get("save_kind")
         if hasattr(db, "commit"):
             db.commit()
     return {"ok": True, "experiment": _expose(dict(row))}

@@ -182,7 +182,9 @@ function PlatformApp() {
   else if (page === 'cards-npc') body = <CardsPage subPage="npc" />;
   else if (page === 'cards-online') body = <CardsPage subPage="online" />;
   else if (page === 'tavern') body = <TavernPage />;
-  else if (page === 'rath') body = <RathPage />;
+  // 灰度期 adminOnly(platform-app.jsx PL_NAV 里的 rath 模块):直链 #rath 也真正被
+  // 路由级 AdminGuard 挡下(与 admin-* 页面同款三道防线:导航隐藏 + 此处 + 后端 403)。
+  else if (page === 'rath') body = <AdminGuard><RathPage /></AdminGuard>;
   else if (page === 'settings') body = <SettingsPage section="preferences" />;
   else if (page === 'settings-models') body = <SettingsPage section="models" />;
   else if (page === 'settings-modelparams') body = <SettingsPage section="modelparams" />;
