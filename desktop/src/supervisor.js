@@ -226,6 +226,9 @@ class Supervisor extends EventEmitter {
       '-m', 'uvicorn', 'app:app',
       '--host', host, '--port', String(this.backendPort),
       '--workers', '1', '--no-access-log', '--log-level', 'info',
+      // 优雅停机上限:SSE 长连接(状态订阅/游戏回合流)不断开时 uvicorn 默认无限等待,
+      // 退出会挂死到被强杀——与生产同修(巡检 2026-07-08)。
+      '--timeout-graceful-shutdown', '10',
     ], { cwd: P.backendCwd(), env: this._backendEnv() });
 
     this._uvicorn.stdout.on('data', (d) => this._log('backend', d.toString()));

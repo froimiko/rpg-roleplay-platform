@@ -195,9 +195,9 @@ async def lifespan(app: FastAPI):
     try:
         import asyncio as _asyncio
         from concurrent.futures import ThreadPoolExecutor as _TPE
-        _asyncio.get_running_loop().set_default_executor(
-            _TPE(max_workers=64, thread_name_prefix="rpg-blocking")
-        )
+        _default_exec = _TPE(max_workers=64, thread_name_prefix="rpg-blocking")
+        _asyncio.get_running_loop().set_default_executor(_default_exec)
+        app.state.default_executor = _default_exec  # shutdown 时显式清理(见下)
     except Exception:
         log.exception("[startup] set_default_executor failed")
 
@@ -336,16 +336,34 @@ async def lifespan(app: FastAPI):
     yield
 
     # ── shutdown ──────────────────────────────────────────────────────────
-    if _redis_listener_task is not None:
+    _bg_tasks = [t for t in (_redis_listener_task, _rath_ticker_task) if t is not None]
+    for _t in _bg_tasks:
         try:
-            _redis_listener_task.cancel()
+            _t.cancel()
         except Exception:
             pass
-    if _rath_ticker_task is not None:
+    if _bg_tasks:
         try:
-            _rath_ticker_task.cancel()
+            import asyncio as _asyncio
+            # 等取消真正完成(原 fire-and-forget:cancel 后立刻往下走,监听协程的 finally
+            # 清理可能没跑完连接就被下面 close_pool 抽走)。
+            await _asyncio.gather(*_bg_tasks, return_exceptions=True)
         except Exception:
             pass
+    # 自建默认 executor(64线程,startup 段0a)显式停机:worker 线程非 daemon,且
+    # concurrent.futures 模块注册了 atexit join——只要某线程还压着 60-100s 的阻塞
+    # LLM 调用,解释器正常退出就卡在 join 上(uvicorn 加 --timeout-graceful-shutdown
+    # 后正常退出路径才真的会走到这里;不处理=停机挂死换个地方复现)。
+    # cancel_futures 丢弃排队任务;清 _threads_queues 让 atexit 跳过 join
+    # (停机语义:在跑的线程随进程退出,不再等它)。
+    try:
+        _exec = getattr(app.state, "default_executor", None)
+        if _exec is not None:
+            _exec.shutdown(wait=False, cancel_futures=True)
+        import concurrent.futures.thread as _cft
+        _cft._threads_queues.clear()
+    except Exception:
+        pass
     try:
         import mcp_broker
         mcp_broker.stop_health_loop()
