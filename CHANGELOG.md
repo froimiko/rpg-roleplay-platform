@@ -9,6 +9,13 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.67.0] - 2026-07-08 (@ de4af5b72)
+
+### Added
+- **酒馆电脑版侧栏完整重设计**(用户实锤页签溢出图标压残):5 页签 .seg 平铺 → 44px 垂直图标导航栏(角色/设定两组+底部沉浸开关)+统一节式内容区;键盘导航(↑↓/Home/End)+tablist/tab/tabpanel 三件套;页签记忆;窄容器(≤344px)自动降级横向滚动带渐隐;组件从 tavern-app.jsx 拆出独立 tavern-drawer.jsx(1233→910行),文案全量双语落目录。
+### Fixed
+- **锚点验收确定性地板**(行者268实锤「演过了没验收,多次触发」:验收器纯 LLM 单层任何失败静默空返回,1300+ 回合零标记,锚点滞留 pending 反复注入反复重演):新增签名匹配层(锚点 summary 提取签名短语,正文逐字命中≥2 即按 variant 补登,同受防跳章上界约束,LLM 判定漏标时兜底)+每回合可观测日志;存量清账脚本 scripts/backfill_anchor_acceptance.py(全历史重放匹配器,只结算锚点态不动进度信号)。
+
 ## [1.66.5] - 2026-07-08 (@ 14593c7ad)
 
 ## [1.66.4] - 2026-07-08 (@ cc422f477)

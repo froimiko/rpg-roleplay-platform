@@ -251,7 +251,13 @@
 }
 .tavern-chat .gc-composer .gc-textarea { padding: 10px 16px; }
 
-/* ── 两张卡抽屉 ──────────────────────────────────────────────────── */
+/* ── 抽屉外壳(通用)────────────────────────────────────────────────
+ * .tv-drawer-backdrop/.tv-drawer/.tv-drawer-head/.tv-drawer-body 是通用抽屉容器 ——
+ * 除 TavernDrawer(tavern-drawer.jsx)外,pages/tavern.jsx 的「采样参数」抽屉也直接
+ * 复用这四个类(简单 header+body,无 rail)。故这里保持通用、不为 TavernDrawer 定制,
+ * TavernDrawer 自己的 rail/节头/内容区样式全部在下面 .tvd-* 命名空间里,只是嵌套在
+ * .tv-drawer(portal 独立页)或 .tvp-drawer-panel(inline 内嵌,见 pages/tavern-platform.css)
+ * 内部。 */
 .tv-drawer-backdrop {
   position: fixed; inset: 0; z-index: 2000;
   background: rgba(0,0,0,0.5);
@@ -275,6 +281,156 @@
   flex-shrink: 0;
 }
 .tv-drawer-body { flex: 1; overflow-y: auto; padding: 18px; }
+
+/* ── TavernDrawer(角色/Persona/设定):垂直图标 rail + 独立滚动内容区 ──────
+ * 侧栏重设计(旧版 5 页签挤在一条 .seg 分段控件里,窄宽度下图标互相挤压成
+ * 圆点残渣、「正则」页签被截断;沉浸式开关错放在「AI 角色」页签内)。
+ * .tvd-root 是 .tv-drawer / .tvp-drawer-panel-inner 的唯一子节点,靠 flex:1 1 auto
+ * 撑满这两种外壳给出的高度,自身再纵向切成 .tvd-header(不滚动)+ .tvd-body
+ * (rail + 内容区,各自独立滚动/不滚动)。
+ * container-type 让 rail 依据抽屉自身宽度(而非视口)响应式降级 —— 与 platform.css
+ * 的 `.pl-side { container-type: inline-size; }` + `@container side (...)` 同一先例,
+ * 比 ResizeObserver 更省(纯 CSS,拖拽/内嵌变窄时零 JS 重渲染)。 */
+.tvd-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  container-name: tvd;
+}
+.tvd-header {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.tvd-header-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+.tvd-header-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tvd-body { flex: 1 1 auto; min-height: 0; display: flex; }
+
+/* rail:44px 竖排图标导航(role=tablist)。上组「角色」/下组「设定」,分隔线隔开。 */
+.tvd-rail {
+  flex: 0 0 44px;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 0;
+  border-right: 1px solid var(--line-soft);
+}
+.tvd-rail-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tvd-rail-divider { width: 22px; height: 1px; margin: 8px 0; background: var(--line-soft); flex-shrink: 0; }
+.tvd-rail-btn { position: relative; }
+/* 选中态:左侧 2px accent 指示条 + 图标 accent 色(不用 .active class,避免撞
+   tokens.css 的 .iconbtn.active 通用样式;用已经在设的 aria-selected 属性选择器)。 */
+.tvd-rail-btn[aria-selected="true"] { color: var(--accent); background: var(--panel-2); }
+.tvd-rail-btn[aria-selected="true"]::before {
+  content: "";
+  position: absolute; left: -1px; top: 50%; transform: translateY(-50%);
+  width: 2px; height: 18px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+/* 按压反馈(scale 0.97,比全局 .iconbtn:active 的 0.94 更轻);tavern.css 在加载序里
+   排在 motion.css 之后,同优先级选择器按源序覆盖,故这里能赢 .iconbtn:active。 */
+.tvd-rail-btn:active { transform: scale(0.97); }
+
+/* rail 底部固定:沉浸式拟人开关(从旧版「AI 角色」页签里救出)。 */
+.tvd-rail-foot {
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+.tvd-immersive-btn {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  width: 30px;
+  padding: 6px 0;
+  background: none; border: 1px solid transparent; border-radius: var(--r-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+.tvd-immersive-btn:hover { color: var(--text); background: var(--panel-2); border-color: var(--line-soft); }
+.tvd-immersive-btn.on { color: var(--accent); }
+.tvd-immersive-dot {
+  width: 16px; height: 9px; border-radius: 999px;
+  background: var(--line);
+  position: relative;
+  transition: background var(--m-fast, 0.1s) ease;
+}
+.tvd-immersive-dot::after {
+  content: "";
+  position: absolute; top: 1.5px; left: 1.5px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #fff;
+  transition: transform var(--m-fast, 0.1s) ease;
+}
+.tvd-immersive-btn.on .tvd-immersive-dot { background: var(--accent); }
+.tvd-immersive-btn.on .tvd-immersive-dot::after { transform: translateX(7px); }
+
+/* 内容区:独立滚动;节头 sticky 吸顶(见 .tvd-section-head)。 */
+.tvd-content { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; overflow-anchor: none; }
+.tvd-content-inner {
+  padding: 0 16px 16px;
+  animation: tvd-content-in 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes tvd-content-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.tvd-section-head {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 14px 0 10px;
+  margin-bottom: 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-soft);
+}
+.tvd-section-head-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.tvd-section-head-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tvd-section-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.tvd-section-head-actions .btn { height: 26px; padding: 0 10px; font-size: 12.5px; }
+
+/* 空态统一样式(未选角色卡 / 未设 persona / 未设系统提示词等)。 */
+.tvd-empty { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.7; }
+
+/* 窄容器降级(<345px,独立页手机宽 / 内嵌窄栏):rail 转顶部横向一行,overflow-x
+   auto + 两端渐隐遮罩,永不截断无提示。写在原始规则之后,保证 cascade 覆盖
+   (同 platform.css 的 @container side 惯例)。 */
+@container tvd (max-width: 344px) {
+  .tvd-body { flex-direction: column; }
+  .tvd-rail {
+    flex-direction: row;
+    flex: 0 0 auto;
+    width: 100%;
+    gap: 4px;
+    padding: 6px 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
+  }
+  .tvd-rail::-webkit-scrollbar { display: none; }
+  .tvd-rail-group { flex-direction: row; }
+  .tvd-rail-divider { width: 1px; height: 20px; margin: 0 6px; }
+  .tvd-rail-foot {
+    flex-direction: row;
+    width: auto;
+    margin-top: 0; margin-left: 4px;
+    padding-top: 0; padding-left: 8px;
+    border-top: 0; border-left: 1px solid var(--line-soft);
+  }
+}
 
 /* ── 思考流折叠块(reasoning)──────────────────────────────────────────
  * 与正文分区共存(非互斥):正文走 .gc-msg 正常散文,思考流单独折叠成一行。

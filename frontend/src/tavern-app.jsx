@@ -4,13 +4,18 @@
  * 复用件(不重写):
  *   - Composer / NarrativeBlock / PlayerBlock (game-composer.jsx / game-app.jsx)
  *   - RpgMarkdown.Block(由 NarrativeBlock 内部使用)
- *   - TavernImportModal / CardSheet / CardEditFields / cardFormInit/Payload(pages/cards.jsx)
+ *   - TavernImportModal(pages/cards.jsx)
  *   - useResizable(responsive.jsx)、Icon(game-icons.jsx)
  *   - SSE:api.game.chat({message, save_id}) + api.game.stop()
  *   - 历史加载:对话即 game_saves(save_kind='tavern'),激活后用 api.game.state() 读 history
  * 关键约束:
  *   - 切换对话前必须先 api.tavern.activate(id),/api/chat 才落到正确 save。
  *   - 新对话的 first_mes 已由后端 seed 为首条 assistant 消息 → 不调任何 opening 端点。
+ *
+ * 「角色 / Persona / 设定」抽屉(TwoCardDrawer/CardSheet/CardPickerSheet/PersonaHero
+ * 及表单逻辑)已整体迁出到 ./tavern-drawer.jsx(rail + 独立滚动内容区重设计)。
+ * 本文件只保留 `export { TwoCardDrawer } from './tavern-drawer.jsx'` 兼容旧 import
+ * (pages/tavern.jsx 现有 `import { TwoCardDrawer } from '../tavern-app.jsx'` 不用改)。
  */
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -23,14 +28,17 @@ import ConfirmDialog from './components/ConfirmDialog.jsx';
 import { useResizable } from './responsive.jsx';
 import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip, useSaveImages } from './game-app.jsx';
 import { Composer } from './game-composer.jsx';
-import { WorldbookOverlaySection, RegexScriptsSection } from './game-panels.jsx';
-import { TavernImportModal, CardSheet, CardEditFields, cardFormInit, cardFormPayload } from './pages/cards.jsx';
+import { TavernImportModal } from './pages/cards.jsx';
+import { TavernDrawer } from './tavern-drawer.jsx';
 import AvatarImg from './components/AvatarImg.jsx';
 import { useStickToBottom } from './hooks/useStickToBottom.js';
 import {
   useTavernChatRun, applyTavernState, abortRun,
   toolCallInlineAnchor, toolResultInline,
 } from './hooks/useTavernChatRun.js';
+
+// 兼容旧 import 名:pages/tavern.jsx 仍 `import { TwoCardDrawer } from '../tavern-app.jsx'`。
+export { TavernDrawer, TwoCardDrawer } from './tavern-drawer.jsx';
 
 /* ── 相对时间 ─────────────────────────────────────────────────────── */
 // 桶算法委托 data-loader.js 规范 window.__fmt.ago(语义统一 #25);仅本端的「空/坏值 → ''」
@@ -477,337 +485,6 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
   );
 }
 
-/* ── 角色 / persona / 系统提示 面板 ──────────────────────────────────────
- * inline=false(独立 tavern-app):portal 全屏抽屉(旧行为)。
- * inline=true(Platform 内嵌 tavern.jsx):页内可折叠右侧栏,不盖顶栏(open=false → collapsed)。
- * 新增「系统提示」tab —— 编辑本对话 system_prompt(onSaveSystemPrompt 持久化)。 */
-// 人设图海报(侧栏顶部):拉 persona-images,当前图做大图 + 缩略条。修「侧栏不显示人设图」。
-function PersonaHero({ cardId, avatar }) {
-  const { t } = useTranslation();
-  const [imgs, setImgs] = useState([]);
-  const [zoom, setZoom] = useState(null);
-  useEffect(() => {
-    if (!cardId) { setImgs([]); return; }
-    let alive = true;
-    Promise.resolve(window.api.cards.personaImages(cardId))
-      .then((r) => { if (alive) setImgs(Array.isArray(r) ? r : (r && r.items) || []); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [cardId]);
-  // 无人设图时回退展示头像(始终给一张大图),都没有才不渲染。
-  const cur = imgs.find((i) => i.is_current) || imgs[0] || (avatar ? { id: '_av', image_url: avatar } : null);
-  if (!cur || !cur.image_url) return null;
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.2, color: 'var(--accent)', marginBottom: 8 }}>
-        {t('tavern_app.drawer.persona_image')}
-      </div>
-      {cur && cur.image_url && (
-        <img src={cur.image_url} alt="" onClick={() => setZoom(cur.image_url)}
-          style={{ width: '100%', maxHeight: 380, objectFit: 'contain', borderRadius: 12,
-                   border: '1px solid var(--line)', background: 'var(--panel-2, #282623)', cursor: 'zoom-in', display: 'block' }} />
-      )}
-      {imgs.length > 1 && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto', paddingBottom: 2 }}>
-          {imgs.map((i) => (
-            <img key={i.id} src={i.image_url} alt="" onClick={() => setZoom(i.image_url)}
-              style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 8, flexShrink: 0, cursor: 'zoom-in',
-                       border: i.is_current ? '2px solid var(--accent)' : '1px solid var(--line)' }} />
-          ))}
-        </div>
-      )}
-      {zoom && (
-        <div onClick={() => setZoom(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9999,
-                   display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
-          <img src={zoom} alt="" style={{ maxWidth: '92%', maxHeight: '92%', objectFit: 'contain', borderRadius: 8 }} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// 从统一角色卡库选卡(酒馆侧栏「选择 / 更换角色卡 / 我的角色」)。
-function CardPickerSheet({ role, onPick, onClose }) {
-  const { t } = useTranslation();
-  const [cards, setCards] = useState([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let alive = true;
-    Promise.resolve(window.api.cards.myList())
-      .then((r) => {
-        if (!alive) return;
-        const list = Array.isArray(r) ? r : (r && (r.items || r.cards)) || [];
-        setCards(list);
-      })
-      .catch(() => {})
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, []);
-  const title = role === 'character'
-    ? t('tavern_app.drawer.choose_character')
-    : t('tavern_app.drawer.choose_persona');
-  return (
-    <div onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9998,
-               display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()}
-        style={{ background: 'var(--bg, #1a1817)', borderTop: '1px solid var(--line)',
-                 borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 520, maxHeight: '72vh',
-                 display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)',
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <strong style={{ fontSize: 14 }}>{title}</strong>
-          <button className="iconbtn" onClick={onClose} aria-label={t('common.close')}>
-            <Icon name="close" size={15} />
-          </button>
-        </div>
-        <div style={{ overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {loading ? (
-            <div className="muted-2" style={{ padding: 24, textAlign: 'center' }}>…</div>
-          ) : cards.length === 0 ? (
-            <div className="muted-2" style={{ padding: 24, textAlign: 'center' }}>
-              {t('tavern_app.drawer.no_cards')}
-            </div>
-          ) : (
-            cards.map((c) => (
-              <button key={c.id} onClick={() => onPick(c.id)}
-                style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 12px',
-                         background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 12,
-                         cursor: 'pointer', textAlign: 'left' }}>
-                {c.avatar_path ? (
-                  <img src={c.avatar_path} alt=""
-                    style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-                ) : (
-                  <div style={{ width: 44, height: 44, borderRadius: 8, background: 'var(--panel-2, #282623)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                flexShrink: 0, fontFamily: 'serif', fontSize: 18, color: 'var(--accent)' }}>
-                    {(c.name || '?').slice(0, 1)}
-                  </div>
-                )}
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{c.name || t('tavern_app_extra.card_unnamed')}</div>
-                  {(c.identity || c.summary) && (
-                    <div className="muted-2" style={{ fontSize: 12, overflow: 'hidden',
-                         textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.identity || c.summary}</div>
-                  )}
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function TwoCardDrawer({ open, character, persona, onClose, onSavePersona,
-                                inline = false, systemPrompt = '', onSaveSystemPrompt,
-                                chatId = null, onBindCard,
-                                immersive = false, onToggleImmersive }) {
-  const { t } = useTranslation();
-  const [form, setForm] = useState(() => cardFormInit(persona));
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [pickRole, setPickRole] = useState(null); // null | 'character' | 'persona' —— 选卡器
-  const [tab, setTab] = useState('character'); // 'character' | 'persona' | 'system'
-  const [spVal, setSpVal] = useState(systemPrompt || '');
-  const [spEditing, setSpEditing] = useState(false);
-  const [spSaving, setSpSaving] = useState(false);
-  // portal 分支退场动效:open 变 false 后不立刻卸载,先带 closing class 渲染 160ms 再真正消失。
-  const [visible, setVisible] = useState(open);
-  const [closing, setClosing] = useState(false);
-  const prevOpenRef = useRef(open);
-  useEffect(() => {
-    const wasOpen = prevOpenRef.current;
-    prevOpenRef.current = open;
-    if (open) { setVisible(true); setClosing(false); return; }
-    if (!wasOpen) return; // 从未打开过(如初始 open=false),无需退场
-    setClosing(true);
-    const timer = setTimeout(() => { setVisible(false); setClosing(false); }, 160);
-    return () => clearTimeout(timer);
-  }, [open]);
-
-  useEffect(() => { setForm(cardFormInit(persona)); setEditing(false); }, [persona, open]);
-  useEffect(() => { setSpVal(systemPrompt || ''); setSpEditing(false); }, [systemPrompt, open]);
-  const u = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
-  // 非 inline(独立页 portal):open=false 且退场动效已结束(visible=false)才不渲染。inline:始终渲染,靠 collapsed 类收起。
-  if (!inline && !open && !visible) return null;
-  const personaName = (persona && persona.name) || t('tavern_app.drawer.persona_fallback');
-
-  const doSave = async () => {
-    setSaving(true);
-    try { await onSavePersona(cardFormPayload(form, persona)); setEditing(false); }
-    finally { setSaving(false); }
-  };
-  const doSaveSP = async () => {
-    setSpSaving(true);
-    try { await (onSaveSystemPrompt && onSaveSystemPrompt(spVal)); setSpEditing(false); }
-    finally { setSpSaving(false); }
-  };
-
-  const head = (
-    <header className="tv-drawer-head">
-      <div className="seg" style={{ display: 'flex' }}>
-        <button className={tab === 'character' ? 'active' : ''} onClick={() => setTab('character')}>
-          <Icon name="cards" size={12} /> {t('tavern_app.drawer.tab_character')}
-        </button>
-        <button className={tab === 'persona' ? 'active' : ''} onClick={() => setTab('persona')}>
-          <Icon name="user" size={12} /> {t('tavern_app.drawer.tab_persona')}
-        </button>
-        <button className={tab === 'system' ? 'active' : ''} onClick={() => setTab('system')}>
-          <Icon name="settings" size={12} /> {t('tavern_app.drawer.tab_system')}
-        </button>
-        <button className={tab === 'worldbook' ? 'active' : ''} onClick={() => setTab('worldbook')}>
-          <Icon name="world" size={12} /> {t('tavern_app.drawer.tab_worldbook', { defaultValue: '世界书' })}
-        </button>
-        <button className={tab === 'regex' ? 'active' : ''} onClick={() => setTab('regex')}>
-          <Icon name="braces" size={12} /> {t('tavern_app.drawer.tab_regex', { defaultValue: '正则' })}
-        </button>
-      </div>
-      <button className="iconbtn" onClick={onClose} data-tip={inline ? t('tavern_app.drawer.collapse') : t('common.close')} aria-label={inline ? t('tavern_app.drawer.collapse') : t('common.close')}>
-        <Icon name={inline ? 'chevron_right' : 'close'} size={15} />
-      </button>
-    </header>
-  );
-
-  const body = (
-    <div className="tv-drawer-body">
-      {tab === 'character' && (
-        <>
-          {onToggleImmersive && (
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '12px 0 12px', borderBottom: '1px solid var(--line)', marginBottom: 12 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{t('tavern_app.drawer.immersive_label')}</div>
-                <div className="muted-2" style={{ fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>{t('tavern_app.drawer.immersive_desc')}</div>
-              </div>
-              <button
-                role="switch"
-                aria-checked={!!immersive}
-                onClick={() => onToggleImmersive(!immersive)}
-                style={{
-                  flexShrink: 0,
-                  width: 36, height: 20, borderRadius: 999,
-                  background: immersive ? 'var(--accent)' : 'var(--line)',
-                  border: 'none', cursor: 'pointer', position: 'relative',
-                  transition: 'background 0.2s',
-                  padding: 0,
-                }}
-                aria-label={t('tavern_app.drawer.immersive_label')}
-              >
-                <span style={{
-                  position: 'absolute',
-                  top: 3, left: immersive ? 19 : 3,
-                  width: 14, height: 14, borderRadius: '50%',
-                  background: '#fff',
-                  transition: 'left 0.2s',
-                  display: 'block',
-                }} />
-              </button>
-            </div>
-          )}
-          {onBindCard && chatId != null && (
-            <button className="btn ghost" style={{ width: '100%', marginBottom: 12 }} onClick={() => setPickRole('character')}>
-              <Icon name="cards" size={12} /> {t('tavern_app.drawer.choose_character')}
-            </button>
-          )}
-          {character
-            ? <><PersonaHero cardId={character.id} avatar={character.avatar_path} /><CardSheet card={character} kind="user" /></>
-            : <div className="muted-2" style={{ padding: 24, textAlign: 'center' }}>{t('tavern_app.drawer.char_not_found')}</div>}
-        </>
-      )}
-      {tab === 'persona' && (
-        !editing ? (
-          <>
-            {onBindCard && chatId != null && (
-              <button className="btn ghost" style={{ width: '100%', marginBottom: 12 }} onClick={() => setPickRole('persona')}>
-                <Icon name="cards" size={12} /> {t('tavern_app.drawer.choose_persona')}
-              </button>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <strong style={{ fontSize: 14 }}>{personaName}</strong>
-              {persona && (
-                <button className="btn ghost" onClick={() => setEditing(true)}><Icon name="edit" size={12} /> {t('common.edit')}</button>
-              )}
-            </div>
-            {persona && persona.id ? <PersonaHero cardId={persona.id} avatar={persona.avatar_path} /> : null}
-            {persona
-              ? <CardSheet card={persona} kind="persona" />
-              : <div className="muted-2" style={{ padding: 24, textAlign: 'center' }}>{t('tavern_app.drawer.persona_not_set')}</div>}
-          </>
-        ) : (
-          <>
-            <CardEditFields form={form} u={u} kind="persona" />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button className="btn ghost" onClick={() => setEditing(false)} disabled={saving}>{t('common.cancel')}</button>
-              <button className="btn primary" onClick={doSave} disabled={saving}>
-                <Icon name="check" size={12} /> {saving ? t('tavern_app.drawer.saving') : t('common.save')}
-              </button>
-            </div>
-          </>
-        )
-      )}
-      {tab === 'system' && (
-        <div className="tv-sysprompt">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <strong style={{ fontSize: 14 }}>{t('tavern_app.drawer.sysprompt_title')}</strong>
-            {!spEditing && onSaveSystemPrompt && (
-              <button className="btn ghost" onClick={() => setSpEditing(true)}><Icon name="edit" size={12} /> {t('common.edit')}</button>
-            )}
-          </div>
-          {!spEditing ? (
-            (spVal || '').trim()
-              ? <div className="tv-sysprompt-view" style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.7 }}>{spVal}</div>
-              : <div className="muted-2" style={{ padding: 16, lineHeight: 1.7 }}>{t('tavern_app.drawer.sysprompt_empty')}</div>
-          ) : (
-            <>
-              <textarea
-                value={spVal} onChange={(e) => setSpVal(e.target.value)} rows={14}
-                placeholder={t('tavern_app.drawer.sysprompt_placeholder')}
-                style={{ width: '100%', resize: 'vertical', fontSize: 13, lineHeight: 1.6 }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-                <button className="btn ghost" onClick={() => { setSpVal(systemPrompt || ''); setSpEditing(false); }} disabled={spSaving}>{t('common.cancel')}</button>
-                <button className="btn primary" onClick={doSaveSP} disabled={spSaving}>
-                  <Icon name="check" size={12} /> {spSaving ? t('tavern_app.drawer.saving') : t('common.save')}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-      {tab === 'worldbook' && (
-        <WorldbookOverlaySection />
-      )}
-      {tab === 'regex' && (
-        <RegexScriptsSection />
-      )}
-      {pickRole && (
-        <CardPickerSheet
-          role={pickRole}
-          onClose={() => setPickRole(null)}
-          onPick={(cid) => { const r = pickRole; setPickRole(null); if (onBindCard) onBindCard(r, cid); }}
-        />
-      )}
-    </div>
-  );
-
-  if (inline) {
-    return (
-      <aside className={'tvp-drawer-panel' + (open ? '' : ' collapsed')} aria-hidden={!open}>
-        <div className="tvp-drawer-panel-inner">{head}{body}</div>
-      </aside>
-    );
-  }
-  return createPortal(
-    <div className="tv-drawer-backdrop" onClick={onClose}>
-      <div className={'tv-drawer' + (closing ? ' closing' : '')} onClick={(e) => e.stopPropagation()}>{head}{body}</div>
-    </div>,
-    document.body,
-  );
-}
-
 /* ══════════════════════════════════════════════════════════════════
  *  TavernApp — 顶层
  * ══════════════════════════════════════════════════════════════════ */
@@ -1170,7 +847,7 @@ export default function TavernApp() {
 
       <TavernImportModal open={importOpen} onClose={() => setImportOpen(false)} onConfirm={onImportConfirm} />
 
-      <TwoCardDrawer
+      <TavernDrawer
         open={drawerOpen} character={character} persona={persona}
         onClose={() => setDrawerOpen(false)}
         onSavePersona={onSavePersona}

@@ -803,6 +803,26 @@ def _reconcile_impl(
                 valid_hits.append({"anchor_key": k, "drift_score": 0.0})
                 if len(valid_hits) >= _MAX_MARK_PER_TURN:
                     break
+    # [268 实锤] 确定性签名匹配兜底(第三补漏层,零 LLM):GM 逐句重演锚点内容而 LLM 判定
+    # 静默漏标时(纯 LLM 单层无地板 → 锚点永远 pending 反复注入反复重演,「演过了没验收,
+    # 多次触发」),锚点 summary 的签名短语在正文逐字命中 ≥2 即按 variant 补登。
+    # 同受 _mark_ceiling / 窗口 / 去重约束;只补前两层没提到的 key。
+    if len(valid_hits) < _MAX_MARK_PER_TURN:
+        try:
+            from gm_serving.anchor_signature import deterministic_hits as _sig_hits
+            for h in _sig_hits(pending, text):
+                k = (h.get("anchor_key") or "").strip()
+                _kc = _anchor_src_chapter(k)
+                if _kc is not None and _kc > _mark_ceiling:
+                    continue
+                if k and k in win_by_key and k not in seen:
+                    seen.add(k)
+                    valid_hits.append({"anchor_key": k,
+                                       "drift_score": float(h.get("drift_score") or 0.25)})
+                    if len(valid_hits) >= _MAX_MARK_PER_TURN:
+                        break
+        except Exception as _sig_exc:
+            log.warning("[anchor_reconcile] 签名匹配层失败(跳过): %s", _sig_exc)
 
     # 估章是否落库:本回合会估章 + 估章值有效。无锚点命中、不估章、不查死亡 → 无事可做。
     do_estimate = bool(will_estimate and estimated_chapter)
@@ -838,6 +858,12 @@ def _reconcile_impl(
             _apply_pace_fallback(conn, save_id, progress_motion)
         if do_death:
             _invalidate_dead_entity_anchors(conn, save_id, text)
+        # 可观测性(268 实锤:验收器 1300+ 回合零标记但日志全静默,不可诊断):
+        # 每回合一行,标记数>0 或候选非空才打(空转不刷屏)。
+        if valid_hits or pending:
+            log.info("[anchor_reconcile] save=%s 候选=%d LLM命中=%d 落库=%d est=%s motion=%s",
+                     save_id, len(pending), len(reached or []), marked,
+                     estimated_chapter, progress_motion)
         return marked
 
     if db is not None:
