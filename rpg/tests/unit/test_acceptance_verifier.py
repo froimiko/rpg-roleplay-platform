@@ -243,7 +243,7 @@ class AcceptanceVerifierLLMModule(unittest.TestCase):
         fake_response = '{"unmet": ["条款A"]}'
         with patch(
             "agents.acceptance_verifier._call_verifier_backend",
-            return_value=fake_response,
+            return_value=(fake_response, None),  # 签名现返 (text, backend_ref) 元组
         ):
             out = acceptance_verifier.verify_acceptance_llm(
                 ["条款A", "条款B"], "GM 叙事", [],
@@ -254,7 +254,7 @@ class AcceptanceVerifierLLMModule(unittest.TestCase):
         import agents.acceptance_verifier as acceptance_verifier
         with patch(
             "agents.acceptance_verifier._call_verifier_backend",
-            return_value='{"unmet": []}',
+            return_value=('{"unmet": []}', None),
         ):
             out = acceptance_verifier.verify_acceptance_llm(
                 ["条款A"], "GM 叙事", [],
@@ -278,7 +278,7 @@ class AcceptanceVerifierLLMModule(unittest.TestCase):
         import agents.acceptance_verifier as acceptance_verifier
         with patch(
             "agents.acceptance_verifier._call_verifier_backend",
-            return_value="this is not json at all",
+            return_value=("this is not json at all", None),
         ):
             out = acceptance_verifier.verify_acceptance_llm(
                 ["条款A"], "GM 叙事", [],
@@ -290,7 +290,7 @@ class AcceptanceVerifierLLMModule(unittest.TestCase):
         import agents.acceptance_verifier as acceptance_verifier
         with patch(
             "agents.acceptance_verifier._call_verifier_backend",
-            return_value='```json\n{"unmet": ["条款A"]}\n```',
+            return_value=('```json\n{"unmet": ["条款A"]}\n```', None),
         ):
             out = acceptance_verifier.verify_acceptance_llm(
                 ["条款A"], "GM 叙事", [],
@@ -302,7 +302,7 @@ class AcceptanceVerifierLLMModule(unittest.TestCase):
         import agents.acceptance_verifier as acceptance_verifier
         with patch(
             "agents.acceptance_verifier._call_verifier_backend",
-            return_value="",
+            return_value=("", None),
         ):
             out = acceptance_verifier.verify_acceptance_llm(
                 ["条款A"], "GM 叙事", [],
@@ -315,7 +315,7 @@ class AcceptanceVerifierLLMModule(unittest.TestCase):
         # LLM 返回截断版，应回填到完整原文
         with patch(
             "agents.acceptance_verifier._call_verifier_backend",
-            return_value='{"unmet": ["回应了去灯塔"]}',
+            return_value=('{"unmet": ["回应了去灯塔"]}', None),
         ):
             out = acceptance_verifier.verify_acceptance_llm(
                 ["回应了去灯塔意图"], "GM 叙事", [],
@@ -325,6 +325,12 @@ class AcceptanceVerifierLLMModule(unittest.TestCase):
 
 class AcceptanceVerifierModePref(unittest.TestCase):
     """_acceptance_verifier_mode 偏好读取。"""
+
+    def setUp(self):
+        # prefs 缓存是 request 级 ContextVar(生产每请求清)。测试间共享进程会串状态,
+        # 每个测试前清一次,保证隔离。
+        import app
+        app._clear_prefs_cache()
 
     def test_default_when_no_user(self):
         import app
@@ -376,6 +382,9 @@ class AcceptanceVerifierModePref(unittest.TestCase):
 
         for val in ("rule", "llm", "hybrid"):
             row = {"preferences": {"acceptance_verifier.mode": val}}
+            # prefs 是 request 级 ContextVar 缓存(生产每请求结束清);测试在单上下文里
+            # 循环改 mock,必须每轮手动清缓存,否则读到首轮缓存值。
+            app._clear_prefs_cache()
             with patch("platform_app.db.connect", return_value=_FakeConnCM(row)), \
                     patch("platform_app.db.init_db"):
                 self.assertEqual(app._acceptance_verifier_mode({"id": 1}), val)

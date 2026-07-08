@@ -95,8 +95,8 @@ class PanelRulesFrontendBranchTests(unittest.TestCase):
     def test_panel_short_circuits_for_non_module_kind(self):
         self.assertIn("module_adventure", self.text,
             "PanelRules 必须判断 module_adventure kind 来决定显示规则 UI")
-        self.assertIn("5E 规则不适用", self.text,
-            "非 module_adventure 剧本必须显示明确的『不适用』提示，"
+        self.assertIn("game.rules.not_applicable", self.text,
+            "非 module_adventure 剧本必须显示明确的『不适用』提示(文案已迁 i18n)，"
             "不能默默渲染一套空角色卡")
 
     def test_panel_no_inline_start_module_button(self):

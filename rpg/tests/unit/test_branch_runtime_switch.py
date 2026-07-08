@@ -50,9 +50,9 @@ class StateCacheSaveIdTracking(unittest.TestCase):
     def test_state_save_id_by_user_dict_defined(self):
         self.assertIn("_state_save_id_by_user", APP_PY,
             "app.py 应有 _state_save_id_by_user 字典记录 cached state 对应 save_id")
-        # 类型声明
+        # 类型声明(LRU 重构后改用 OrderedDict 做逐出,二者皆可)
         self.assertTrue(
-            re.search(r"_state_save_id_by_user\s*:\s*dict\[int,\s*int\]", APP_PY) is not None,
+            re.search(r"_state_save_id_by_user\s*:\s*(?:OrderedDict|dict)\[int,\s*int\]", APP_PY) is not None,
             "_state_save_id_by_user 应声明为 dict[int, int]",
         )
 

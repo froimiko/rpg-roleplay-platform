@@ -38,6 +38,8 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[3]
 PLATFORM_JSX = (PROJECT / "frontend" / "src" / "platform-app.jsx").read_text(encoding="utf-8")
+# 重构:ContinuePicker 已从 platform-app.jsx 移到 pages/saves.jsx(platform-app import 之)。
+SAVES_JSX = (PROJECT / "frontend" / "src" / "pages" / "saves.jsx").read_text(encoding="utf-8")
 # Phase 5.8: api.py 已拆分为 api/ 子包，branches 路由移到 api/saves.py
 _api_py_path = PROJECT / "rpg" / "platform_app" / "api.py"
 _saves_py_path = PROJECT / "rpg" / "platform_app" / "api" / "saves.py"
@@ -49,10 +51,10 @@ else:
 
 def _continue_picker_confirm_body() -> str:
     """提取 ContinuePicker.confirm 函数体。"""
-    idx = PLATFORM_JSX.find("function ContinuePicker(")
+    idx = SAVES_JSX.find("function ContinuePicker(")
     assert idx > 0
-    end = PLATFORM_JSX.find("\nfunction ", idx + 1)
-    body = PLATFORM_JSX[idx:end if end > 0 else len(PLATFORM_JSX)]
+    end = SAVES_JSX.find("\nfunction ", idx + 1)
+    body = SAVES_JSX[idx:end if end > 0 else len(SAVES_JSX)]
     # 进一步 narrow 到 confirm
     cidx = body.find("const confirm = async ()")
     if cidx < 0:
@@ -95,7 +97,8 @@ class ContinuePickerUsesBranchActivate(unittest.TestCase):
     def test_confirm_aborts_without_target_save(self):
         body = _continue_picker_confirm_body()
         # 缺 targetSaveId → toast + return,不带旧 runtime 进游戏
-        self.assertIn("没选目标存档", body)
+        # (文案已迁 i18n,查 toast key 而非硬编码中文)
+        self.assertIn("saves.toast.no_target_save", body)
         self.assertTrue(
             "return;" in body and re.search(r"if\s*\(!\s*targetSaveId\s*\)", body) is not None,
             "缺 save id 必须 abort 不进游戏",
