@@ -399,11 +399,30 @@ def _default_judge(
             timeout_sec=20,
             agent_kind="anchor_reconcile",
             save_id=save_id,
+            no_think=True,  # 268 实锤:思考模型无界思考吃光预算正文恒空 → 1300+ 回合零验收
         )
     except Exception as exc:
         # 无 key / 网络 / 凭证错误等一律静默跳过,绝不破回合。
         log.info("[anchor_reconcile] 判定调用失败(静默跳过): %s", exc)
         return empty
+    # 空正文护栏(不再静默当 reached=[]):思考模型 no_think 被 provider 退参忽略时仍会
+    # 吃光预算返空——加预算重试一次;再空则告警放弃(下回合还有机会+签名层兜底)。
+    if not (text or "").strip():
+        _rt = int((_usage or {}).get("reasoning_tokens") or 0)
+        log.warning("[anchor_reconcile] 判定器返回空正文(reasoning_tokens=%s),扩预算重试一次", _rt)
+        try:
+            text, _usage = call_agent_json(
+                api_id=api_id, model=model, system_prompt=_SYSTEM_PROMPT,
+                user_prompt=_build_user_prompt(turn_text, pending[:6], window_chapters),
+                user_id=user_id, tool_schema=None, max_tokens=2400, timeout_sec=30,
+                agent_kind="anchor_reconcile", save_id=save_id, no_think=True,
+            )
+        except Exception as exc:
+            log.info("[anchor_reconcile] 重试失败(静默跳过): %s", exc)
+            return empty
+        if not (text or "").strip():
+            log.warning("[anchor_reconcile] 重试仍空,本回合放弃 LLM 判定")
+            return empty
 
     # want=None 先原样拿到:廉价模型(haiku/flash)常忽略「对象 vs 数组」要求、退回裸数组
     # [{...}]。若用 want=dict,顶层 list 会被过滤成 None → 锚点命中被静默吞掉(任务 A 退化)。

@@ -62,3 +62,15 @@ def test_reconciler_wired_after_intro_layer():
     assert i_log > 0, '可观测日志必须存在(268 静默不可诊断的教训)'
     seg = src[i_sig:i_sig + 800]
     assert '_mark_ceiling' in seg, '签名层同受防跳章上界约束'
+
+
+def test_judge_no_think_and_empty_guard_wired():
+    """268 真凶回归锁:判定器必须 no_think(思考模型无界思考吃光预算正文恒空)+
+    空正文不再静默当 reached=[](告警+扩预算重试一次)。"""
+    src = (ROOT / 'gm_serving' / 'anchor_reconcile.py').read_text(encoding='utf-8')
+    body = src[src.find('def _default_judge'):src.find('def _normalize_judge_result')]
+    assert body.count('no_think=True') >= 2, '首调+重试都必须禁深思'
+    assert '判定器返回空正文' in body and 'max_tokens=2400' in body
+    h = (ROOT / 'agents' / '_harness.py').read_text(encoding='utf-8')
+    assert '"thinking": {"type": "disabled"}' in h, '实测有效方言(op/deepseek-v4-pro)'
+    assert '拒绝 extra_body 参数' in h, '严格 provider 400 退参自愈'

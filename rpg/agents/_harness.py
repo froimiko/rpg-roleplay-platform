@@ -55,6 +55,7 @@ def call_agent_json(
     save_id: int | None = None,
     context_run_id: int | None = None,
     metadata_extra: dict | None = None,
+    no_think: bool = False,
 ) -> tuple[str, dict]:
     """三通道 dispatch,返回 (text, usage)。
 
@@ -103,9 +104,13 @@ def call_agent_json(
                 user_id, timeout_sec, max_tokens,
             )
         else:
+            # no_think:结构化微任务禁深思(268 实锤:思考模型对判定类 prompt 无界思考,
+            # 6000 token 预算全被 reasoning 吃光正文恒空)。thinking.disabled 为实测有效方言
+            # (op/deepseek-v4-pro 思考归零正文即出);严格 provider 400 拒参时 json_mode 内自愈退参。
             text, usage = _openai_compat_json_mode(
                 api_id, model, system_prompt, user_prompt,
                 user_id, timeout_sec, max_tokens,
+                extra_body=({"thinking": {"type": "disabled"}} if no_think else None),
             )
     _maybe_record_usage(
         user_id=user_id, save_id=save_id, context_run_id=context_run_id,
@@ -380,6 +385,7 @@ def _openai_compat_json_mode(
     user_id: int | None,
     timeout_sec: int,
     max_tokens: int,
+    extra_body: dict | None = None,
 ) -> tuple[str, dict]:
     """OpenAI / SiliconFlow / DashScope 等:response_format=json_object。
 
@@ -405,6 +411,8 @@ def _openai_compat_json_mode(
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
+    if extra_body:
+        body_dict.update(extra_body)
     body = json.dumps(body_dict).encode("utf-8")
     req = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
@@ -425,6 +433,14 @@ def _openai_compat_json_mode(
         usage = _openai_usage(payload.get("usage") or {})
         return text or "", usage
     except urllib.error.HTTPError as exc:
+        # extras(如 no_think 的 thinking.disabled)被严格 provider 以 400 拒 → 先退参重试一次
+        # (与 tools 形态自愈同思路,代价仅一次被拒未计费请求),不把参数拒绝误判成 response_format 不支持。
+        if exc.code == 400 and extra_body:
+            log.info(f"[_harness] {api_id} 拒绝 extra_body 参数(HTTP 400),退参重试")
+            return _openai_compat_json_mode(
+                api_id, model, system_prompt, user_prompt,
+                user_id, timeout_sec, max_tokens, extra_body=None,
+            )
         # 仅对 400(endpoint 不支持 response_format)降级重发;5xx/超时/连接错误一律向上抛 ——
         # 否则把上游瞬时故障误判为「特性不支持」→ 对非幂等 POST 重复请求(重复计费)且掩盖真因。
         if exc.code != 400:
