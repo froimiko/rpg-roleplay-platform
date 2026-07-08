@@ -256,6 +256,53 @@ def _t_set_tavern_persona(state: Any, args: dict) -> str:
     return f"persona 已更新(字段: {', '.join(touched)})"
 
 
+def _t_switch_tavern_persona_card(state: Any, args: dict) -> str:
+    """按名字/id 把玩家人设切换到用户已有的一张角色卡(双源写穿,面板与 GM 同步生效)。
+
+    与 set_tavern_persona(手写字段)互补:用户说「切换到XX」「换回我的XX卡」时用这个。
+    歧义(多张卡命中)不猜,列出候选让用户挑。"""
+    q = str(args.get("card") or "").strip()
+    if not q:
+        return "失败: 需提供角色卡名字或 id"
+    uid = _resolve_user_id(state, args)
+    if uid is None:
+        return "失败: 无法解析用户"
+    chat_id = state.data.get("_active_save_id")
+    if not chat_id:
+        return "失败: 无活跃对话"
+    from platform_app.db import connect, init_db
+    init_db()
+    with connect() as db:
+        rows = db.execute(
+            "select id, name, identity, role, background, appearance from character_cards "
+            "where user_id = %s order by updated_at desc nulls last limit 300",
+            (int(uid),),
+        ).fetchall() or []
+        card = None
+        if q.isdigit():
+            card = next((r for r in rows if int(r["id"]) == int(q)), None)
+        if card is None:
+            exact = [r for r in rows if str(r.get("name") or "").strip() == q]
+            if len(exact) == 1:
+                card = exact[0]
+            elif not exact:
+                sub = [r for r in rows if q in str(r.get("name") or "")]
+                if len(sub) == 1:
+                    card = sub[0]
+                elif len(sub) > 1:
+                    names = "、".join(f"{r['name']}(#{r['id']})" for r in sub[:8])
+                    return f"歧义: 多张卡命中「{q}」→ {names}。请让用户指明用哪张(可带 #id)。"
+        if card is None:
+            return f"失败: 卡库中找不到名为「{q}」的角色卡(可先用 list_my_personas 查看)"
+        from platform_app.tavern_persona import apply_persona_card_to_chat
+        fields = apply_persona_card_to_chat(db, int(uid), int(chat_id), dict(card))
+    # 内存 state 同步:本回合后续相位(呈现/记忆)立刻以新人设为准。
+    state.data.setdefault("player", {}).update(fields)
+    state.data.setdefault("tavern", {})["persona_card_id"] = int(card["id"])
+    return (f"已切换玩家角色卡 → 「{fields['name']}」(#{int(card['id'])})。"
+            f"面板与后续叙事都会以新人设为准;叙事上请自然过渡,不要重复宣告切换。")
+
+
 def _t_tavern_list_scripts(user_id: int, args: dict) -> str:
     """列当前用户拥有 + 订阅的剧本(只读)。返回 [{id, title}] 的 JSON。"""
     try:
@@ -726,6 +773,28 @@ def register_tavern_tools() -> None:
                 "required": [],
             },
             executor=_t_set_tavern_persona,
+            scope="save",
+            origins=_WRITE_ORIGINS,
+            destructive=False,
+        ))
+
+    if not registry.has("switch_tavern_persona_card"):
+        registry.register(ToolSpec(
+            name="switch_tavern_persona_card",
+            description=(
+                "把玩家的人设切换为用户卡库里【已有的一张角色卡】(按名字或 #id)。\n"
+                "用户说「切换到XX」「换成我的XX」「用XX这张卡」时必须调用本工具——"
+                "只在叙事里描写切换而不调用它,实际什么都不会变。\n"
+                "多张卡重名会返回候选列表,请让用户指明。手写新人设用 set_tavern_persona。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "card": {"type": "string", "description": "角色卡名字或数字 id"},
+                },
+                "required": ["card"],
+            },
+            executor=_t_switch_tavern_persona_card,
             scope="save",
             origins=_WRITE_ORIGINS,
             destructive=False,

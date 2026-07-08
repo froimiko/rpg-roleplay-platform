@@ -398,18 +398,41 @@ async def api_tavern_bind_card(
     with connect() as db:
         if not _require_tavern_save(db, chat_id, user_id):
             return _bad("无权操作该对话", 403)
+        _card_row = None
         if raw is not None:
             cid = int(raw)
-            if not db.execute(
-                "select 1 from character_cards where id = %s and user_id = %s", (cid, user_id),
-            ).fetchone():
+            _card_row = db.execute(
+                "select * from character_cards where id = %s and user_id = %s", (cid, user_id),
+            ).fetchone()
+            if not _card_row:
                 return _bad("无权使用该角色卡", 403)
-        # col 取自白名单(role 已校验),无注入风险。
-        db.execute(
-            f"update game_saves set {col} = %s, updated_at = now() "
-            "where id = %s and user_id = %s and save_kind = 'tavern'",
-            (cid, chat_id, user_id),
-        )
+        if role == "persona" and _card_row is not None:
+            # 双源病根修:GM 读 state.data['player'],只写 FK 列=面板变了 GM 不变(半切换)。
+            # 共享写穿层一次写全 FK+game_saves 快照+工作树快照(+snapshot_hash 失效)。
+            from platform_app.tavern_persona import apply_persona_card_to_chat
+            _fields = apply_persona_card_to_chat(db, user_id, chat_id, dict(_card_row))
+        else:
+            # col 取自白名单(role 已校验),无注入风险。
+            db.execute(
+                f"update game_saves set {col} = %s, updated_at = now() "
+                "where id = %s and user_id = %s and save_kind = 'tavern'",
+                (cid, chat_id, user_id),
+            )
+            _fields = None
+    # F#94 同款:本对话若是当前活跃档,内存 state 同步 + persist,当前在飞/下一回合立即生效。
+    if _fields is not None:
+        try:
+            import app as _ui
+            _pu, _active = _ui._resolve_persist_target(api_user)
+            if _active and int(_active) == int(chat_id):
+                _state = _ui._ensure_loaded(api_user)
+                _state.data.setdefault("player", {}).update(_fields)
+                _state.data.setdefault("tavern", {})["persona_card_id"] = cid
+                _state.save()
+                _ui._persist_runtime_checkpoint(_state, api_user)
+        except Exception as _exc:
+            import logging
+            logging.getLogger("rpg.routes.tavern").warning("[bind-card] runtime persist 跳过: %s", _exc)
     _invalidate_cache(api_user)
     return _json({"ok": True, "role": role, "card_id": cid})
 
