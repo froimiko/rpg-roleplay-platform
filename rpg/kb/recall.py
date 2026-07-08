@@ -112,6 +112,10 @@ class RecallResult:
     tokens_used: int = 0
 
 
+# 原文片段近进度窗宽:当前章与其前3章优先(与阶段摘要/章节事实的「跟随进度」语义对齐);
+# 窗口内不足4条才向更早章补位。
+CHUNK_RECENT_WINDOW = 4
+
 _KN_COLS = ("node_kind", "node_key", "name", "subtype", "body",
             "first_revealed_chapter", "importance", "aliases", "reveal_anchor_key")
 
@@ -208,12 +212,24 @@ def recall(save_id: int, query: str, *, mode: str = "none", token_budget: int = 
             picked.append(c)
             used += cost
 
-        # 原文片段(章窗口,复用 _search_chunks)
+        # 原文片段(章窗口,复用 _search_chunks)。
+        # 近进度窗口优先(save 268 实锤:原来 chapter_min=None 只有防剧透上界,全书 ≤ceil
+        # 纯相似度排序,旧章大剧情恒赢当前章——「阶段摘要/章节事实都到 17 章了,原文片段
+        # 还是 6-9」)。两级:先取 [ceil-窗宽+1, ceil] 当前窗口;不足再从更早章补位
+        # (玩家问旧事仍召得到,片段自带章标签,GM 不会误读为当前进度)。
         chunk_rows = []
         if _script_id:
             try:
                 from platform_app.knowledge._search import _search_chunks
-                chunk_rows = _search_chunks(_db, int(_script_id), tokens, None, ceil_chap, 4, user_id=_owner_id) or []
+                _floor = max(1, ceil_chap - CHUNK_RECENT_WINDOW + 1)
+                chunk_rows = _search_chunks(
+                    _db, int(_script_id), tokens, _floor, ceil_chap, 4, user_id=_owner_id) or []
+                if len(chunk_rows) < 4 and _floor > 1:
+                    _seen = {r.get("id") for r in chunk_rows}
+                    _older = _search_chunks(
+                        _db, int(_script_id), tokens, None, _floor - 1,
+                        4 - len(chunk_rows), user_id=_owner_id) or []
+                    chunk_rows += [r for r in _older if r.get("id") not in _seen]
             except Exception as exc:
                 log.debug("[recall] chunks 跳过: %s", exc)
 
