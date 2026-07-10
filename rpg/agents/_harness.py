@@ -121,6 +121,52 @@ def call_agent_json(
     return text, usage
 
 
+def call_agent_json_guarded(
+    api_id: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    user_id: int | None,
+    *,
+    log_tag: str = "agent",
+    retry_max_tokens: int | None = None,
+    **kw,
+) -> tuple[str, dict]:
+    """call_agent_json + 空正文护栏(268 实锤范式,与 recorder.record_turn 同款)。
+
+    思考模型对结构化微任务会无界思考吃光 max_tokens 正文恒空;空正文绝不静默当
+    「没有结果」——第一跳空 → log.warning(带 reasoning_tokens 证据)+ 扩预算重试一次;
+    重试仍空 → 原样返回空文本(调用方保留各自的空处理语义),但日志已留痕。
+    重试自身抛异常 → 不向上抛,返回第一跳的空结果(不比不加护栏更糟)。
+    第一跳抛异常则照常向上抛(与裸 call_agent_json 行为一致)。
+    """
+    # 内层统一关键字传参:既有测试/桩以 `lambda **kwargs` 形态替换 call_agent_json
+    # (调用点原本就是关键字传参),护栏薄层不得把调用形状降级成位置参数。
+    text, usage = call_agent_json(
+        api_id=api_id, model=model, system_prompt=system_prompt,
+        user_prompt=user_prompt, user_id=user_id, **kw)
+    if (text or "").strip():
+        return text, usage
+    _rt = int((usage or {}).get("reasoning_tokens") or 0)
+    _mt = int(kw.get("max_tokens") or 1024)
+    _retry_mt = int(retry_max_tokens or max(_mt * 2, 1200))
+    log.warning("[%s] uid=%s %s·%s 返回空正文(reasoning_tokens=%s),扩预算(%s→%s)重试一次",
+                log_tag, user_id, api_id, model, _rt, _mt, _retry_mt)
+    kw2 = dict(kw)
+    kw2["max_tokens"] = _retry_mt
+    try:
+        text2, usage2 = call_agent_json(
+            api_id=api_id, model=model, system_prompt=system_prompt,
+            user_prompt=user_prompt, user_id=user_id, **kw2)
+    except Exception as exc:
+        log.warning("[%s] uid=%s 空正文重试调用失败(%s: %s),按空结果返回",
+                    log_tag, user_id, type(exc).__name__, exc)
+        return text, usage
+    if not (text2 or "").strip():
+        log.warning("[%s] uid=%s 重试仍空正文,按空结果返回(调用方自行处理)", log_tag, user_id)
+    return text2, usage2
+
+
 def _maybe_record_usage(
     *,
     user_id: int | None,

@@ -578,7 +578,7 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
     # (除非 pre 查不到该行,api_id/model 沿用段0的 None, None,下面自然跳过 LLM 两段)。
 
     if api_id and model:
-        from agents._harness import call_agent_json
+        from agents._harness import call_agent_json_guarded
         # ① 调度(LLM-A):结构化意图
         try:
             sys_p, usr_p = S.build_scheduler_prompts(
@@ -587,9 +587,11 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
             for _att in (1, 2):  # flash 结构化产出必配验收+重试(铁律)
                 # 500k 浸泡实锤:800 顶格截断率 40/68 → 66% 拍静默。中文结构化 JSON
                 # (4人cast+threads+facts)800 装不下,扩容是根因修,重试只是保险丝。
-                text, _u = call_agent_json(api_id, model, sys_p, usr_p, user_id,
-                                           tool_schema=None, max_tokens=1600, timeout_sec=60,
-                                           agent_kind="rath_scheduler")
+                # 结构化微任务禁深思(268 实锤族)+空正文护栏
+                text, _u = call_agent_json_guarded(api_id, model, sys_p, usr_p, user_id,
+                                                   tool_schema=None, max_tokens=1600, timeout_sec=60,
+                                                   no_think=True, agent_kind="rath_scheduler",
+                                                   log_tag="rath_scheduler")
                 data = S.parse_scheduler_output(text or "")
                 if data:
                     break
@@ -640,9 +642,11 @@ def tick_experiment(exp_id: int, *, manual: bool = False) -> dict:
                 sys_p, usr_p = S.build_director_prompts(sim, interaction, elapsed_hint=elapsed_hint)
                 scene = None
                 for _att in (1, 2):  # flash 结构化产出必配验收+重试(铁律)
-                    text, _u = call_agent_json(api_id, model, sys_p, usr_p, user_id,
-                                               tool_schema=None, max_tokens=1400, timeout_sec=60,
-                                               agent_kind="rath_director")
+                    # 结构化微任务禁深思(268 实锤族)+空正文护栏
+                    text, _u = call_agent_json_guarded(api_id, model, sys_p, usr_p, user_id,
+                                                       tool_schema=None, max_tokens=1400, timeout_sec=60,
+                                                       no_think=True, agent_kind="rath_director",
+                                                       log_tag="rath_director")
                     scene = S.validate_director_output(text or "", interaction, sim,
                                                        world_context=world_context)
                     if scene:

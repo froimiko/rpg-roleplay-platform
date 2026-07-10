@@ -522,7 +522,8 @@ def llm_structure_description(
 
     log = get_logger(__name__)
     try:
-        from agents._harness import call_agent_json, resolve_api_and_model
+        # 结构化微任务禁深思(268 实锤族)+空正文护栏
+        from agents._harness import call_agent_json_guarded, resolve_api_and_model
     except Exception as exc:  # pragma: no cover - harness 不可用时静默降级
         log.warning(f"[card-import] LLM 拆分不可用: {exc}")
         return {}
@@ -562,8 +563,9 @@ def llm_structure_description(
     )
     user = f"角色档案原文:\n\n{text[:8000]}"
     try:
-        out, _usage = call_agent_json(
+        out, _usage = call_agent_json_guarded(
             api_id, model, system, user, user_id,
+            log_tag="card_import", no_think=True,
             tool_schema=schema, max_tokens=2000,
             agent_kind="card_import", save_id=save_id,
         )

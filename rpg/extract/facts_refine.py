@@ -86,10 +86,12 @@ def refine_chapter(db, script_id: int, chapter_index: int, user_id: int,
         (int(script_id), int(chapter_index)),
     ).fetchone()
     sys_p, usr_p = build_refine_prompts(str((trow or {}).get("title") or ""), content)
-    from agents._harness import call_agent_json
-    text, _usage = call_agent_json(
+    from agents._harness import call_agent_json_guarded
+    # 结构化微任务禁深思(268 实锤族)+空正文护栏
+    text, _usage = call_agent_json_guarded(
         api_id, model, sys_p, usr_p, user_id,
         tool_schema=None, max_tokens=300, timeout_sec=45,
+        no_think=True, log_tag="facts_refine",
     )
     return validate_refined(text or "", content)
 

@@ -411,7 +411,7 @@ def _make_harness_caller(
     出问题(无凭证/import 失败)→ 返回 None,maybe_trigger 跳过。
     """
     try:
-        from agents._harness import call_agent_json, resolve_api_and_model
+        from agents._harness import call_agent_json_guarded, resolve_api_and_model
     except Exception:
         return None
 
@@ -428,7 +428,8 @@ def _make_harness_caller(
         prev_failure: list[tuple[str, bool, str]] | None = None,
     ) -> dict:
         user_prompt = _build_swan_user_prompt(snapshot, prev_failure)
-        text, _usage = call_agent_json(
+        # 结构化微任务禁深思(268 实锤族)+ 空正文护栏:单次强 schema 提议同样会被思考模型吃光预算
+        text, _usage = call_agent_json_guarded(
             api_id=api_id,
             model=model,
             system_prompt=_SWAN_SYSTEM_PROMPT,
@@ -438,6 +439,8 @@ def _make_harness_caller(
             max_tokens=600,
             timeout_sec=20,
             agent_kind="black_swan",
+            no_think=True,
+            log_tag="black_swan",
         )
         # text 来自 tool_use input JSON(anthropic)或 JSON 字符串(其它通道)
         try:

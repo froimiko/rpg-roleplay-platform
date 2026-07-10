@@ -605,15 +605,17 @@ async def api_tavern_ai_reply(
     )
     try:
         from app import _get_gm
-        from agents._harness import call_agent_json
+        # 结构化微任务禁深思(268 实锤族)+空正文护栏
+        from agents._harness import call_agent_json_guarded
         gm = _get_gm(api_user)
         api_id = getattr(gm, "api_id", None)
         backend = getattr(gm, "_backend", None)
         model = getattr(backend, "model_name", None)
         if not (api_id and model):
             return _bad("未配置可用模型", 400)
-        text, _usage = call_agent_json(
+        text, _usage = call_agent_json_guarded(
             api_id, model, _AI_REPLY_SYS, user_block, user_id,
+            no_think=True, log_tag="tavern_ai_reply",
             max_tokens=400, timeout_sec=30, agent_kind="tavern_ai_reply", save_id=chat_id,
         )
     except Exception as exc:
@@ -708,15 +710,17 @@ async def api_tavern_autotitle(
     excerpt = f"玩家:{str(user_msg)[:500]}\n回应:{str(asst_msg)[:500]}"
     try:
         from app import _get_gm
-        from agents._harness import call_agent_json
+        # 结构化微任务禁深思(268 实锤族)+空正文护栏
+        from agents._harness import call_agent_json_guarded
         gm = _get_gm(api_user)
         api_id = getattr(gm, "api_id", None)
         backend = getattr(gm, "_backend", None)
         model = getattr(backend, "model_name", None)
         if not (api_id and model):
             return _json({"ok": True, "title": None, "skipped": "no_model"})
-        text, _usage = call_agent_json(
+        text, _usage = call_agent_json_guarded(
             api_id, model, _TITLE_SYS, excerpt, user_id,
+            no_think=True, log_tag="tavern_title",
             max_tokens=64, timeout_sec=20, agent_kind="tavern_title", save_id=chat_id,
         )
     except Exception as exc:  # 标题生成失败绝不影响对话:吞掉,返回 skipped

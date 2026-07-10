@@ -461,12 +461,13 @@ def _call_llm_with_retry(
     if _backend_inject is not None:
         return _legacy_backend_retry(_backend_inject, system_prompt, user_prompt)
 
-    from agents._harness import call_agent_json
+    from agents._harness import call_agent_json_guarded
 
     _last_err: Exception | None = None
     # 第一次
     try:
-        text, usage = call_agent_json(
+        # 结构化微任务禁深思(268 实锤族)+ 空正文护栏(下方自身的解析失败二次修复结构保持不变)
+        text, usage = call_agent_json_guarded(
             api_id=api_id, model=model,
             system_prompt=system_prompt, user_prompt=user_prompt,
             user_id=user_id,
@@ -475,6 +476,8 @@ def _call_llm_with_retry(
             agent_kind="phase_digest",
             save_id=save_id,
             metadata_extra={"phase_index": phase_index} if phase_index is not None else None,
+            no_think=True,
+            log_tag="phase_digest",
         )
         parsed = _parse_json(text)
         if parsed is not None:
@@ -487,12 +490,15 @@ def _call_llm_with_retry(
         system_prompt + "\n\n【重要】上一次输出无法解析为 JSON。请严格按上文的"
         "JSON schema 重新输出,不要 markdown,不要解释,直接以 `{` 开始。"
     )
-    text2, usage2 = call_agent_json(
+    # 结构化微任务禁深思(268 实锤族)+ 空正文护栏(此为解析失败后的修复重调,结构不变)
+    text2, usage2 = call_agent_json_guarded(
         api_id=api_id, model=model,
         system_prompt=repaired_system, user_prompt=user_prompt,
         user_id=user_id,
         tool_schema=None,
         max_tokens=2400,
+        no_think=True,
+        log_tag="phase_digest",
     )
     parsed2 = _parse_json(text2)
     if parsed2 is not None:

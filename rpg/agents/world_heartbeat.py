@@ -307,9 +307,10 @@ def run_heartbeat_tick(
         materials = _build_materials(state_data, pending_anchors)
         system_prompt, user_prompt = _build_prompts(materials)
 
-        from agents._harness import call_agent_json
+        from agents._harness import call_agent_json_guarded
         try:
-            text, usage = call_agent_json(
+            # 结构化微任务禁深思(268 实锤族)+ 空正文护栏(下方 dict 形态打捞逻辑保持不变)
+            text, usage = call_agent_json_guarded(
                 api_id=api_id,
                 model=model,
                 system_prompt=system_prompt,
@@ -319,6 +320,8 @@ def run_heartbeat_tick(
                 max_tokens=400,
                 timeout_sec=timeout_sec,
                 agent_kind="world_heartbeat",
+                no_think=True,
+                log_tag="world_heartbeat",
             )
         except Exception as exc:
             log.info("[world_heartbeat] LLM 调用失败,跳过: %s", exc)

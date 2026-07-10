@@ -81,7 +81,7 @@ def enrich_script_worldbook(script_id: int, user_id: int, *, pattern: str,
                             apply: bool = False) -> dict[str, Any]:
     from platform_app.db import connect, init_db
     init_db()
-    from agents._harness import call_agent_json
+    from agents._harness import call_agent_json_guarded
     from agents.recorder import _resolve_recorder_api_and_model
     rapi, rmodel = _resolve_recorder_api_and_model(user_id, api_id, model)
     if not rapi or not rmodel:
@@ -107,8 +107,10 @@ def enrich_script_worldbook(script_id: int, user_id: int, *, pattern: str,
                       f"【原文材料】\n{material}")
             content = None
             for _attempt in range(3):  # flash 随机性:验收拒最多重试两次
-                text, _u = call_agent_json(rapi, rmodel, _SYSTEM, user_p, user_id,
-                                           tool_schema=None, max_tokens=700, timeout_sec=60)
+                # 结构化微任务禁深思(268 实锤族)+空正文护栏
+                text, _u = call_agent_json_guarded(rapi, rmodel, _SYSTEM, user_p, user_id,
+                                                   tool_schema=None, max_tokens=700, timeout_sec=60,
+                                                   no_think=True, log_tag="worldbook_enrich")
                 content = validate_enriched(text or "")
                 if content:
                     break

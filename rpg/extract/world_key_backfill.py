@@ -449,7 +449,7 @@ def _make_llm_call_fn(
     解析失败(无可用 api_id/model)→ 返回 None,调用方跳过 LLM 层(不崩)。
     """
     try:
-        from agents._harness import call_agent_json
+        from agents._harness import call_agent_json_guarded
         from agents.recorder import _resolve_recorder_api_and_model
     except Exception:
         return None
@@ -462,7 +462,8 @@ def _make_llm_call_fn(
         return None
 
     def _call(system_prompt: str, user_prompt: str) -> str:
-        text, _usage = call_agent_json(
+        # 结构化微任务禁深思(268 实锤族)+空正文护栏
+        text, _usage = call_agent_json_guarded(
             api_id=api_id,
             model=model,
             system_prompt=system_prompt,
@@ -471,6 +472,8 @@ def _make_llm_call_fn(
             max_tokens=400,
             timeout_sec=30,
             agent_kind="world_key_confirm",
+            no_think=True,
+            log_tag="world_key_confirm",
         )
         return text
 

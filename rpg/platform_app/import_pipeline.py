@@ -1003,13 +1003,16 @@ def _stage_story_phase_llm(ctl: JobController, user_id: int, script_id: int) -> 
         f"章节摘要:\n{lines}"
     )
     try:
-        from agents._harness import call_agent_json
-        raw, last = call_agent_json(
+        # 结构化微任务禁深思(268 实锤族)+空正文护栏
+        from agents._harness import call_agent_json_guarded
+        raw, last = call_agent_json_guarded(
             api_id, model,
             "你是小说剧情分析器,只输出 JSON 数组。",
             prompt,
             user_id,
+            log_tag="story_phase",
             max_tokens=400,
+            no_think=True,
             agent_kind="import_pipeline",
         )
         from .usage import compute_cost
@@ -1367,8 +1370,9 @@ def _stage_cards(ctl: JobController, user_id: int, script_id: int, entities: lis
             + context
         )
         try:
-            from agents._harness import call_agent_json
-            raw, last = call_agent_json(
+            # 结构化微任务禁深思(268 实锤族)+空正文护栏
+            from agents._harness import call_agent_json_guarded
+            raw, last = call_agent_json_guarded(
                 api_id, model,
                 "你是角色卡提取器,严格判断 name 是否为真实角色人名。只输出 JSON。"
                 "【虚构铁律】本作是虚构小说,即使角色与真实历史人物同名,所有字段也"
@@ -1376,7 +1380,9 @@ def _stage_cards(ctl: JobController, user_id: int, script_id: int, entities: lis
                 "(如『活捉单于』『封冠军侯』这类片段里没有的内容),给不出片段依据就留空。",
                 prompt,
                 user_id,
+                log_tag="card_extract",
                 max_tokens=700,
+                no_think=True,
                 agent_kind="import_pipeline",
             )
             data = _parse_json(raw)
@@ -1514,13 +1520,16 @@ def _stage_worldbook(ctl: JobController, user_id: int, script_id: int) -> int:
         "数量上限 20。\n\n" + seed
     )
     try:
-        from agents._harness import call_agent_json
-        raw, last = call_agent_json(
+        # 结构化微任务禁深思(268 实锤族)+空正文护栏
+        from agents._harness import call_agent_json_guarded
+        raw, last = call_agent_json_guarded(
             api_id, model,
             "你是世界书编辑，只输出 JSON 数组。",
             prompt,
             user_id,
+            log_tag="worldbook_extract",
             max_tokens=2000,
+            no_think=True,
             agent_kind="import_pipeline",
         )
         from .usage import compute_cost
@@ -1824,13 +1833,14 @@ def _stage_npc_voices(user_id: int, script_id: int, *, max_npc: int = 20, only_e
             f"}}"
         )
         try:
-            from agents._harness import call_agent_json
-            raw, last = call_agent_json(
+            # 结构化微任务禁深思(268 实锤族)+空正文护栏
+            from agents._harness import call_agent_json_guarded
+            raw, last = call_agent_json_guarded(
                 api_id, model,
                 "你是 RPG 角色档案抽取器,只输出结构化 JSON,不解释。"
                 "【虚构铁律】本作是虚构小说,即使角色与真实历史人物同名,也**只能依据上面给的原文片段**"
                 "总结其性格/说话风格,严禁掺入你自己知道的真实史实/生平/百科;片段不足就写概括性短语,不要脑补。",
-                prompt, user_id, max_tokens=500,
+                prompt, user_id, log_tag="npc_voice", max_tokens=500, no_think=True,
                 agent_kind="import_pipeline",
             )
             data = _parse_json(raw)

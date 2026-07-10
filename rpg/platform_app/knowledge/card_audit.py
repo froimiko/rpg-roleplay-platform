@@ -165,7 +165,8 @@ def audit_character_cards(user_id: int, script_id: int, api_id: str = "", model:
                 api_id=api_id, model=model,
                 credential_api_id=import_pipeline._credential_api_id_for(api_id))
 
-    from agents._harness import call_agent_json
+    # 结构化微任务禁深思(268 实锤族)+空正文护栏
+    from agents._harness import call_agent_json_guarded
     chunks = [cards[i:i + _AUDIT_CHUNK] for i in range(0, len(cards), _AUDIT_CHUNK)]
     total = len(chunks)
     cards_by_id = {int(c["id"]): c for c in cards}
@@ -176,8 +177,9 @@ def audit_character_cards(user_id: int, script_id: int, api_id: str = "", model:
     for idx, chunk in enumerate(chunks):
         n = len(chunk)
         try:
-            text, _usage = call_agent_json(
+            text, _usage = call_agent_json_guarded(
                 api_id, model, _AUDIT_SYSTEM, _build_user_prompt(title, chunk), user_id,
+                log_tag="card_audit", no_think=True,
                 max_tokens=_AUDIT_MAX_TOKENS, timeout_sec=_AUDIT_TIMEOUT, agent_kind="card_audit",
                 metadata_extra={"script_id": script_id, "cards": n, "chunk": idx, "chunks": total},
             )
