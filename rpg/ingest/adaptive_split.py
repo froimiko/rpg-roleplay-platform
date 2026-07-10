@@ -43,6 +43,9 @@ _PRESET_RULES: list[tuple[str, str]] = [
 ]
 _DIVIDER_ONLY = re.compile(r"^[-=*_─━─]{4,}\s*$")
 
+# gap 枚举上限:跳号超此值只记一条汇总,防乱码巨号章号撑爆内存(见 fuse)。
+_MAX_GAP_SPAN = 5000
+
 _CN_DIGIT = {
     "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
     "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
@@ -335,8 +338,15 @@ def fuse(best: list[dict], text: str) -> tuple[list[dict], list[dict]]:
         if seq is None:
             continue
         if prev is not None and seq > prev + 1:
-            for missing in range(prev + 1, seq):
-                gaps.append({"after_chapter": prev, "expected_index": missing, "recovered": False})
+            # gap 枚举上限:乱码/对抗标题可能被 extract_seq 解成巨号(如「第20240101章」),
+            # 无界 range 会分配上千万 dict 撑爆内存(DoS)。跳号超 _MAX_GAP_SPAN 只记一条汇总。
+            span = seq - prev - 1
+            if span > _MAX_GAP_SPAN:
+                gaps.append({"after_chapter": prev, "expected_index": prev + 1,
+                             "recovered": False, "gap_span": span, "truncated": True})
+            else:
+                for missing in range(prev + 1, seq):
+                    gaps.append({"after_chapter": prev, "expected_index": missing, "recovered": False})
         if prev is None or seq > prev:
             prev = seq
     return fused, gaps

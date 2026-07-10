@@ -19,6 +19,7 @@ import os
 import secrets
 from pathlib import Path
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -126,6 +127,11 @@ def decrypt_api_key(blob: bytes | memoryview | None, user_id: int, api_id: str) 
     try:
         key = _derive_user_key(user_id, api_id)
         return AESGCM(key).decrypt(nonce, ct, aad).decode("utf-8")
+    except InvalidTag:
+        # 非空 blob 但 GCM 认证失败=篡改/损坏/主密钥变更,与「无值」语义不同。
+        # 仍返 "" 保持调用方 fallback 契约,但告警使其可观测(不含任何密钥/明文字节)。
+        log.warning("[crypto] decrypt_api_key GCM 认证失败(篡改/损坏/密钥变更) user=%s api=%s", user_id, api_id)
+        return ""
     except Exception:
         return ""
 

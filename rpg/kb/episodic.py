@@ -155,7 +155,9 @@ def retrieve_episodic(
 def _excerpt_around_match(text: str, query_text: str, *, window: int = 120) -> str:
     """取匹配点附近 ±window 字摘录(注入预算控制)。找不到匹配点(理论不该发生,
     因为调用方已按打分筛过)退开头 2*window 字。"""
-    grams = sorted(_query_grams(query_text), key=len, reverse=True)
+    # 同长 gram 加字典序次序键:纯 key=len 让同长 gram 留在 set 迭代序里,受 str 哈希
+    # 随机化影响 → 同一输入跨进程摘录锚点漂移(不确定)。(-len, gram) 使锚定确定。
+    grams = sorted(_query_grams(query_text), key=lambda g: (-len(g), g))
     pos = -1
     for g in grams:
         pos = text.find(g)

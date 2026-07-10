@@ -45,7 +45,14 @@ def _credential_aliases(api_id: str) -> list[str]:
 
 
 def _ip_is_internal(ip_str: str) -> bool:
-    """判断单个 IP 是否私有/本地/保留(含 IPv4-mapped IPv6)。"""
+    """判断单个 IP 是否私有/本地/保留(含 IPv4-mapped/6to4/NAT64 内嵌 IPv4)。
+
+    双层判定:①显式钉死的封锁网段(版本无关)②解释器 is_private/is_reserved 标志。
+    只用后者不够 —— CPython 3.10→3.14 间对 6to4/NAT64/Teredo/文档段的分类有过变化,
+    OSS 自托管跑任意解释器版本时,攻击者域名解析到 2002:a00:1::(6to4 包 10.0.0.1)或
+    64:ff9b::a00:1(NAT64 包 10.0.0.1)可能穿透某些版本的标志判定。显式钉死使判定
+    在各版本上一致且不弱于任何版本的标志判定(只紧不松)。
+    """
     import ipaddress
     try:
         ip = ipaddress.ip_address(ip_str)
@@ -55,11 +62,28 @@ def _ip_is_internal(ip_str: str) -> bool:
     mapped = getattr(ip, "ipv4_mapped", None)
     if mapped is not None:
         ip = mapped
-    _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+    # 6to4(2002::/16)/NAT64(64:ff9b::/96):外壳里藏内嵌 IPv4,拆出来按 IPv4 判(防私有 v4 藏进 v6)
+    if isinstance(ip, ipaddress.IPv6Address):
+        packed = ip.packed
+        if packed[:2] == b"\x20\x02":              # 6to4:内嵌 v4 在 bytes 2..6
+            if _ip_is_internal(str(ipaddress.IPv4Address(packed[2:6]))):
+                return True
+        if int(ip) >> 32 == 0x0064FF9B:            # NAT64 64:ff9b::/96:内嵌 v4 在末 4 字节
+            if _ip_is_internal(str(ipaddress.IPv4Address(packed[12:16]))):
+                return True
+    _EXPLICIT_V4 = (
+        "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
+        "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16",
+        "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4",
+    )
+    _EXPLICIT_V6 = ("::1/128", "fc00::/7", "fe80::/10", "2001::/32", "2001:db8::/32")
+    nets = _EXPLICIT_V4 if isinstance(ip, ipaddress.IPv4Address) else _EXPLICIT_V6
+    for cidr in nets:
+        if ip in ipaddress.ip_network(cidr):
+            return True
     return bool(
         ip.is_private or ip.is_loopback or ip.is_link_local
         or ip.is_reserved or ip.is_multicast or ip.is_unspecified
-        or (isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT_NETWORK)
     )
 
 

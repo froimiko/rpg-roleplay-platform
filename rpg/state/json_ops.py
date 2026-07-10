@@ -47,9 +47,15 @@ def _extract_json_state_ops(text: str) -> tuple[list[dict], str]:
                     # 不是 state op JSON，保留原文（可能是其它结构化数据）
                     stripped_parts.append(m.group(0))
             elif isinstance(parsed, list):
+                found_op = False
                 for item in parsed:
                     if isinstance(item, dict) and ("op" in item or "path" in item or "question" in item):
                         ops.append(item)
+                        found_op = True
+                if not found_op:
+                    # 数组里没有任何 op → 是正文里合法的 JSON 数组(如 ```json [1,2,3]```),
+                    # 保留原文,别静默吞掉(与 dict 分支同口径)。
+                    stripped_parts.append(m.group(0))
         except Exception:
             # 解析失败:若围栏内容明显是 ops(含 op/path/question 标记),仍从可见文本
             # 剥离 —— 玩家不该看到畸形的 ops JSON(GM 流式产出有时会残缺,如 `[,,`)。

@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.67.5] - 2026-07-10 (@ ffe34a620)
+
+### Fixed
+- **拆库审计回灌五处确定性 bug**(把 6 个模块抽成独立 MIT 库时,逐函数审计出的主仓真 bug 一并根修):①`state/json_ops.py` 剥 ops 时,围栏内**非 ops 的 JSON 数组**(如正文里 ```json [1,2,3]``` )被静默吞掉——list 分支缺 dict 分支那样的回写,合法数组随 ops 一起蒸发;②`agents/timeline_narrative_guard.py` 套路检测的 `如同?` 正则命中「如果/例如/假如/如今」里的孤立「如」→ 非比喻误判成投石套路;③`kb/episodic.py` 摘录锚点用 `sorted(key=len)`,同长 gram 留在 set 迭代序里受 str 哈希随机化影响→同一输入跨进程摘录漂移(加字典序 tiebreak 定死);④`ingest/adaptive_split.py` 跳章 gap 用无界 `range(prev+1, seq)` 枚举,乱码标题被解析成巨号(如「第20240101章」)会分配上千万 dict = **真 DoS**(加 `_MAX_GAP_SPAN=5000` 上限,超限只记一条汇总);⑤`platform_app/user_credentials.py` `_ip_is_internal` 纯靠解释器 `is_private`/`is_reserved` 标志(6to4/NAT64/Teredo 分类在 CPython 版本间变动)→ 显式钉死封锁网段 + 拆 6to4/NAT64 内嵌 IPv4(生产 3.12 无洞,属自托管版本可移植性加固,只紧不松)。另 `utils/crypto.py` `decrypt_api_key` 对篡改密文静默返 ""(与「无值」不可辨)→ 加 `InvalidTag` 分支告警(不含密钥/明文字节),行为契约仍返 "" 不破调用方 fallback。回归测试 tests/unit/test_extraction_bug_fixes.py。
+
 ## [1.67.3] - 2026-07-10 (@ 2d3f133c9)
 
 ### Fixed
