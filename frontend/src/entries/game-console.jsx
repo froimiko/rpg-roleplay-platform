@@ -1761,6 +1761,7 @@ function App() {
           hasError={hasError}
           saveId={(activeSave && activeSave.id) || (game && game._raw && game._raw.save_id) || null}
           onRetry={onRetry} onShowSse={onShowSse}
+          memory={(game && game.memory) || null}
         /> : (
           retryFailed ? (
             <div className="gc-chat" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>

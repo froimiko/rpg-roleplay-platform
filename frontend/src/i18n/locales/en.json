@@ -3269,7 +3269,9 @@
         "delete_failed": "Delete failed",
         "edit_tip": "Edit this message",
         "edit_saved": "Message updated",
-        "edit_failed": "Edit failed"
+        "edit_failed": "Edit failed",
+        "copy_with_memory": "Also copy long-term memory",
+        "copy_ask_aria": "Copy options"
       },
       "delete_modal": {
         "eyebrow": "Danger",

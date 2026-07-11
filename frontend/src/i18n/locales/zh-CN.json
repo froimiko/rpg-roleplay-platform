@@ -3360,7 +3360,9 @@
         "delete_failed": "删除失败",
         "edit_tip": "编辑此消息",
         "edit_saved": "消息已更新",
-        "edit_failed": "编辑失败"
+        "edit_failed": "编辑失败",
+        "copy_with_memory": "同时复制长记忆",
+        "copy_ask_aria": "复制选项"
       },
       "delete_modal": {
         "eyebrow": "危险操作",

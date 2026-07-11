@@ -539,14 +539,14 @@ function MsgActions({ text, ts, msgIndex, totalMsgs, commitId, saveId, role, met
           <Icon name={copied ? "check" : "file"} size={12} />
         </button>
         {copyAskOpen && (
-          <div className="gc-copy-ask" role="dialog" aria-label="复制选项">
+          <div className="gc-copy-ask" role="dialog" aria-label={t('game.app.msg.copy_ask_aria')}>
             <label className="gc-copy-ask-label">
               <input type="checkbox" checked={copyWithMemory} onChange={(e) => setCopyWithMemory(e.target.checked)} />
-              {" "}同时复制长记忆
+              {" "}{t('game.app.msg.copy_with_memory')}
             </label>
             <div className="gc-copy-ask-actions">
-              <button className="btn ghost" onClick={() => { doCopy(copyWithMemory); }}>复制</button>
-              <button className="iconbtn" onClick={() => setCopyAskOpen(false)} aria-label="取消">×</button>
+              <button className="btn ghost" onClick={() => { doCopy(copyWithMemory); }}>{t('game.app.msg.copy')}</button>
+              <button className="iconbtn" onClick={() => setCopyAskOpen(false)} aria-label={t('common.close')}><Icon name="close" size={11} /></button>
             </div>
           </div>
         )}
@@ -745,7 +745,7 @@ function renderNarrativeWithInlineTools(rawText, toolOps, renderTool, streaming,
 
 // 酒馆模式复用:speakerName/speakerAvatar/tag 可选覆盖默认的 GM/主代理 标签。
 // 不传时与 Game Console 行为完全一致(默认 tag="GM", subtitle="主代理")。
-function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, thinking, speakerName, speakerAvatar, tag, hideMeta, meta, images, toolOps, renderTool }) {
+function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, thinking, speakerName, speakerAvatar, tag, hideMeta, meta, images, toolOps, renderTool, memoryText }) {
   const { t } = useTranslation();
   const displayText = stripStateOpsForDisplay(text);
   // 内联编辑状态:点击 MsgActions 的编辑按钮时通过事件激活
@@ -877,13 +877,13 @@ function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, think
           </>
         )}
       </div>
-      {!streaming && <MsgActions text={displayText} ts={ts || "—"} msgIndex={msgIndex} saveId={saveId} commitId={commitId} role="assistant" meta={meta} />}
+      {!streaming && <MsgActions text={displayText} ts={ts || "—"} msgIndex={msgIndex} saveId={saveId} commitId={commitId} role="assistant" meta={meta} memoryText={memoryText} />}
     </div>);
 
 }
 
 // 酒馆模式复用:speakerName/tag 可选覆盖默认「玩家」标签(persona 名等)。
-function PlayerBlock({ text, ts, attachments, msgIndex, saveId, commitId, speakerName, speakerAvatar, tag, hideMeta }) {
+function PlayerBlock({ text, ts, attachments, msgIndex, saveId, commitId, speakerName, speakerAvatar, tag, hideMeta, memoryText }) {
   const { t } = useTranslation();
   const tagLabel = tag || speakerName || t('game.app.narrative.player');
   // speakerAvatar 兼容:若为 URL(/ 或 http 开头)则渲 AvatarImg,否则保持首字母 span(向后兼容)。
@@ -914,7 +914,7 @@ function PlayerBlock({ text, ts, attachments, msgIndex, saveId, commitId, speake
           </div>
         }
       </div>
-      <MsgActions text={text} ts={ts} msgIndex={msgIndex} saveId={saveId} commitId={commitId} role="user" />
+      <MsgActions text={text} ts={ts} msgIndex={msgIndex} saveId={saveId} commitId={commitId} role="user" memoryText={memoryText} />
     </div>);
 
 }
@@ -1122,7 +1122,7 @@ function SaveImagesStrip({ saveId }) {
   );
 }
 
-function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, hasError, errorMessage, saveId, onRetry, onShowSse }) {
+function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, hasError, errorMessage, saveId, onRetry, onShowSse, memory }) {
   const { t } = useTranslation();
   const ref = useRefA(null);
   // task 21：实战存档 history 可能有 100+ 条；一次性渲染整个数组 + 每次 setGame
@@ -1134,6 +1134,19 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
   const visibleStart = Math.max(0, totalLen - HISTORY_WINDOW - extra);
   const hiddenCount = visibleStart;
   const visible = totalLen > 0 ? history.slice(visibleStart) : [];
+
+  // PR#65: 组装「长记忆」复制文本(save 级,非每条消息级)。取 SearchModal 同一数据面:
+  // memory.main_quest / current_objective / pinned[],空则为 "" → MsgActions 的 hasMemory
+  // 为 false,复制行为与旧版完全一致(不弹选项)。
+  const memoryText = useMemoA(() => {
+    const mem = memory || {};
+    const parts = [];
+    if (mem.main_quest) parts.push(t('game.app.search.main_quest') + ": " + mem.main_quest);
+    if (mem.current_objective) parts.push(t('game.app.search.current_objective') + ": " + mem.current_objective);
+    const pinned = (Array.isArray(mem.pinned) ? mem.pinned : []).filter(Boolean);
+    if (pinned.length) parts.push(t('game.app.search.group_memory') + ":\n" + pinned.map((p) => "- " + p).join("\n"));
+    return parts.join("\n\n");
+  }, [memory, t]);
 
   // 内嵌聊天图片:最后一条助手消息的绝对索引(实时图归属 + __last 兜底)
   let lastAsstIdx = -1;
@@ -1186,9 +1199,10 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
             images={imagesByKey[String(idx)] || (idx === lastAsstIdx ? imagesByKey['__last'] : undefined)}
             streaming={!m.streaming_done && idx === totalLen - 1 && runState.running}
             toolOps={m._toolOps || m.tool_ops || []}
-            renderTool={(ops) => <ToolCallBlock ops={ops} />} /> :
+            renderTool={(ops) => <ToolCallBlock ops={ops} />}
+            memoryText={memoryText} /> :
           <PlayerBlock key={`pl-${idx}`} text={m.content} ts={m.ts} attachments={m.attachments}
-            msgIndex={idx} saveId={saveId} commitId={commitId} />;
+            msgIndex={idx} saveId={saveId} commitId={commitId} memoryText={memoryText} />;
         })}
 
         {/* 思考指示器统一(2026-06-23):此前等待首 token 时,这里的 gc-waiting-gm 三点气泡
