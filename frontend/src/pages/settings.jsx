@@ -2207,8 +2207,9 @@ function ModelParamsSection() {
         const prefs = (profile && profile.preferences) || {};
         const modelEffort = prefs.model_effort || {};
         const cur = (modelEffort[effKey] || "").toString().toLowerCase();
-        // "off" 或空 → 关;其他档位 → 开 (默认 high)
-        setThinkingEnabled(cur !== "off" && cur !== "" && cur !== "0");
+        // 与后端 _effort.resolve_effort 对齐:未配置 = DEFAULT_EFFORT("high")= 开;
+        // 只有显式 "off" 才是关(空串当关会让新用户看到「已关闭」而后端实际在 thinking)。
+        setThinkingEnabled(cur === "" ? true : (cur !== "off" && cur !== "0"));
       } catch (_) {}
     })();
     return () => { cancelled = true; };
@@ -2284,10 +2285,10 @@ function ModelParamsSection() {
       const existing = ((profileR && profileR.preferences && profileR.preferences.model_effort) || {});
       const next = { ...existing, [selectedModelKey]: effort };
       await window.api.account.preferences({ preferences: { model_effort: next } });
-      window.__apiToast?.(t('settings.modelparams.thinking_saved', { defaultValue: on ? '深度思考已启用' : '深度思考已关闭' }), { kind: 'ok', duration: 1800 });
+      window.__apiToast?.(on ? t('settings.modelparams.thinking_saved_on') : t('settings.modelparams.thinking_saved_off'), { kind: 'ok', duration: 1800 });
     } catch (e) {
       setThinkingEnabled(!on);  // 回滚
-      window.__apiToast?.(t('settings.modelparams.thinking_save_failed', { defaultValue: '保存失败' }), { kind: 'danger', detail: e?.message });
+      window.__apiToast?.(t('settings.modelparams.thinking_save_failed'), { kind: 'danger', detail: e?.message });
     }
   };
 
@@ -2318,14 +2319,17 @@ function ModelParamsSection() {
         </SetRow>
       )}
 
-      {/* task 141: Extended Thinking 开关 — 有选中模型时显示 */}
-      {selectedModelKey && (
-        <SetRow label={t('settings.modelparams.extended_thinking', { defaultValue: '启用深度思考 (Extended Thinking)' })}
-          description={t('settings.modelparams.extended_thinking_desc', { defaultValue: '开启后模型会在回复前进行深度推理,提升复杂场景质量。关闭则使用标准模式(低延迟)。' })}>
+      {/* task 141: Extended Thinking 开关 — 只对真正消费 model_effort 的 provider 显示:
+          anthropic/vertex_ai 走 budget_tokens(backends/anthropic.py、vertex.py),
+          openai 走 reasoning_effort(openai_compat.py 且仅 api_id=="openai" 才传)。
+          其余 provider(deepseek/中转/本地)后端静默忽略该偏好,显示开关=「已启用」谎报。 */}
+      {selectedModelKey && ["anthropic", "vertex_ai", "openai"].includes(selectedModelKey.split(":")[0]) && (
+        <SetRow label={t('settings.modelparams.extended_thinking')}
+          description={t('settings.modelparams.extended_thinking_desc')}>
           <CSToggle checked={thinkingEnabled} onChange={({ detail }) => toggleThinking(detail.checked)}>
             {thinkingEnabled
-              ? t('settings.modelparams.thinking_on', { defaultValue: '已启用' })
-              : t('settings.modelparams.thinking_off', { defaultValue: '已关闭' })}
+              ? t('settings.modelparams.thinking_on')
+              : t('settings.modelparams.thinking_off')}
           </CSToggle>
         </SetRow>
       )}

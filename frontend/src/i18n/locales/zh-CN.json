@@ -375,7 +375,14 @@
       "preview_json_desc": "发送给 API 的实际采样参数。",
       "request_timeout": "请求超时(秒)",
       "request_timeout_desc": "本地大模型(如自己电脑跑千问/Qwen,纯内存/CPU 很慢)等待时间不够会被切断。留空=自动(桌面 1800 秒 / 在线 300 秒);需要更久就填大一点,如 3600。",
-      "request_timeout_auto": "自动"
+      "request_timeout_auto": "自动",
+      "extended_thinking": "启用深度思考 (Extended Thinking)",
+      "extended_thinking_desc": "开启后模型会在回复前进行深度推理,提升复杂场景质量;关闭则使用标准模式(低延迟)。仅 Anthropic / Vertex / OpenAI 官方渠道生效。",
+      "thinking_on": "已启用",
+      "thinking_off": "已关闭",
+      "thinking_saved_on": "深度思考已启用",
+      "thinking_saved_off": "深度思考已关闭",
+      "thinking_save_failed": "保存失败"
     },
     "modules": {
       "title": "按模块分配模型",

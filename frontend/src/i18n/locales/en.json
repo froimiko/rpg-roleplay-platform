@@ -284,7 +284,14 @@
       "preview_json_desc": "Actual sampling parameters sent to the API.",
       "request_timeout": "Request timeout (s)",
       "request_timeout_desc": "A big local model (e.g. Qwen on your own PC, CPU/RAM only — very slow) can get cut off if the wait is too short. Leave blank = auto (desktop 1800s / online 300s); set a bigger number like 3600 if you need longer.",
-      "request_timeout_auto": "Auto"
+      "request_timeout_auto": "Auto",
+      "extended_thinking": "Extended Thinking",
+      "extended_thinking_desc": "When enabled, the model reasons deeply before replying, improving quality in complex scenes; off = standard mode (lower latency). Only applies to Anthropic / Vertex / official OpenAI channels.",
+      "thinking_on": "On",
+      "thinking_off": "Off",
+      "thinking_saved_on": "Extended thinking enabled",
+      "thinking_saved_off": "Extended thinking disabled",
+      "thinking_save_failed": "Failed to save"
     },
     "modules": {
       "title": "Per-Module Model Assignment",
