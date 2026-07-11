@@ -22,10 +22,21 @@ TODAY="$(date +%F)"
 SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)"
 
 echo "$NEW" > "$ROOT/VERSION"
-# package.json: 仅改顶层 "version"(第一处)
-sed -i.bak "0,/\"version\": *\"[^\"]*\"/s//\"version\": \"$NEW\"/" "$ROOT/frontend/package.json" && rm -f "$ROOT/frontend/package.json.bak"
+# package.json: 仅改顶层 "version"(第一处)。
+# ⚠️别用 sed 的 `0,/re/` 地址——那是 GNU 扩展,macOS BSD sed 上**静默无操作且 exit 0**
+# (v1.67.3–1.67.5 连续三版 package.json 被静默漏改,2026-07-11 实锤),改用 python3 可移植。
+python3 - "$ROOT/frontend/package.json" "$NEW" <<'PY'
+import pathlib, re, sys
+p = pathlib.Path(sys.argv[1]); s = p.read_text(encoding="utf-8")
+s2 = re.sub(r'"version":\s*"[^"]*"', '"version": "%s"' % sys.argv[2], s, count=1)
+p.write_text(s2, encoding="utf-8")
+PY
 # pyproject.toml: 顶层 version
 sed -i.bak "s/^version = \"[^\"]*\"/version = \"$NEW\"/" "$ROOT/rpg/pyproject.toml" && rm -f "$ROOT/rpg/pyproject.toml.bak"
+# 事后断言:三处派生位必须都已是 $NEW,任何一处静默漏改立即红(杜绝同类哑火)
+for f in "$ROOT/frontend/package.json" "$ROOT/rpg/pyproject.toml"; do
+  grep -q "\"$NEW\"" "$f" || { echo "✗ 版本位未更新: $f(期望 $NEW)" >&2; exit 1; }
+done
 # CHANGELOG: [Unreleased] → [NEW] - today (@ sha) + 新空 [Unreleased]
 if grep -q '^## \[Unreleased\]' "$ROOT/CHANGELOG.md"; then
   perl -0pi -e "s/## \\[Unreleased\\]/## [Unreleased]\n\n## [$NEW] - $TODAY (\@ $SHA)/" "$ROOT/CHANGELOG.md"
