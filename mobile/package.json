@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "assets": "node scripts/gen-assets.cjs",
     "prebuild": "expo prebuild --platform android",
-    "build:apk": "eas build -p android --profile preview"
+    "build:apk": "npm run prebuild && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
     "@expo-google-fonts/cinzel": "^0.4.2",

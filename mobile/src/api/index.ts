@@ -240,7 +240,8 @@ export const scripts = {
   // Backend returns {ok, items, page}; /api/scripts ignores scope (owned ∪ subscribed).
   list: (_scope?: "mine" | "subscribed" | "public", _q?: string) =>
     http.get<{ ok: boolean; items: ScriptSummary[] }>(`${V1}/scripts`),
-  get: (id: number) => http.get<{ ok: boolean; script: any }>(`${V1}/scripts/${id}`),
+  // 注意:后端没有 GET /api/scripts/{id} 单剧本端点(核对过全量路由表);
+  // 详情用 birthpoints/chapters/worldbook 等组合接口。
   birthpoints: (id: number) => http.get<{ ok: boolean; birthpoints: any[] }>(`${V1}/scripts/${id}/birthpoints`),
   chapters: (id: number, q?: string, limit = 200) =>
     http.get<{ ok: boolean; items?: ChapterSummary[]; chapters?: ChapterSummary[] }>(`${V1}/scripts/${id}/chapters`, { q, limit }),

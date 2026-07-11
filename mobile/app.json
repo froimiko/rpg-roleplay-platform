@@ -30,10 +30,7 @@
         "expo-camera",
         { "cameraPermission": "扫描桌面端登录二维码以免密登入。" }
       ],
-      [
-        "expo-document-picker",
-        { "iCloudContainerEnvironment": "Production" }
-      ]
+      "expo-document-picker"
     ],
     "experiments": {
       "typedRoutes": false
