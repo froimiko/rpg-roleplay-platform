@@ -9,6 +9,13 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.68.0] - 2026-07-12 (@ 223346c86)
+
+### Added
+- **「启用深度思考」开关(社区贡献 PR #64,@dragonjay-lyj)**:设置→模型参数新增 Extended Thinking 开关,写 `preferences.model_effort["{api_id}:{model_id}"]`。维护者收尾:可见性门控到真正消费该偏好的 provider(anthropic/vertex_ai/openai,其余后端静默忽略、显示开关=谎报);未配置=后端默认 high,UI 空串语义对齐为「开」;文案落 en/zh-CN 真键。
+- **复制消息可同时带长记忆(社区贡献 PR #65,@dragonjay-lyj)**:消息复制按钮在存档有长记忆时弹选项,可把 save 级记忆(主线任务/当前目标/固定记忆)拼在正文前复制。维护者收尾:补齐调用点接线(原版 memoryText 未传恒不生效)、i18n、关闭键对齐规范;无记忆档行为与旧版一致。
+- **Android 原生客户端(社区贡献 PR #58,@dragonjay-lyj)**:`mobile/` 全新 Expo/RN 0.85 BYO-server 客户端,与 `ios/` 同定位;cookie 按 RFC 6265 解析、SSE 监听器逐一清理、session 存 secure-store,API 调用面与后端路由表逐条核对。维护者收尾:删死端点 scripts.get、build:apk 改真实 gradle 路径、清 iOS 残键、README 如实文档化明文流量姿态与构建/签名路径。
+
 ## [1.67.6] - 2026-07-11 (@ cc45bfb54)
 
 ### Fixed
