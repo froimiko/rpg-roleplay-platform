@@ -14,6 +14,7 @@ import AvatarImg from './components/AvatarImg.jsx';
 import { useStickToBottom } from './hooks/useStickToBottom.js';
 import { createToastChannel } from './toast.jsx';
 import { lsGet, lsSet, lsGetJSON, lsSetJSON } from './lib/storage.js';
+import { ToolCallBlock } from './components/ToolCallBlock.jsx';
 
 // ----------------------------- LEFT RAIL ---------------------------------
 function LeftRail({ collapsed, onToggle, state, runState, onNew, onSave, onSwitchSave, onMemoryMode, currentSaveId, saves, resizeHandle, mobileOpen }) {

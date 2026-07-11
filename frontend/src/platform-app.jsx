@@ -4686,28 +4686,10 @@ function promoteNpcToUserCard(c) {
 // (真实实现在 pages/cards.jsx UserCardsView useEffect)
 // window.addEventListener("rpg-user-cards-updated", () => { ... reload ... });
 
-/* ── 分支图: BranchesPage (Platform 分支管理页) ── */
-// 实现细节见 pages/saves.jsx BranchesPage
-function BranchesPage() {
-  // stub — 真实实现在 pages/saves.jsx
-  // 渲染 BranchGraph 组件 (VSCode Git Graph 风格):
-  //   <BranchGraph data={treePayload} variant="full" ... />
-  // 删除确认:
-  //   <ConfirmModal ... /api/v1/branches/delete ... />
-  const [deleteTarget, setDeleteTarget] = React.useState(null);
-  return (
-    <div>
-      <BranchGraph data={null} variant="full" />
-      <ConfirmModal
-        open={!!deleteTarget}
-        title="删除 commit 及其子树？"
-        body={<div>POST /api/v1/branches/delete</div>}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={() => setDeleteTarget(null)}
-      />
-    </div>
-  );
-}
+/* ── 分支图: BranchesPage ──
+   真实现在 pages/saves.jsx(路由处直接用它),mobile 另有自己的实现。
+   此处原有的 stub 已删除:死码且体内裸引用 BranchGraph(本文件无 import),
+   与下方 ContinuePicker 注释记载的 ESM 重构遗漏同族。 */
 
 /* ── ContinuePicker / NewGameModal ──
    真实现在 pages/saves.jsx,已在文件顶部 import。

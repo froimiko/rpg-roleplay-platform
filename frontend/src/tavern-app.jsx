@@ -27,6 +27,7 @@ import Modal from './components/Modal.jsx';
 import ConfirmDialog from './components/ConfirmDialog.jsx';
 import { useResizable } from './responsive.jsx';
 import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip, useSaveImages } from './game-app.jsx';
+import { ToolCallBlock } from './components/ToolCallBlock.jsx';
 import { Composer } from './game-composer.jsx';
 import { TavernImportModal } from './pages/cards.jsx';
 import { TavernDrawer } from './tavern-drawer.jsx';
@@ -279,61 +280,11 @@ function TavernHeader({ chat, character, persona, onOpenDrawer, onExport, onExpo
 
 /* ── 转录区(居中单栏)──── m.role assistant/user 等价 SillyTavern is_user ── */
 /* ── F1:后台工具流(可折叠、默认折叠、沉浸优先)──────────────────────────
- * 把一轮内连续的工具调用归组,默认折叠成一行摘要(如「⚙ 调用 2 个工具 · set_tavern_character…」)。
- * 展开后逐个列出工具名 + args + result。与角色扮演正文(NarrativeBlock)视觉分离,
- * 静音/后台风,不抢沉浸主体。ops 形如 [{tool, args, result, ok}]。
+ * ToolCallBlock 已抽为独立模块 components/ToolCallBlock.jsx(game-app 的消息渲染
+ * 也要用它,而本文件 import 了 game-app 的组件 —— 原地定义会迫使 game-app 反向
+ * import 本文件成环)。此处 re-export 兼容旧 import 路径(同 TwoCardDrawer 先例)。
  */
-function _fmtToolValue(v) {
-  if (v == null) return '';
-  if (typeof v === 'string') return v;
-  try { return JSON.stringify(v, null, 2); } catch (_) { return String(v); }
-}
-
-export function ToolCallBlock({ ops }) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  if (!Array.isArray(ops) || ops.length === 0) return null;
-  const n = ops.length;
-  const firstName = (ops[0] && ops[0].tool) || t('tavern_app.tool_block.tool_fallback');
-  const summary = n === 1
-    ? t('tavern_app.tool_block.summary_one', { name: firstName })
-    : t('tavern_app.tool_block.summary_many', { count: n, name: firstName });
-  return (
-    <div className={`tvp-tools${open ? ' open' : ''}`}>
-      <button
-        type="button"
-        className="tvp-tools-toggle"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="tvp-tools-gear" aria-hidden="true">⚙</span>
-        <Icon name={open ? 'chevron_down' : 'chevron_right'} size={11} />
-        <span className="tvp-tools-summary">{summary}</span>
-      </button>
-      {open && (
-        <div className="tvp-tools-detail">
-          {ops.map((op, i) => (
-            <div className="tvp-tool-item" key={i}>
-              <div className="tvp-tool-name">
-                <span className={`tvp-tool-dot${op && op.ok === false ? ' err' : ''}`} aria-hidden="true" />
-                {(op && op.tool) || t('tavern_app.tool_block.tool_fallback')}
-              </div>
-              {op && op.args != null && (
-                <pre className="tvp-tool-kv"><span className="tvp-tool-kv-k">args</span>{_fmtToolValue(op.args)}</pre>
-              )}
-              {op && (op.result != null || op.error != null) && (
-                <pre className={`tvp-tool-kv${op.ok === false ? ' err' : ''}`}>
-                  <span className="tvp-tool-kv-k">{op.ok === false ? 'error' : 'result'}</span>
-                  {_fmtToolValue(op.ok === false ? (op.error != null ? op.error : op.result) : op.result)}
-                </pre>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+export { ToolCallBlock };
 
 /* ── 思考流折叠块(reasoning)─────────────────────────────────────────
  * 与正文(NarrativeBlock)上下分区共存,绝不互斥:正文永远以正常散文样式渲染,

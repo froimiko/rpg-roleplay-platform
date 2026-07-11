@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.67.6] - 2026-07-11 (@ cc45bfb54)
+
+### Fixed
+- **前端裸引用组件雷两处根治(自部署用户实锤白屏)**:`game-app.jsx` 消息渲染把 `ToolCallBlock` 传给 `NarrativeBlock` 的 `renderTool`,但该组件定义在 `tavern-app.jsx` 且 game-app 从未 import——原版数据流里 game console 消息恒无 tool_ops、箭头函数从不执行所以从未炸;任何人(自部署二开/未来接线)把工具数据接进 game console 消息流即 `ReferenceError: ToolCallBlock is not defined` → ErrorBoundary 整页白屏。根修:`ToolCallBlock` 抽为独立模块 `components/ToolCallBlock.jsx`(tavern-app 已 import game-app 的组件,game-app 原地反向 import 会成环),两边静态 import,tavern-app 保留 re-export 兼容旧路径(同 TwoCardDrawer 先例)。附带全前端裸引用 JSX 组件扫描,揪出并删除第二颗雷:`platform-app.jsx` 死码 stub `BranchesPage`(体内裸引用 `BranchGraph` 零 import,真实现一直在 `pages/saves.jsx`,与曾致「继续/新建存档失效」的 ESM 重构遗漏 stub 同族)。验证:vitest 190 全绿 + 生产构建 + 真浏览器模块解析/渲染双证。
+
 ## [1.67.5] - 2026-07-10 (@ ffe34a620)
 
 ### Fixed
