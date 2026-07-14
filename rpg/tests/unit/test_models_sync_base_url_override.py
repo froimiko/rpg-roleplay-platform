@@ -28,7 +28,17 @@ OPENAI_COMPAT_PY = (PROJECT / "rpg" / "agents" / "gm" / "backends" / "openai_com
 # ModelsSection(provider 行 / 编辑弹窗)拆分后住 components/settings/models-section.jsx;
 # 断言不变,仅把读取路径指向新住址。
 SETTINGS_JSX = (PROJECT / "frontend" / "src" / "components" / "settings" / "models-section.jsx").read_text(encoding="utf-8")
-MOBILE_SETTINGS_JSX = (PROJECT / "frontend" / "src" / "mobile" / "pages" / "MobileSettings.jsx").read_text(encoding="utf-8")
+# MobileSettings.jsx 已模块化拆分:壳住 mobile/pages/MobileSettings.jsx,各 section 组件
+# (含 ModelsSection 的 credMap 组装 / base_url 兜底)搬到 mobile/settings/*.jsx。断言不变,
+# 读取路径改为「壳 + 新目录全量拼接」,原文本在拼接体里逐字可寻。
+_MOBILE_DIR = PROJECT / "frontend" / "src" / "mobile"
+MOBILE_SETTINGS_JSX = "\n".join(
+    p.read_text(encoding="utf-8")
+    for p in [
+        _MOBILE_DIR / "pages" / "MobileSettings.jsx",
+        *sorted((_MOBILE_DIR / "settings").glob("*.jsx")),
+    ]
+)
 
 
 class SyncEndpointPrefersCredentialOverride(unittest.TestCase):
