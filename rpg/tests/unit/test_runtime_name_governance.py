@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ALIAS = (ROOT / "kb" / "alias.py").read_text(encoding="utf-8")
 OPS = (ROOT / "state" / "_mixins" / "apply_ops.py").read_text(encoding="utf-8")
 SAVEKB = (ROOT / "kb" / "save_kb.py").read_text(encoding="utf-8")
-RET = (ROOT / "retrieval.py").read_text(encoding="utf-8")
+RET = (ROOT / "retrieval" / "assemble.py").read_text(encoding="utf-8")  # 拆包后 retrieve_context 住 retrieval/assemble.py
 
 
 def test_alias_resolver_uses_canon_aliases():

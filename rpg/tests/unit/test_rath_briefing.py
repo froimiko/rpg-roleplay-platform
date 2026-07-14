@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BR = (ROOT / "rath" / "briefing.py").read_text(encoding="utf-8")
-RET = (ROOT / "retrieval.py").read_text(encoding="utf-8")
+RET = (ROOT / "retrieval" / "assemble.py").read_text(encoding="utf-8")  # 拆包后 retrieve_context 住 retrieval/assemble.py
 
 sys.path.insert(0, str(ROOT))
 from rath.briefing import build_offline_briefing  # noqa: E402

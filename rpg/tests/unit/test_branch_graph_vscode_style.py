@@ -42,7 +42,11 @@ from pathlib import Path
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend"
 BG_JSX = (FRONTEND / "src" / "branch-graph.jsx").read_text(encoding="utf-8")
-GAME_APP = (FRONTEND / "src" / "game-app.jsx").read_text(encoding="utf-8")
+# game-app.jsx 模块化拆分后:壳 + components/game 全量拼接(BranchTreeRail 已搬进组件目录)。
+GAME_APP = "\n".join(
+    [(FRONTEND / "src" / "game-app.jsx").read_text(encoding="utf-8")]
+    + [_p.read_text(encoding="utf-8")
+       for _p in sorted((FRONTEND / "src" / "components" / "game").glob("*.jsx"))])
 # 二次代码分割后真实 BranchesPage 落在 components/saves/Branches.jsx(pages/saves.jsx 只剩路由壳)
 SAVES_JSX = (FRONTEND / "src" / "components" / "saves" / "Branches.jsx").read_text(encoding="utf-8")
 API_CLIENT = (FRONTEND / "src" / "api-client.js").read_text(encoding="utf-8")

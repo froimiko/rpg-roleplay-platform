@@ -42,7 +42,7 @@ def test_lookahead_zero_disables_clamp():
 
 
 def test_source_guard_retrieval_applies_clamp():
-    src = (_ROOT / "retrieval.py").read_text(encoding="utf-8")
+    src = (_ROOT / "retrieval" / "assemble.py").read_text(encoding="utf-8")  # 拆包后 retrieve_context 住 retrieval/assemble.py
     assert "clamp_reveal_progress" in src, "retrieval 揭示进度必须过钳制"
     assert "user_progress_floor" in src, "钳制必须读玩家显式地板"
 

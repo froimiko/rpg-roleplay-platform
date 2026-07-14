@@ -51,7 +51,11 @@ class FrontendGateWiring(unittest.TestCase):
         self.assertIn("catch (e) { platform.recent_assets = []; }", src)
 
     def test_game_console_title_mock_only_for_anonymous_preview(self):
-        src = (FRONTEND / "src" / "game-app.jsx").read_text(encoding="utf-8")
+        # game-app.jsx 模块化拆分后:壳 + components/game 全量拼接(LeftRail 已搬进组件目录)。
+        src = "\n".join(
+            [(FRONTEND / "src" / "game-app.jsx").read_text(encoding="utf-8")]
+            + [_p.read_text(encoding="utf-8")
+               for _p in sorted((FRONTEND / "src" / "components" / "game").glob("*.jsx"))])
         self.assertIn("allowMockTitle", src)
         self.assertIn("window.RPG_AUTH && window.RPG_AUTH.authed", src)
         self.assertIn("window.MOCK_NOVEL && window.MOCK_NOVEL.script_title", src)

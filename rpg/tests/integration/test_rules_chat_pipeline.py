@@ -286,8 +286,12 @@ class RulesChatPipeline(unittest.TestCase):
             "平台『角色卡』页应保留 promoteNpcToUserCard")
 
     def test_game_ui_strips_state_ops_from_gm_messages(self):
-        app_js = Path(__file__).resolve().parents[3] / "frontend" / "src" / "game-app.jsx"
-        text = app_js.read_text(encoding="utf-8")
+        # game-app.jsx 模块化拆分后:壳 + components/game 全量拼接(NarrativeBlock 等已搬进组件目录)。
+        _src = Path(__file__).resolve().parents[3] / "frontend" / "src"
+        text = "\n".join(
+            [(_src / "game-app.jsx").read_text(encoding="utf-8")]
+            + [_p.read_text(encoding="utf-8")
+               for _p in sorted((_src / "components" / "game").glob("*.jsx"))])
         self.assertIn("stripStateOpsForDisplay", text)
         self.assertIn("json|state-ops|state", text)
         self.assertIn("const displayText = stripStateOpsForDisplay(text)", text)

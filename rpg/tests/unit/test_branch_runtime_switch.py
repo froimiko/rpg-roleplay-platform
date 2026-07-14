@@ -38,7 +38,11 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[3]
 APP_PY = (PROJECT / "rpg" / "app.py").read_text(encoding="utf-8")
-GAME_APP = (PROJECT / "frontend" / "src" / "game-app.jsx").read_text(encoding="utf-8")
+# game-app.jsx 模块化拆分后:壳 + components/game 全量拼接(BranchTreeRail 等已搬进组件目录)。
+GAME_APP = "\n".join(
+    [(PROJECT / "frontend" / "src" / "game-app.jsx").read_text(encoding="utf-8")]
+    + [_p.read_text(encoding="utf-8")
+       for _p in sorted((PROJECT / "frontend" / "src" / "components" / "game").glob("*.jsx"))])
 
 
 # ────────────────────────────────────────────────────────────

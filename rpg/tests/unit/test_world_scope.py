@@ -110,7 +110,7 @@ def test_clamp_disjoint_falls_back_to_world():
 # ── 源码守卫 ─────────────────────────────────────────────────────────
 
 def test_retrieval_wires_world_scope():
-    src = (_ROOT / "retrieval.py").read_text(encoding="utf-8")
+    src = (_ROOT / "retrieval" / "assemble.py").read_text(encoding="utf-8")  # 拆包后 retrieve_context 住 retrieval/assemble.py
     assert "resolve_world_bounds" in src and "clamp_window_to_world" in src
     # clamp 必须在 anchor 原文注入之前(_load_anchor_chapter_text 之前)
     i_clamp = src.index("clamp_window_to_world")

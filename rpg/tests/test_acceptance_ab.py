@@ -96,7 +96,11 @@ def test_frontend_wiring():
     assert "onChoose('rewrite')" in panel and "onChoose('original')" in panel
 
     # 游戏设置里的用户级开关(可手动关)
-    app = (FRONTEND / "game-app.jsx").read_text(encoding="utf-8")
+    # game-app.jsx 模块化拆分后:壳 + components/game 全量拼接(GameSettingsModal 已搬进组件目录)。
+    app = "\n".join(
+        [(FRONTEND / "game-app.jsx").read_text(encoding="utf-8")]
+        + [_p.read_text(encoding="utf-8")
+           for _p in sorted((FRONTEND / "components" / "game").glob("*.jsx"))])
     assert "abEnabled" in app and "/api/me/preference" in app and "acceptance_ab.enabled" in app
 
 

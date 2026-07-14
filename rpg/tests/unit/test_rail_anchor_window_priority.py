@@ -5,7 +5,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = (ROOT / "retrieval.py").read_text(encoding="utf-8")
+SRC = (ROOT / "retrieval" / "assemble.py").read_text(encoding="utf-8")  # 拆包后 retrieve_context 住 retrieval/assemble.py
 
 
 def _block():
