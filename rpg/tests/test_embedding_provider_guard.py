@@ -35,7 +35,9 @@ def test_embed_loop_fast_fails_on_no_embedding_provider():
 
 
 def test_preflight_flags_no_embedding_provider():
-    src = (REPO / "platform_app" / "api" / "me.py").read_text(encoding="utf-8")
+    # me.py 已包化为 platform_app/api/me/ 包;embedding preflight 逻辑住 credentials.py。
+    me_pkg = REPO / "platform_app" / "api" / "me"
+    src = "\n".join(p.read_text(encoding="utf-8") for p in sorted(me_pkg.glob("*.py")))
     assert "provider_lacks_embedding" in src
     assert "embed_provider_hint" in src
 

@@ -3,7 +3,7 @@
 覆盖:
   1. 用户 BYOK SA → vertex backend 使用用户 credentials
   2. 无用户 SA → fallback 全局 vertex_sa.json
-  3. 二者均无 → RuntimeError with 友好提示
+  3. 二者均无 → 可观测降级(client=None,调用时 _ensure_available 抛 RuntimeError 友好提示)
   4. model_probe 用户模式 + 用户 SA → 允许探测
   5. model_probe 服务器模式 + 无用户 SA → reject
   6. embedding vertex client 用户 BYOK 优先
@@ -123,8 +123,11 @@ class TestVertexBackend:
         assert backend.user_id == 42
         assert backend.model_name == "gemini-3.5-flash"
 
-    def test_init_raises_when_no_sa(self):
-        """无任何 SA → 应抛 RuntimeError，包含友好提示。"""
+    def test_init_no_sa_degrades_observably_without_crash(self):
+        """无任何 SA → 当前契约(137a1d0c0 起):__init__ 不再直接抛(不炸聊天装配链),
+        而是 client=None + _unavailable_message 友好提示;真正调用前 _ensure_available()
+        才抛含 'Service Account' 的 RuntimeError。守护语义不降级:无 SA 绝不能被
+        静默当可用——降级必须可观测(client is None)且调用必失败(RuntimeError)。"""
         fake_genai = MagicMock()
         with (
             patch("core.vertex_sa.load_sa_credentials", return_value=(None, None)),
@@ -135,8 +138,13 @@ class TestVertexBackend:
         ):
             import importlib, agents.gm.backends.vertex as vtx_mod
             importlib.reload(vtx_mod)
-            with pytest.raises(RuntimeError, match="Service Account"):
-                vtx_mod._VertexBackend(model="gemini-3.5-flash", user_id=None)
+            backend = vtx_mod._VertexBackend(model="gemini-3.5-flash", user_id=None)
+        # 可观测降级:client 置空 + 友好提示已备好
+        assert backend.client is None
+        assert "Service Account" in backend._unavailable_message
+        # 调用面守护:任何真实调用前的 _ensure_available 必抛(不静默当可用)
+        with pytest.raises(RuntimeError, match="Service Account"):
+            backend._ensure_available()
 
 
 # ──────────────────────────────────────────────────────────────────────

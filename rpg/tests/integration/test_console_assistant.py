@@ -75,9 +75,14 @@ class DispatcherOriginsHaveConsoleAssistant(unittest.TestCase):
             "activate_save", "rename_save", "create_persona", "create_character_card",
             "set_preference", "select_model", "continue_branch", "activate_branch",
             "start_script_import", "cancel_import_job",
-            "mcp_server_enable", "mcp_server_start", "mcp_server_stop",
         ]:
             self.assertIn(expected, names)
+        # SEC(M-1): MCP server 管理工具刻意排除 console_assistant origin
+        # (_MCP_ADMIN = {ui_button, api_direct},不含 console_assistant)——
+        # LLM 不得启停/开关 MCP server。曾经的正向断言随该安全修复过时,改为守卫。
+        for forbidden in ("mcp_server_enable", "mcp_server_start", "mcp_server_stop"):
+            self.assertNotIn(forbidden, names,
+                f"SEC(M-1): {forbidden} 不应对 console_assistant 可见")
 
     def test_destructive_tools_visible_but_marked(self):
         """跨 save 资源管理类的 destructive 工具加入 console_assistant origin,
@@ -327,7 +332,10 @@ class StreamChatSSEProtocol(unittest.TestCase):
         # confirmation_required 内容
         confirms = [e["data"] for e in events if e["event"] == "confirmation_required"]
         self.assertEqual(confirms[0]["tool"], "delete_save")
-        self.assertEqual(confirms[0]["args"], {"save_id": 100})
+        # task 120 UX: delete_save 确认现在把 save_details(title/turn)也带进 args
+        # 供确认弹窗展示,所以断 save_id 命中即可,不再整字典等值。
+        self.assertEqual(confirms[0]["args"]["save_id"], 100)
+        self.assertIn("save_details", confirms[0]["args"])
         self.assertTrue(confirms[0]["destructive"])
         # conversation state 中存有 pending
         # 注意:fake backend 不返回 conversation_id, 但 stream_chat 给我们的 meta 里有
@@ -582,7 +590,9 @@ class ConfirmationApplyStream(unittest.TestCase):
         self.assertEqual(len(conv["pending_confirmations"]), 1)
         new_pending = list(conv["pending_confirmations"].values())[0]
         self.assertEqual(new_pending["tool"], "delete_save")
-        self.assertEqual(new_pending["args"], {"save_id": 8})
+        # task 120 UX: delete_save 确认 args 现在含 save_details(供弹窗展示),断 save_id 命中即可。
+        self.assertEqual(new_pending["args"]["save_id"], 8)
+        self.assertIn("save_details", new_pending["args"])
 
     def test_invalid_call_id_yields_error_and_done(self):
         """call_id 不存在 → SSE 含 error + done, 不崩。"""

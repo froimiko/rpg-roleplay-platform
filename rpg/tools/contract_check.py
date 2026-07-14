@@ -1,8 +1,8 @@
 """Lightweight frontend/backend API contract drift checker.
 
 Scans:
-  - Backend routes  : rpg/app.py, rpg/platform_app/api.py,
-                      rpg/platform_app/frontend_routes.py
+  - Backend routes  : rpg/app.py, rpg/platform_app/api/ (包),
+                      rpg/platform_app/frontend_routes/ (包)
   - Frontend calls  : frontend/src/api-client.js, frontend/src/data-loader.js,
                       frontend/src/*.jsx (looking for direct `fetch("/api/...")`)
   - Docs            : rpg/BACKEND_API_CONTRACT.md, rpg/CLAUDE_CODE_HANDOFF.md
@@ -35,10 +35,21 @@ PROJECT_ROOT = RPG_DIR.parent                              # …/我蕾穆丽娜
 FRONTEND_SRC = PROJECT_ROOT / "frontend" / "src"
 REPORT_PATH = RPG_DIR / "docs" / "api_contract_drift.md"
 
+def _pkg_py_files(pkg: Path) -> list[Path]:
+    """`foo.py` 已包化为 `foo/` 包 → 返回包内全部 .py(排除 __pycache__)。
+
+    若传入的是仍存在的单文件(未包化),原样返回它。"""
+    if pkg.is_dir():
+        return sorted(p for p in pkg.rglob("*.py") if "__pycache__" not in p.parts)
+    flat = pkg.with_suffix(".py")
+    return [flat] if flat.exists() else []
+
+
 BACKEND_FILES: list[Path] = [
     RPG_DIR / "app.py",
-    RPG_DIR / "platform_app" / "api.py",
-    RPG_DIR / "platform_app" / "frontend_routes.py",
+    # platform_app/api.py 与 frontend_routes.py 已包化为同名包(批次1-10)。
+    *_pkg_py_files(RPG_DIR / "platform_app" / "api"),
+    *_pkg_py_files(RPG_DIR / "platform_app" / "frontend_routes"),
 ]
 
 FRONTEND_CORE_FILES: list[Path] = [

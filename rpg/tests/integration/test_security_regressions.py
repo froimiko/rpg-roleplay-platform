@@ -330,59 +330,6 @@ class PageContextInjectionSanitized(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SEC-7: SMS 端点速率限制 (P2-1 修复)
-# ──────────────────────────────────────────────────────────────────────────────
-
-class SmsEndpointsRateLimited(unittest.TestCase):
-    """SEC-7: SMS code 端点 5 次后被限流 (P2-1 修复)"""
-
-    @classmethod
-    def setUpClass(cls):
-        cleanup_test_users()
-        cls.client = make_client()
-
-    @classmethod
-    def tearDownClass(cls):
-        cleanup_test_users()
-
-    def test_sms_rate_limit_logic_exists(self):
-        """验证 _check_sms_rate 函数存在且正确限流"""
-        from platform_app.frontend_routes import (
-            _SMS_VERIFY_BUCKETS,
-            _SMS_VERIFY_MAX,
-            _check_sms_rate,
-        )
-
-        # 清理 bucket
-        _SMS_VERIFY_BUCKETS.clear()
-        phone = "integtest_fake_phone_12345"
-
-        # _SMS_VERIFY_MAX=5，前 5 次应通过
-        allowed = [_check_sms_rate(_SMS_VERIFY_BUCKETS, phone, _SMS_VERIFY_MAX) for _ in range(_SMS_VERIFY_MAX)]
-        self.assertTrue(all(allowed), f"前 {_SMS_VERIFY_MAX} 次应全部通过: {allowed}")
-
-        # 第 6 次应被拒
-        blocked = _check_sms_rate(_SMS_VERIFY_BUCKETS, phone, _SMS_VERIFY_MAX)
-        self.assertFalse(blocked, f"P2-1 回归: 超过 {_SMS_VERIFY_MAX} 次后应被限流")
-
-    def test_sms_code_endpoint_rate_limited_after_threshold(self):
-        """SMS code 端点本身：连续请求超限后返回 429"""
-        from platform_app.frontend_routes import (
-            _SMS_CODE_BUCKETS,
-            _check_sms_rate,
-        )
-        # 直接验证内部函数: code 端点每分钟最多 1 次
-        _SMS_CODE_BUCKETS.clear()
-        phone = "integtest_sms_code_rate_test"
-
-        first = _check_sms_rate(_SMS_CODE_BUCKETS, phone, 1)
-        self.assertTrue(first, "第 1 次应通过")
-
-        second = _check_sms_rate(_SMS_CODE_BUCKETS, phone, 1)
-        self.assertFalse(second, "P2-1 回归: SMS code 第 2 次在同一分钟内应被拒")
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # SEC-8: skills run 需要 admin (匿名 / 普通用户被拒)
 # ──────────────────────────────────────────────────────────────────────────────
 

@@ -32,7 +32,7 @@ Layer C — Frontend (静态扫源):
      CharacterEditModal**
   · CharacterCard 不再带 onPromote / onEdit prop
   · platform-app.jsx 仍保留 promoteNpcToUserCard (这是合法的)
-  · Game Console.html PICK_STATE_KEYS 含 "active_entities"
+  · entries/game-console.jsx PICK_STATE_KEYS 含 "active_entities"
 """
 from __future__ import annotations
 
@@ -59,7 +59,23 @@ PANELS_JSX = _read_split_source(
 PLATFORM_JSX = _read_split_source(
     PROJECT_ROOT / "frontend" / "src" / "platform-app.jsx",
     PROJECT_ROOT / "frontend" / "src" / "components" / "platform")
-GAME_HTML = (PROJECT_ROOT / "frontend" / "Game Console.html").read_text(encoding="utf-8")
+# PICK_STATE_KEYS 随 game-console 入口 JS 化后搬到 entries/game-console.jsx
+# (Game Console.html 现在只是 Vite 壳,脚本不再内联)。
+GAME_CONSOLE_ENTRY = (
+    PROJECT_ROOT / "frontend" / "src" / "entries" / "game-console.jsx"
+).read_text(encoding="utf-8")
+
+
+def _i18n_value(dotted_key: str, locale: str = "zh-CN"):
+    """解析 frontend i18n locale 的点分 key(如 game.tabs.cards → '人物')。"""
+    import json
+    data = json.loads(
+        (PROJECT_ROOT / "frontend" / "src" / "i18n" / "locales" / f"{locale}.json")
+        .read_text(encoding="utf-8"))
+    node = data
+    for part in dotted_key.split("."):
+        node = node[part]
+    return node
 
 
 # ───────────────────────────────────────────────────────────
@@ -235,12 +251,15 @@ class FrontendPanelCharactersStructure(unittest.TestCase):
     """game-panels.jsx 的 PanelCharacters / CharacterCard / PANEL_TABS 结构。"""
 
     def test_panel_tabs_cards_label_is_renamed_to_persons(self):
-        # cards tab 的 id 保持稳定 (路由 / 兼容),只改 label
-        m = re.search(r'\{\s*id:\s*"cards"\s*,\s*label:\s*"([^"]+)"', PANELS_JSX)
-        self.assertIsNotNone(m, "PANEL_TABS 应有 id='cards' 条目")
-        label = m.group(1)
-        self.assertEqual(label, "人物",
-            f"cards tab label 应是'人物' (不再是'角色卡'),实际: {label}")
+        # cards tab 的 id 保持稳定 (路由 / 兼容);i18n 迁移(批次4)后 label→labelKey。
+        # 当前正确行为:labelKey="game.tabs.cards",zh-CN 该 key 解析为"人物"。
+        m = re.search(r'\{\s*id:\s*"cards"\s*,\s*labelKey:\s*"([^"]+)"', PANELS_JSX)
+        self.assertIsNotNone(m, "PANEL_TABS 应有 id='cards' 条目(labelKey 形态)")
+        key = m.group(1)
+        self.assertEqual(key, "game.tabs.cards",
+            f"cards tab 应用 labelKey='game.tabs.cards',实际: {key}")
+        self.assertEqual(_i18n_value(key), "人物",
+            "game.tabs.cards 在 zh-CN 应解析为'人物' (不再是'角色卡')")
 
     def test_panel_characters_reads_active_entities(self):
         # 找 PanelCharacters 函数体
@@ -292,15 +311,16 @@ class FrontendPanelCharactersStructure(unittest.TestCase):
             "CharacterEditModal 应已删除 — 该 modal 是创建用户角色卡的表单,不属于游戏内 UI")
 
     def test_character_card_has_no_promote_props(self):
-        # CharacterCard 应已删除 onPromote / onEdit 等创建相关 prop
+        # CharacterCard 应已删除 onPromote / onEdit 等"提升为用户卡"相关 prop。
+        # 注意:onEditStatus(关系态度编辑)是合法的另一功能,用词边界匹配别被子串误伤。
         idx = PANELS_JSX.find("function CharacterCard(")
         self.assertGreater(idx, 0)
         end = PANELS_JSX.find("\nfunction ", idx + 1)
         body = PANELS_JSX[idx:end if end > 0 else len(PANELS_JSX)]
         self.assertNotIn("onPromote", body,
             "CharacterCard 不应再有 onPromote prop")
-        self.assertNotIn("onEdit", body,
-            "CharacterCard 不应再有 onEdit prop")
+        self.assertIsNone(re.search(r"\bonEdit\b", body),
+            "CharacterCard 不应再有 onEdit prop(onEditStatus 关系态度编辑除外)")
 
 
 class PlatformStillHasPromote(unittest.TestCase):
@@ -323,14 +343,15 @@ class PlatformStillHasPromote(unittest.TestCase):
 
 
 class GameConsoleStateWhitelist(unittest.TestCase):
-    """Game Console.html PICK_STATE_KEYS 必须含 active_entities,否则前端拿不到。"""
+    """entries/game-console.jsx 的 PICK_STATE_KEYS 必须含 active_entities,否则前端拿不到。"""
 
     def test_pick_state_keys_includes_active_entities(self):
         # 找 const PICK_STATE_KEYS = [...]
-        m = re.search(r"const\s+PICK_STATE_KEYS\s*=\s*\[(.*?)\]", GAME_HTML, re.S)
-        self.assertIsNotNone(m, "Game Console.html 应有 PICK_STATE_KEYS")
+        m = re.search(r"const\s+PICK_STATE_KEYS\s*=\s*\[(.*?)\]", GAME_CONSOLE_ENTRY, re.S)
+        self.assertIsNotNone(m, "game-console.jsx 应有 PICK_STATE_KEYS")
         keys_blob = m.group(1)
-        self.assertIn('"active_entities"', keys_blob,
+        # 入口 JS 化后为单引号字面量;去引号后比较,兼容单/双引号。
+        self.assertIn("active_entities", keys_blob.replace('"', "'"),
             "PICK_STATE_KEYS 必须含 'active_entities'")
 
 

@@ -35,9 +35,16 @@ def test_rules_provider_dynamic_layer_not_a_tier():
 
 
 def test_saves_rewind_uses_atomic_jsonb_set():
+    # 进度回退端点必须原子更新,不再整列读-改-写(workers=2 竞态)。
+    # 矩阵审计 M1-M4 后:回退端点统一委派 gm_serving.settings.realign_progress_signals,
+    # 原子 jsonb_set 搬进该函数(所有回退路径同一真相源),端点自己不再内联 SQL。
     saves = (REPO / "platform_app" / "api" / "saves.py").read_text(encoding="utf-8")
-    # 进度回退端点必须原子 jsonb_set,不再整列读-改-写(workers=2 竞态)
-    assert "jsonb_set" in saves and "'{progress_chapter}'" in saves
+    assert "realign_progress_signals" in saves, \
+        "rewind 端点必须走 realign_progress_signals(统一回退信号族)"
+    settings = (REPO / "gm_serving" / "settings.py").read_text(encoding="utf-8")
+    realign = settings.split("def realign_progress_signals", 1)[1].split("\ndef ", 1)[0]
+    assert "jsonb_set" in realign and "'{progress_chapter}'" in realign, \
+        "realign_progress_signals 必须原子 jsonb_set progress_chapter(非读-改-写)"
 
 
 def test_acceptance_rewrite_does_not_continue_first_draft():
