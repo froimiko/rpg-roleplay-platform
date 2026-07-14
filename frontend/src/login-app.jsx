@@ -15,135 +15,9 @@
 import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-
-const __DEFAULT_NEXT = 'Platform.html';
-
-function __resolveNextOrDefault() {
-  try {
-    const raw = new URLSearchParams(location.search).get('next') || '';
-    if (!raw) return __DEFAULT_NEXT;
-    // 拒绝绝对 URL / 协议相对 URL / 包含换行的输入(开放重定向防御)
-    if (/^[a-z][a-z0-9+.\-]*:|^\/\//i.test(raw) || /[\r\n]/.test(raw)) return __DEFAULT_NEXT;
-    return raw;
-  } catch (_) { return __DEFAULT_NEXT; }
-}
-
-/// 渲染单个表单字段。`field` 形如:
-///   { key, label, type, required, autocomplete, placeholder, min_length, max_length }
-/// 当 type === 'boolean' 时渲染为 checkbox。
-function SchemaField({ field, value, onChange }) {
-  const { t } = useTranslation();
-  if (field.type === 'boolean') {
-    // 为 terms_accepted 字段注入带链接的 label;其余 boolean 字段用纯文本
-    // 法律文档正本托管在 landing 站(play.stellatrix.icu/legal/),软件内不复制以避免双权威。
-    // landing 的 legal/ 已发布 v1.2 双语 6 篇:privacy/terms/acceptable-use/cookie/dmca/adult-content-disclaimer
-    const _legalBase = 'https://play.stellatrix.icu/legal';
-    const _legalLang = (typeof navigator !== 'undefined' && /^en/i.test(navigator.language || '')) ? 'en' : 'zh-CN';
-    const labelNode = field.key === 'terms_accepted' ? (
-      <span>
-        {t('auth.terms_agree')}{' '}
-        <a href={`${_legalBase}/terms-of-service.${_legalLang}.html`} target="_blank" rel="noopener noreferrer"
-           style={{color: 'var(--accent)'}}>{t('auth.terms_of_service')}</a>
-        {t('auth.app.legal_sep')}
-        <a href={`${_legalBase}/privacy-policy.${_legalLang}.html`} target="_blank" rel="noopener noreferrer"
-           style={{color: 'var(--accent)'}}>{t('auth.privacy_policy')}</a>
-        {t('auth.app.legal_sep')}
-        <a href={`${_legalBase}/acceptable-use-policy.${_legalLang}.html`} target="_blank" rel="noopener noreferrer"
-           style={{color: 'var(--accent)'}}>{t('auth.acceptable_use')}</a>
-        {' '}{t('auth.terms_and')}{' '}
-        <a href={`${_legalBase}/adult-content-disclaimer.${_legalLang}.html`} target="_blank" rel="noopener noreferrer"
-           style={{color: 'var(--accent)'}}>{t('auth.adult_disclaimer')}</a>
-        {field.required && <span className="pl-field-req">*</span>}
-      </span>
-    ) : (
-      <span>{field.label}{field.required && <span className="pl-field-req">*</span>}</span>
-    );
-    return (
-      <div className="pl-field" style={{flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 6}}>
-        <input
-          id={field.key}
-          type="checkbox"
-          checked={!!value}
-          onChange={(e) => onChange(e.target.checked)}
-          style={{marginTop: 3, flexShrink: 0, accentColor: 'var(--accent)'}}
-        />
-        <label htmlFor={field.key} style={{fontWeight: 'normal', cursor: 'pointer', fontSize: 13}}>
-          {labelNode}
-        </label>
-      </div>
-    );
-  }
-  return (
-    <div className="pl-field">
-      <label htmlFor={field.key}>
-        {field.label}
-        {field.required && <span className="pl-field-req">*</span>}
-      </label>
-      <input
-        id={field.key}
-        type={field.type || 'text'}
-        autoComplete={field.autocomplete || undefined}
-        placeholder={field.placeholder || undefined}
-        minLength={field.min_length || undefined}
-        maxLength={field.max_length || undefined}
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-
-function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, autoFocus = false, label }) {
-  const inputRef = React.useRef(null);
-  const completeRef = React.useRef('');
-  const clean = String(value || '').replace(/\D/g, '').slice(0, length);
-
-  React.useEffect(() => {
-    if (!autoFocus) return;
-    const timer = setTimeout(() => inputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [autoFocus]);
-
-  React.useEffect(() => {
-    if (clean.length === length && clean !== completeRef.current) {
-      completeRef.current = clean;
-      onComplete?.(clean);
-    }
-    if (clean.length < length) completeRef.current = '';
-  }, [clean, length, onComplete]);
-
-  return (
-    <div className="pl-otp" onClick={() => inputRef.current?.focus()}>
-      <input
-        ref={inputRef}
-        className="pl-otp-input"
-        aria-label={label}
-        type="text"
-        inputMode="numeric"
-        pattern={`\\d{${length}}`}
-        maxLength={length}
-        autoComplete="one-time-code"
-        value={clean}
-        disabled={disabled}
-        onChange={(e) => onChange(String(e.target.value || '').replace(/\D/g, '').slice(0, length))}
-        onPaste={(e) => {
-          const pasted = e.clipboardData?.getData('text') || '';
-          const next = pasted.replace(/\D/g, '').slice(0, length);
-          if (next) {
-            e.preventDefault();
-            onChange(next);
-          }
-        }}
-      />
-      {Array.from({ length }).map((_, i) => (
-        <div key={i} className={`pl-otp-box ${clean[i] ? 'filled' : ''}`}>
-          {clean[i] || ''}
-        </div>
-      ))}
-    </div>
-  );
-}
-
+import { __resolveNextOrDefault } from './components/login/nextTarget.js';
+import { InviteScreen } from './components/login/InviteScreen.jsx';
+import { VerifyForm, MagicOtpForm, NeedsProfileForm, CodeLoginForm, ForgotForm, ResetForm, MainAuthForm } from './components/login/AuthForms.jsx';
 function LoginApp() {
   const { t } = useTranslation();
   const [mode, setMode] = useState('login');     // 'login' | 'code-login' | 'register' | 'verify' | 'forgot' | 'reset' | 'magic-otp' | 'needs-profile'
@@ -718,50 +592,9 @@ function LoginApp() {
   // 邀请链接屏:URL 带 ?invite= 时短路渲染 —— 用户名 + 密码 + 18+ 即可加入(自部署多用户)。
   if (inviteToken) {
     return (
-      <div className="pl-auth-wrap">
-        <div className="pl-auth">
-          <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-            <div className="pl-auth-mark" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 19V5l8 4 8-4v14" /><path d="M4 14l8 4 8-4" />
-              </svg>
-            </div>
-            <div>
-              <h1>{t('auth.invite.title')}</h1>
-              <div className="pl-auth-sub">{t('auth.invite.subtitle')}</div>
-            </div>
-          </div>
-          <form className="pl-auth-form" onSubmit={submitInvite}>
-            <div className="pl-field">
-              <label htmlFor="inv-username">{t('auth.invite.username')}</label>
-              <input id="inv-username" type="text" autoFocus autoComplete="username"
-                     value={inviteUsername} onChange={(e) => setInviteUsername(e.target.value)}
-                     placeholder={t('auth.invite.username_ph')} />
-            </div>
-            <div className="pl-field">
-              <label htmlFor="inv-password">{t('auth.invite.password')}</label>
-              <input id="inv-password" type="password" autoComplete="new-password"
-                     value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)}
-                     placeholder={t('auth.invite.password_ph')} />
-            </div>
-            <div className="pl-field" style={{flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 6}}>
-              <input id="inv-age" type="checkbox" checked={inviteAge}
-                     onChange={(e) => setInviteAge(e.target.checked)}
-                     style={{marginTop: 3, flexShrink: 0, accentColor: 'var(--accent)'}} />
-              <label htmlFor="inv-age" style={{fontWeight: 'normal', cursor: 'pointer', fontSize: 13}}>{t('auth.invite.age')}</label>
-            </div>
-            {inviteErr && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{inviteErr}</div>
-            )}
-            <button type="submit" className="btn primary" disabled={inviteBusy}
-                    style={{justifyContent: 'center', height: 34, opacity: inviteBusy ? 0.7 : 1}}>
-              {inviteBusy ? t('auth.submitting') : t('auth.invite.join')}
-            </button>
-          </form>
-        </div>
-      </div>
+      <InviteScreen submitInvite={submitInvite} inviteUsername={inviteUsername} setInviteUsername={setInviteUsername}
+        invitePassword={invitePassword} setInvitePassword={setInvitePassword} inviteAge={inviteAge}
+        setInviteAge={setInviteAge} inviteErr={inviteErr} inviteBusy={inviteBusy} />
     );
   }
 
@@ -804,348 +637,49 @@ function LoginApp() {
 
         {/* ── 验证码步骤 ─────────────────────────────────────────────── */}
         {mode === 'verify' && (
-          <form className="pl-auth-form" onSubmit={handleVerify}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-              {t('auth.verify.sent_to')} <strong>{pendingEmail}</strong>{t('auth.verify.expires')}
-            </div>
-            <div className="pl-field">
-              <label htmlFor="verify_code">{t('auth.verify.code_label')}</label>
-              <OtpInput
-                value={verifyCode}
-                onChange={setVerifyCode}
-                onComplete={(code) => handleVerify(null, code)}
-                disabled={busy}
-                autoFocus
-                label={t('auth.verify.code_label')}
-              />
-            </div>
-            {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
-            )}
-            {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
-            )}
-            <button type="submit" className="btn primary" disabled={busy || verifyCode.length !== 6}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
-              {busy ? t('auth.verify.verifying') : t('auth.verify.verify_btn')}
-            </button>
-            <div className="pl-auth-foot" style={{justifyContent: 'space-between'}}>
-              <button type="button" style={{background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: 0}}
-                      onClick={() => { setMode('register'); setErr(''); setNotice(''); }}>
-                {t('auth.verify.back')}
-              </button>
-              <button type="button"
-                      disabled={resendCooldown > 0 || busy}
-                      style={{background: 'none', border: 'none', color: resendCooldown > 0 ? 'var(--muted)' : 'var(--accent)', cursor: resendCooldown > 0 ? 'default' : 'pointer', fontSize: 13, padding: 0}}
-                      onClick={handleResend}>
-                {resendCooldown > 0 ? t('auth.verify.resend_cooldown', { s: resendCooldown }) : t('auth.verify.resend')}
-              </button>
-            </div>
-          </form>
+          <VerifyForm handleVerify={handleVerify} pendingEmail={pendingEmail} verifyCode={verifyCode} setVerifyCode={setVerifyCode}
+            busy={busy} err={err} notice={notice} resendCooldown={resendCooldown}
+            setMode={setMode} setErr={setErr} setNotice={setNotice} handleResend={handleResend} />
         )}
 
         {/* ── Magic-link OTP 步骤 ────────────────────────────────────── */}
         {mode === 'magic-otp' && (
-          <form className="pl-auth-form" onSubmit={handleMagicOtpVerify}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-              {t('auth.app.magic_otp_sent_to', { email: magicEmail })}
-            </div>
-            <div className="pl-field">
-              <label htmlFor="magic_otp_code">{t('auth.app.otp_code_label')}</label>
-              <OtpInput
-                value={magicCode}
-                onChange={setMagicCode}
-                onComplete={(code) => handleMagicOtpVerify(null, code)}
-                disabled={busy}
-                autoFocus
-                label={t('auth.app.otp_code_label')}
-              />
-            </div>
-            {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
-            )}
-            {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
-            )}
-            <button type="submit" className="btn primary" disabled={busy || magicCode.length !== 6}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
-              {busy ? t('auth.app.magic_otp_verifying') : t('auth.app.magic_otp_submit')}
-            </button>
-          </form>
+          <MagicOtpForm handleMagicOtpVerify={handleMagicOtpVerify} magicEmail={magicEmail}
+            magicCode={magicCode} setMagicCode={setMagicCode} busy={busy} err={err} notice={notice} />
         )}
 
         {/* ── 首次注册补昵称 ──────────────────────────────────────────── */}
         {mode === 'needs-profile' && (
-          <form className="pl-auth-form" onSubmit={handleProfileSubmit}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-              {t('auth.app.needs_profile_desc')}
-            </div>
-            <div className="pl-field">
-              <label htmlFor="profile_username">{t('auth.app.username_label')} <span className="pl-field-req">*</span></label>
-              <input
-                id="profile_username"
-                type="text"
-                autoComplete="username"
-                value={profileUsername}
-                onChange={(e) => setProfileUsername(e.target.value)}
-                autoFocus
-                maxLength={32}
-              />
-            </div>
-            <div className="pl-field">
-              <label htmlFor="profile_display_name">{t('auth.app.display_name_label')}</label>
-              <input
-                id="profile_display_name"
-                type="text"
-                autoComplete="nickname"
-                value={profileDisplayName}
-                onChange={(e) => setProfileDisplayName(e.target.value)}
-                maxLength={64}
-              />
-            </div>
-            {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
-            )}
-            {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
-            )}
-            <button type="submit" className="btn primary"
-                    disabled={busy || !profileUsername.trim()}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
-              {busy ? t('auth.app.profile_saving') : t('auth.app.profile_submit')}
-            </button>
-          </form>
+          <NeedsProfileForm handleProfileSubmit={handleProfileSubmit} profileUsername={profileUsername}
+            setProfileUsername={setProfileUsername} profileDisplayName={profileDisplayName}
+            setProfileDisplayName={setProfileDisplayName} busy={busy} err={err} notice={notice} />
         )}
 
         {/* ── 邮箱验证码登录 ─────────────────────────────────────────── */}
         {mode === 'code-login' && (
-          <form className="pl-auth-form" onSubmit={(e) => loginCodeSent ? handleLoginCodeVerify(e) : (e.preventDefault(), requestLoginCode(loginCodeEmail))}>
-            {!loginCodeSent ? (
-              <>
-                <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-                  {t('auth.login_code.desc')}
-                </div>
-                <div className="pl-field">
-                  <label htmlFor="login_code_email">{t('auth.login_code.email_label')}</label>
-                  <input
-                    id="login_code_email"
-                    type="email"
-                    autoComplete="email"
-                    value={loginCodeEmail}
-                    onChange={(e) => setLoginCodeEmail(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-                  {t('auth.verify.sent_to')} <strong>{loginCodeEmailMask}</strong>{t('auth.verify.expires')}
-                </div>
-                <div className="pl-field">
-                  <label htmlFor="login_code">{t('auth.login_code.code_label')}</label>
-                  <OtpInput
-                    value={loginCode}
-                    onChange={setLoginCode}
-                    onComplete={(code) => handleLoginCodeVerify(null, code)}
-                    disabled={busy}
-                    autoFocus
-                    label={t('auth.login_code.code_label')}
-                  />
-                </div>
-              </>
-            )}
-            {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
-            )}
-            {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
-            )}
-            <button type="submit" className="btn primary"
-                    disabled={busy || (loginCodeSent ? loginCode.length !== 6 : !loginCodeEmail.trim())}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
-              {busy
-                ? (loginCodeSent ? t('auth.login_code.verifying') : t('auth.login_code.sending'))
-                : (loginCodeSent ? t('auth.login_code.verify_btn') : t('auth.login_code.send_btn'))}
-            </button>
-            {loginCodeSent && (
-              <div className="pl-auth-foot" style={{justifyContent: 'space-between'}}>
-                <button type="button" style={{background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: 0}}
-                        onClick={() => { setLoginCodeSent(false); setLoginCode(''); setErr(''); setNotice(''); }}>
-                  {t('auth.login_code.back')}
-                </button>
-                <button type="button"
-                        disabled={resendCooldown > 0 || busy}
-                        style={{background: 'none', border: 'none', color: resendCooldown > 0 ? 'var(--muted)' : 'var(--accent)', cursor: resendCooldown > 0 ? 'default' : 'pointer', fontSize: 13, padding: 0}}
-                        onClick={handleResend}>
-                  {resendCooldown > 0 ? t('auth.verify.resend_cooldown', { s: resendCooldown }) : t('auth.verify.resend')}
-                </button>
-              </div>
-            )}
-          </form>
+          <CodeLoginForm loginCodeSent={loginCodeSent} handleLoginCodeVerify={handleLoginCodeVerify} requestLoginCode={requestLoginCode}
+            loginCodeEmail={loginCodeEmail} setLoginCodeEmail={setLoginCodeEmail} loginCodeEmailMask={loginCodeEmailMask}
+            loginCode={loginCode} setLoginCode={setLoginCode} busy={busy} err={err} notice={notice} resendCooldown={resendCooldown}
+            setLoginCodeSent={setLoginCodeSent} setErr={setErr} setNotice={setNotice} handleResend={handleResend} />
         )}
 
         {/* ── 忘记密码表单 ─────────────────────────────────────────── */}
         {mode === 'forgot' && (
-          <form className="pl-auth-form" onSubmit={handleForgot}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-              {t('auth.forgot_desc')}
-            </div>
-            <div className="pl-field">
-              <label htmlFor="forgot_email">{t('auth.forgot_email')}</label>
-              <input
-                id="forgot_email"
-                type="email"
-                autoComplete="email"
-                value={forgotEmail}
-                onChange={(e) => setForgotEmail(e.target.value)}
-                autoFocus
-              />
-            </div>
-            {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
-            )}
-            {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
-            )}
-            <button type="submit" className="btn primary" disabled={busy}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
-              {busy ? t('auth.submitting') : t('auth.forgot_send')}
-            </button>
-            <div className="pl-auth-foot">
-              <button type="button" style={{background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: 0}}
-                      onClick={() => { setMode('login'); setErr(''); setNotice(''); }}>
-                {t('auth.forgot_back_to_login')}
-              </button>
-            </div>
-          </form>
+          <ForgotForm handleForgot={handleForgot} forgotEmail={forgotEmail} setForgotEmail={setForgotEmail}
+            busy={busy} err={err} notice={notice} setMode={setMode} setErr={setErr} setNotice={setNotice} />
         )}
 
         {/* ── 重置密码表单 ─────────────────────────────────────────── */}
         {mode === 'reset' && (
-          <form className="pl-auth-form" onSubmit={handleReset}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-              {t('auth.reset_desc')}
-            </div>
-            <div className="pl-field">
-              <label htmlFor="reset_pw">{t('auth.reset_new_pw')}</label>
-              <input
-                id="reset_pw"
-                type="password"
-                autoComplete="new-password"
-                value={resetPw}
-                onChange={(e) => setResetPw(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <div className="pl-field">
-              <label htmlFor="reset_pw_confirm">{t('auth.reset_confirm')}</label>
-              <input
-                id="reset_pw_confirm"
-                type="password"
-                autoComplete="new-password"
-                value={resetPwConfirm}
-                onChange={(e) => setResetPwConfirm(e.target.value)}
-              />
-            </div>
-            {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
-            )}
-            {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
-            )}
-            <button type="submit" className="btn primary" disabled={busy}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
-              {busy ? t('auth.submitting') : t('auth.reset_submit')}
-            </button>
-          </form>
+          <ResetForm handleReset={handleReset} resetPw={resetPw} setResetPw={setResetPw}
+            resetPwConfirm={resetPwConfirm} setResetPwConfirm={setResetPwConfirm} busy={busy} err={err} notice={notice} />
         )}
 
         {/* ── 登录 / 注册表单 ────────────────────────────────────────── */}
-        {mode !== 'verify' && mode !== 'code-login' && mode !== 'forgot' && mode !== 'reset' && mode !== 'magic-otp' && mode !== 'needs-profile' && <form className="pl-auth-form" onSubmit={submit}>
-          {schemaErr && (
-            <div className="pl-auth-error"
-                 style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>
-              {t('auth.schema_err')}{schemaErr}
-            </div>
-          )}
-
-          {!schema && !schemaErr && (
-            <div style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0'}}>
-              {t('auth.schema_loading')}
-            </div>
-          )}
-
-          {fields.map((f) => (
-            <SchemaField key={f.key} field={f}
-                         value={values[f.key]}
-                         onChange={(v) => setField(f.key, v)} />
-          ))}
-
-          {err && (
-            <div className="pl-auth-error" role="alert"
-                 style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>
-              {err}
-            </div>
-          )}
-
-          {notice && (
-            <div className="pl-auth-notice" role="status" aria-live="polite"
-                 style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                         borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>
-              {notice}
-            </div>
-          )}
-
-          {mode === 'register' && turnstileSitekey && (
-            <div ref={tsRef} className="pl-auth-turnstile"
-                 style={{display: 'flex', justifyContent: 'center', margin: '2px 0'}} />
-          )}
-
-          <button type="submit" className="btn primary" disabled={busy || !schema}
-                  style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
-            {busy ? t('auth.submitting') : (mode === 'login' ? t('auth.login_btn') : t('auth.register_btn'))}
-          </button>
-
-          <div className="pl-auth-foot">
-            <span>
-              {schema?.notes?.first_user_is_admin
-                ? t('auth.first_admin')
-                : ''}
-              {schema?.notes?.invite_only
-                ? t('auth.invite_only_note')
-                : ''}
-              {!schema?.notes?.invite_only && !schema?.notes?.first_user_is_admin
-                ? t('auth.min_password', { min: minPw })
-                : ''}
-            </span>
-            <button
-               onClick={() => {
-                 setForgotEmail('');
-                 setErr(''); setNotice('');
-                 setMode('forgot');
-               }}
-               style={{background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 'inherit', padding: 0}}>{t('auth.forget_password')}</button>
-          </div>
-        </form>}
+        {mode !== 'verify' && mode !== 'code-login' && mode !== 'forgot' && mode !== 'reset' && mode !== 'magic-otp' && mode !== 'needs-profile' && <MainAuthForm
+          submit={submit} schemaErr={schemaErr} schema={schema} fields={fields} values={values} setField={setField}
+          err={err} notice={notice} mode={mode} turnstileSitekey={turnstileSitekey} tsRef={tsRef} busy={busy} minPw={minPw}
+          setForgotEmail={setForgotEmail} setErr={setErr} setNotice={setNotice} setMode={setMode} />}
       </div>
     </div>
   );
