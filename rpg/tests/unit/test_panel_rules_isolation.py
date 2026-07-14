@@ -85,7 +85,8 @@ class PanelRulesFrontendBranchTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        panel = Path(__file__).resolve().parents[3] / "frontend" / "src" / "game-panels.jsx"
+        # 拆分后 PanelRules 住 components/game/PanelRules.jsx(原 game-panels.jsx 已拆薄为转发壳)。
+        panel = Path(__file__).resolve().parents[3] / "frontend" / "src" / "components" / "game" / "PanelRules.jsx"
         cls.text = panel.read_text(encoding="utf-8")
 
     def test_panel_reads_content_pack(self):

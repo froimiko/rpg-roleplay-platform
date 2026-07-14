@@ -35,7 +35,7 @@ def _is_targeted(tail: str) -> bool:
 
 def test_timeline_anchor_bulk_deletes_guard_source():
     files = ["script_timeline.py", "extract/rebuild.py", "extract/resolve.py",
-             "platform_app/api/script_edit.py", "extract/dedup.py"]
+             "platform_app/api/script_edit/anchors.py", "extract/dedup.py"]
     offenders = []
     for f in files:
         try:

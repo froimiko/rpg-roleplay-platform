@@ -43,8 +43,22 @@ from pathlib import Path
 from tests.helpers import make_client, register_user
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-PANELS_JSX = (PROJECT_ROOT / "frontend" / "src" / "game-panels.jsx").read_text(encoding="utf-8")
-PLATFORM_JSX = (PROJECT_ROOT / "frontend" / "src" / "platform-app.jsx").read_text(encoding="utf-8")
+
+
+def _read_split_source(shell: Path, pkg_dir: Path) -> str:
+    """模块化拆分后源码守卫的读取范式:壳文件 + 组件目录全量拼接(排序稳定)。"""
+    parts = [shell.read_text(encoding="utf-8")]
+    if pkg_dir.is_dir():
+        parts += [p.read_text(encoding="utf-8") for p in sorted(pkg_dir.glob("*.jsx"))]
+    return "\n".join(parts)
+
+
+PANELS_JSX = _read_split_source(
+    PROJECT_ROOT / "frontend" / "src" / "game-panels.jsx",
+    PROJECT_ROOT / "frontend" / "src" / "components" / "game")
+PLATFORM_JSX = _read_split_source(
+    PROJECT_ROOT / "frontend" / "src" / "platform-app.jsx",
+    PROJECT_ROOT / "frontend" / "src" / "components" / "platform")
 GAME_HTML = (PROJECT_ROOT / "frontend" / "Game Console.html").read_text(encoding="utf-8")
 
 

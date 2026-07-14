@@ -264,8 +264,13 @@ class RulesChatPipeline(unittest.TestCase):
         游戏面板**不应**再有"转为用户角色卡"按钮 / saveAsUserCard 函数。
         创建 / 提升用户角色卡只能在平台『角色卡』页操作。
         此测试反过来确认旧 promote 路径已彻底从 game-panels.jsx 移除。"""
-        panel = Path(__file__).resolve().parents[3] / "frontend" / "src" / "game-panels.jsx"
-        text = panel.read_text(encoding="utf-8")
+        # 拆分后守卫读取范式:壳 + components/ 子目录全量拼接(负向断言覆盖只增)
+        _root = Path(__file__).resolve().parents[3]
+        _src = _root / "frontend" / "src"
+        text = "\n".join(
+            [(_src / "game-panels.jsx").read_text(encoding="utf-8")]
+            + [p.read_text(encoding="utf-8")
+               for p in sorted((_src / "components" / "game").glob("*.jsx"))])
         self.assertNotIn('data-tip="转为用户角色卡"', text,
             "game-panels.jsx 不应再有 data-tip='转为用户角色卡' 按钮")
         self.assertNotIn("saveAsUserCard", text,
@@ -273,8 +278,10 @@ class RulesChatPipeline(unittest.TestCase):
         self.assertNotIn("window.api.cards.myUpsert", text,
             "game-panels.jsx 不应再调 cards.myUpsert — 那是平台职责")
         # 平台一侧应仍保留 promote 路径(合法关注点)
-        platform = Path(__file__).resolve().parents[3] / "frontend" / "src" / "platform-app.jsx"
-        platform_text = platform.read_text(encoding="utf-8")
+        platform_text = "\n".join(
+            [(_src / "platform-app.jsx").read_text(encoding="utf-8")]
+            + [p.read_text(encoding="utf-8")
+               for p in sorted((_src / "components" / "platform").glob("*.jsx"))])
         self.assertIn("promoteNpcToUserCard", platform_text,
             "平台『角色卡』页应保留 promoteNpcToUserCard")
 

@@ -31,8 +31,10 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+# 拆分后状态栏(PanelStatus / Module|NovelStatusProfile / _statusProfileFor)住
+# components/game/PanelStatus.jsx(原 game-panels.jsx 已拆薄为转发壳)。
 PANELS = (Path(__file__).resolve().parents[3]
-          / "frontend" / "src" / "game-panels.jsx").read_text(encoding="utf-8")
+          / "frontend" / "src" / "components" / "game" / "PanelStatus.jsx").read_text(encoding="utf-8")
 
 
 def _extract_function(text: str, name: str) -> str:
