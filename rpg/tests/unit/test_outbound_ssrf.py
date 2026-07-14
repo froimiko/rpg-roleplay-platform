@@ -325,7 +325,10 @@ class ConsolidationSourceGuards(unittest.TestCase):
     PROD_FILES = (
         "agents/extractor.py",
         "agents/command_agent.py",
-        "platform_app/knowledge/embedding.py",
+        # embedding 拆包后出站网络代码分居两处:__init__(OpenAI 兼容通道 _embed_via_openai)
+        # 与 _gemini(原生 embedContent 通道 _embed_via_gemini),两者都须收口到 safe_urlopen。
+        "platform_app/knowledge/embedding/__init__.py",
+        "platform_app/knowledge/embedding/_gemini.py",
     )
 
     def test_callers_use_safe_urlopen(self):

@@ -176,7 +176,9 @@ class EmbedViaGeminiGeoBanSelfHeal(unittest.TestCase):
         clock = _FakeClock()
         embedding._geo_ban_mark(embedding._GEO_BAN_CHANNEL_GEMINI_NATIVE, clock=clock)
 
-        with patch.object(embedding, "_get_vertex_client", return_value=None), \
+        # embedding 拆包后 _embed_via_vertex/_get_vertex_client 住 embedding._vertex,
+        # patch-where-defined:_embed_via_vertex 内部按 _vertex 命名空间解析 _get_vertex_client。
+        with patch.object(embedding._vertex, "_get_vertex_client", return_value=None), \
              patch.dict(os.environ, {"EMBED_API_KEY": "plat-key"}):
             result = embedding._embed_via_vertex(
                 "text-embedding-004", ["hello"], user_id=None,

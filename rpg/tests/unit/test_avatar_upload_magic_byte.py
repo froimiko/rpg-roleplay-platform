@@ -44,7 +44,10 @@ class _FakeRequest:
 def _call_upload(filename: str, data: bytes, *, full_stack: bool = False):
     """调用 api_upload_avatar。full_stack=False 时只验证早期校验(无 DB);
     full_stack=True 时把 DB/storage/资产登记全 mock 掉,验证成功路径。"""
-    from platform_app import frontend_routes as fr
+    # frontend_routes 已包化;api_upload_avatar 及其模块级依赖(require_user/init_db/
+    # connect/_storage_store_bytes)现居 frontend_routes.profile 子模块 —— patch.object
+    # 必须指向该子模块的命名空间(函数在其自身 module globals 里解析这些名字)。
+    from platform_app.frontend_routes import profile as fr
 
     req = _FakeRequest(_FakeForm(_FakeUpload(filename, data)))
     patches = [mock.patch.object(fr, "require_user", return_value={"id": 1})]
