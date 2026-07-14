@@ -20,7 +20,9 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[2]  # rpg/
 CARDS_PY = (PROJECT / "platform_app" / "knowledge" / "character_cards.py").read_text(encoding="utf-8")
-SCRIPTS_API = (PROJECT / "platform_app" / "api" / "scripts.py").read_text(encoding="utf-8")
+# scripts.py 已包化为 scripts/ 子包(纯机械搬家);按新住址读整包源码做结构断言。
+_SCRIPTS_API_DIR = PROJECT / "platform_app" / "api" / "scripts"
+SCRIPTS_API = "\n".join(p.read_text(encoding="utf-8") for p in sorted(_SCRIPTS_API_DIR.glob("*.py")))
 
 
 class UpdatePreChecksNameCollision(unittest.TestCase):

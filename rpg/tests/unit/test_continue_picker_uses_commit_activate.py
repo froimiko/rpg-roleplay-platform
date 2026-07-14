@@ -38,8 +38,8 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[3]
 PLATFORM_JSX = (PROJECT / "frontend" / "src" / "platform-app.jsx").read_text(encoding="utf-8")
-# 重构:ContinuePicker 已从 platform-app.jsx 移到 pages/saves.jsx(platform-app import 之)。
-SAVES_JSX = (PROJECT / "frontend" / "src" / "pages" / "saves.jsx").read_text(encoding="utf-8")
+# 二次重构:ContinuePicker 从 pages/saves.jsx 移到 components/saves/Branches.jsx(pages/saves.jsx 只剩路由壳)。
+SAVES_JSX = (PROJECT / "frontend" / "src" / "components" / "saves" / "Branches.jsx").read_text(encoding="utf-8")
 # Phase 5.8: api.py 已拆分为 api/ 子包，branches 路由移到 api/saves.py
 _api_py_path = PROJECT / "rpg" / "platform_app" / "api.py"
 _saves_py_path = PROJECT / "rpg" / "platform_app" / "api" / "saves.py"

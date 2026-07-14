@@ -1,0 +1,153 @@
+/* Admin — AdminMaintenancePage — 维护模式。从 pages/admin.jsx 纯机械拆出,JSX / props / fetch 路径零变化。 */
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import CSContainer from '@cloudscape-design/components/container';
+import CSHeader from '@cloudscape-design/components/header';
+import CSSpaceBetween from '@cloudscape-design/components/space-between';
+import CSButton from '@cloudscape-design/components/button';
+import CSBox from '@cloudscape-design/components/box';
+import CSAlert from '@cloudscape-design/components/alert';
+import CSToggle from '@cloudscape-design/components/toggle';
+import CSModal from '@cloudscape-design/components/modal';
+import CSFormField from '@cloudscape-design/components/form-field';
+import CSTextarea from '@cloudscape-design/components/textarea';
+import { fmtTime } from './shared.jsx';
+
+/* ─────────────────────────────────────────────────────────────────
+   页面 8：AdminMaintenancePage — 维护模式
+   ───────────────────────────────────────────────────────────────── */
+export function AdminMaintenancePage() {
+  const { t } = useTranslation();
+  const [config, setConfig] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState(null);
+  const [saving, setSaving] = React.useState(false);
+  const [draft, setDraft] = React.useState(null);
+  const [restartModal, setRestartModal] = React.useState(false);
+  const [restarting, setRestarting] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const res = await window.api.admin.maintenance();
+        if (!cancelled) {
+          setConfig(res);
+          setDraft(JSON.parse(JSON.stringify(res)));
+        }
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || t('admin_page.common.load_fail'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function save() {
+    if (!draft) return;
+    setSaving(true);
+    try {
+      await window.api.admin.saveMaintenance(draft);
+      setConfig(draft);
+      window.toast?.(t('admin_page.maintenance.save_ok'), { kind: 'ok' });
+    } catch (e) {
+      window.toast?.(t('admin_page.maintenance.save_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRestart() {
+    setRestarting(true);
+    try {
+      await window.api.admin.restart();
+      window.toast?.(t('admin_page.maintenance.restart_ok'), { kind: 'ok', duration: 5000 });
+      setRestartModal(false);
+    } catch (e) {
+      window.toast?.(t('admin_page.maintenance.restart_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+    } finally {
+      setRestarting(false);
+    }
+  }
+
+  const d = draft || {};
+
+  return (
+    <CSSpaceBetween size="l">
+      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+
+      <CSContainer header={<CSHeader variant="h2" description={t('admin_page.maintenance.mode_description')}>{t('admin_page.maintenance.mode_title')}</CSHeader>}>
+        {loading
+          ? <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
+          : !draft
+            ? <CSBox textAlign="center" color="inherit">{t('admin_page.maintenance.empty')}</CSBox>
+            : (
+              <CSSpaceBetween size="m">
+                {d.enabled && (
+                  <CSAlert type="warning">{t('admin_page.maintenance.mode_warning')}</CSAlert>
+                )}
+                <CSFormField label={t('admin_page.maintenance.field_toggle')}>
+                  <CSToggle
+                    checked={!!d.enabled}
+                    onChange={({ detail }) => setDraft((prev) => ({ ...prev, enabled: detail.checked }))}
+                  >
+                    {d.enabled ? t('admin_page.common.toggle_on') : t('admin_page.common.toggle_off')}
+                  </CSToggle>
+                </CSFormField>
+                <CSFormField label={t('admin_page.maintenance.field_message')}>
+                  <CSTextarea
+                    value={d.message || ''}
+                    onChange={({ detail }) => setDraft((prev) => ({ ...prev, message: detail.value }))}
+                    rows={4}
+                    placeholder={t('admin_page.maintenance.message_placeholder')}
+                  />
+                </CSFormField>
+                {d.started_at && (
+                  <CSFormField label={t('admin_page.maintenance.field_started_at')}>
+                    <CSBox color="text-body-secondary">{fmtTime(d.started_at)}</CSBox>
+                  </CSFormField>
+                )}
+                <CSBox float="right">
+                  <CSButton variant="primary" loading={saving} onClick={save}>{t('common.save')}</CSButton>
+                </CSBox>
+              </CSSpaceBetween>
+            )
+        }
+      </CSContainer>
+
+      <CSContainer header={<CSHeader variant="h2" description={t('admin_page.maintenance.restart_description')}>{t('admin_page.maintenance.restart_title')}</CSHeader>}>
+        <CSSpaceBetween size="m">
+          <CSAlert type="warning">{t('admin_page.maintenance.restart_warning')}</CSAlert>
+          <CSButton
+            variant="normal"
+            iconName="status-warning"
+            onClick={() => setRestartModal(true)}
+          >
+            {t('admin_page.maintenance.restart_btn')}
+          </CSButton>
+        </CSSpaceBetween>
+      </CSContainer>
+
+      {restartModal && (
+        <CSModal
+          visible
+          onDismiss={() => !restarting && setRestartModal(false)}
+          header={t('admin_page.maintenance.restart_modal_title')}
+          footer={
+            <CSBox float="right">
+              <CSSpaceBetween direction="horizontal" size="xs">
+                <CSButton variant="link" disabled={restarting} onClick={() => setRestartModal(false)}>{t('admin_page.common.cancel')}</CSButton>
+                <CSButton variant="primary" loading={restarting} onClick={handleRestart}>{t('admin_page.maintenance.restart_confirm_btn')}</CSButton>
+              </CSSpaceBetween>
+            </CSBox>
+          }
+        >
+          <CSBox>{t('admin_page.maintenance.restart_modal_body')}</CSBox>
+        </CSModal>
+      )}
+    </CSSpaceBetween>
+  );
+}

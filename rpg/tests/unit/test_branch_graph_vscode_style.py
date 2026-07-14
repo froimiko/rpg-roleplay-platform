@@ -43,8 +43,8 @@ from pathlib import Path
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend"
 BG_JSX = (FRONTEND / "src" / "branch-graph.jsx").read_text(encoding="utf-8")
 GAME_APP = (FRONTEND / "src" / "game-app.jsx").read_text(encoding="utf-8")
-# 代码分割后真实 BranchesPage 落在 pages/saves.jsx(platform-app.jsx 只剩壳/共用件)
-SAVES_JSX = (FRONTEND / "src" / "pages" / "saves.jsx").read_text(encoding="utf-8")
+# 二次代码分割后真实 BranchesPage 落在 components/saves/Branches.jsx(pages/saves.jsx 只剩路由壳)
+SAVES_JSX = (FRONTEND / "src" / "components" / "saves" / "Branches.jsx").read_text(encoding="utf-8")
 API_CLIENT = (FRONTEND / "src" / "api-client.js").read_text(encoding="utf-8")
 GAME_HTML = (FRONTEND / "Game Console.html").read_text(encoding="utf-8")
 PLATFORM_HTML = (FRONTEND / "Platform.html").read_text(encoding="utf-8")
@@ -201,11 +201,11 @@ class HtmlLoadsBranchGraph(unittest.TestCase):
 
     def test_platform_loads_branch_graph_before_platform_app(self):
         # Vite/ESM:Platform.html 加载 src/entries/platform.jsx;真实 BranchesPage 在
-        # pages/saves.jsx,它 import branch-graph.jsx。
+        # components/saves/Branches.jsx,它 import branch-graph.jsx。
         self.assertIn("src/entries/platform.jsx", PLATFORM_HTML)
-        saves = (FRONTEND / "src" / "pages" / "saves.jsx").read_text(encoding="utf-8")
+        saves = (FRONTEND / "src" / "components" / "saves" / "Branches.jsx").read_text(encoding="utf-8")
         self.assertIn("branch-graph.jsx", saves,
-            "pages/saves.jsx(真实 BranchesPage)应 import branch-graph.jsx")
+            "components/saves/Branches.jsx(真实 BranchesPage)应 import branch-graph.jsx")
 
 
 # ────────────────────────────────────────────────────────────

@@ -5,7 +5,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SI = (ROOT / "platform_app" / "script_import.py").read_text(encoding="utf-8")
-API = (ROOT / "platform_app" / "api" / "scripts.py").read_text(encoding="utf-8")
+# scripts.py 已包化为 scripts/ 子包(纯机械搬家);按新住址读整包源码做结构断言。
+_API_DIR = ROOT / "platform_app" / "api" / "scripts"
+API = "\n".join(p.read_text(encoding="utf-8") for p in sorted(_API_DIR.glob("*.py")))
 
 
 def test_update_chapter_optimistic_lock():

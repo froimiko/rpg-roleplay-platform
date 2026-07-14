@@ -1,0 +1,85 @@
+"""platform_app.api.scripts.worldbook_canon —— 世界书 + canon 实体只读端点。
+
+worldbook 列表、canon 实体列表/详情(MD 编辑器按类型拉取)。纯机械搬家,行为零变化。
+"""
+from __future__ import annotations
+
+from fastapi import Depends
+
+from ... import knowledge
+from ...db import connect
+from .._deps import json_response, require_user
+from ._shared import router
+
+
+@router.get("/api/scripts/{script_id}/worldbook")
+async def api_script_worldbook(script_id: int, limit: int | None = None, cursor: str | None = None, fetch_all: bool = False, user=Depends(require_user)):
+    # fetch_all=true:编辑器一次性全量加载(绕开游标分页漏条);否则走默认游标分页。
+    try:
+        return json_response({"ok": True, **knowledge.list_worldbook_entries(
+            user["id"], script_id, limit, cursor, fetch_all=fetch_all)})
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
+# canon 实体列表(MD 编辑器按类型拉取)。鉴权 owner 或 subscriber(只读),与 GET worldbook
+# 的访问模型一致;分页/返回沿用 page_payload(items + page.{limit,next_cursor,has_more})。
+_CANON_LIST_COLS = (
+    "id, logical_key, name, full_name, type, entity_subtype, parent_logical_key, "
+    "summary, identity, background, aliases, attrs, "
+    "first_revealed_chapter, public_knowledge, importance, created_at"
+)
+
+
+@router.get("/api/scripts/{script_id}/canon-entities")
+async def api_script_canon_entities(
+    script_id: int, limit: int | None = None, cursor: str | None = None, user=Depends(require_user)
+):
+    """列出 canon 实体全字段(分页),供 MD 编辑器按实体类型拉取。owner 或 subscriber 可读。"""
+    from ...db import cursor_id, limit_value, page_payload
+    page_limit = limit_value(limit)
+    before_id = cursor_id(cursor)
+    with connect() as db:
+        owned = db.execute(
+            """select 1 from scripts s
+            where s.id = %s and (
+              s.owner_id = %s
+              or s.id in (select script_id from user_script_subscriptions where user_id = %s)
+            )""",
+            (script_id, user["id"], user["id"]),
+        ).fetchone()
+        if not owned:
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        rows = db.execute(
+            f"""
+            select {_CANON_LIST_COLS} from kb_canon_entities
+            where script_id = %s and (%s::bigint is null or id < %s)
+            order by importance desc, id desc
+            limit %s
+            """,
+            (script_id, before_id, before_id, page_limit + 1),
+        ).fetchall()
+    return json_response({"ok": True, **page_payload([dict(r) for r in rows], page_limit)})
+
+
+@router.get("/api/scripts/{script_id}/canon-entities/{logical_key}")
+async def api_script_canon_entity(script_id: int, logical_key: str, user=Depends(require_user)):
+    """单个 canon 实体全字段。owner 或 subscriber 可读。"""
+    with connect() as db:
+        owned = db.execute(
+            """select 1 from scripts s
+            where s.id = %s and (
+              s.owner_id = %s
+              or s.id in (select script_id from user_script_subscriptions where user_id = %s)
+            )""",
+            (script_id, user["id"], user["id"]),
+        ).fetchone()
+        if not owned:
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        row = db.execute(
+            f"select {_CANON_LIST_COLS} from kb_canon_entities where script_id = %s and logical_key = %s",
+            (script_id, logical_key),
+        ).fetchone()
+    if not row:
+        return json_response({"ok": False, "error": "canon entity 不存在"}, status_code=404)
+    return json_response({"ok": True, "entity": dict(row)})

@@ -33,8 +33,8 @@ if _branches_pkg.is_dir():
 else:
     BRANCHES_PY = _branches_py_path.read_text(encoding="utf-8")
 PLATFORM_JSX = (PROJECT / "frontend" / "src" / "platform-app.jsx").read_text(encoding="utf-8")
-# 重构:ContinuePicker 已移到 pages/saves.jsx。
-SAVES_JSX = (PROJECT / "frontend" / "src" / "pages" / "saves.jsx").read_text(encoding="utf-8")
+# 二次重构:ContinuePicker 移到 components/saves/Branches.jsx。
+SAVES_JSX = (PROJECT / "frontend" / "src" / "components" / "saves" / "Branches.jsx").read_text(encoding="utf-8")
 
 
 class LoadActiveStateSingleSource(unittest.TestCase):
