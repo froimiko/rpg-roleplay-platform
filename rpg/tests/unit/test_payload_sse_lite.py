@@ -21,7 +21,10 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[2]  # rpg/
 APP_PY = (PROJECT / "app.py").read_text(encoding="utf-8")
-GAME_PY = (PROJECT / "routes" / "game.py").read_text(encoding="utf-8")
+# game.py 已包化为 routes/game/ 子包(纯机械搬家):拼接全子模块源码,断言不变量仍成立。
+GAME_PY = "\n".join(
+    _p.read_text(encoding="utf-8") for _p in sorted((PROJECT / "routes" / "game").glob("*.py"))
+)
 
 
 class PayloadHasCatalogSwitch(unittest.TestCase):

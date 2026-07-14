@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE = (ROOT / "rath" / "engine.py").read_text(encoding="utf-8")
 RATH_ROUTES = (ROOT / "routes" / "rath.py").read_text(encoding="utf-8")
-GAME_ROUTES = (ROOT / "routes" / "game.py").read_text(encoding="utf-8")
+GAME_ROUTES = "\n".join(_p.read_text(encoding="utf-8") for _p in sorted((ROOT / "routes" / "game").glob("*.py")))
 MIGRATIONS = (ROOT / "platform_app" / "db" / "migrations.py").read_text(encoding="utf-8")
 
 

@@ -57,7 +57,7 @@ def test_rewrite_off_critical_path():
 def test_choice_swap_writes_active_commit_snapshot():
     """选改写的落库必须写【活跃 branch_commit 快照】(kb_native materialize 权威源)+ bump snapshot_hash
     (跨 worker 失效)—— 否则刷新/换 worker 回退首稿(行者无疆二次反馈的根)。"""
-    src = (REPO / "routes" / "game.py").read_text(encoding="utf-8")
+    src = "\n".join(_p.read_text(encoding="utf-8") for _p in sorted((REPO / "routes" / "game").glob("*.py")))
     fn = src.split("def _amend_history_message", 1)[1].split("\n@router", 1)[0]
     assert "update branch_commits set state_snapshot" in fn
     assert "snapshot_hash" in fn and "runtime_checkouts" in fn
@@ -72,7 +72,7 @@ def test_migration_v91_acceptance_ab_log():
 
 
 def test_choice_endpoint_registered_and_idor_guarded():
-    src = (REPO / "routes" / "game.py").read_text(encoding="utf-8")
+    src = "\n".join(_p.read_text(encoding="utf-8") for _p in sorted((REPO / "routes" / "game").glob("*.py")))
     assert '/api/acceptance/choice' in src
     ep = src.split("def api_acceptance_choice", 1)[1].split("\n@router", 1)[0]
     # IDOR:候选必须属于当前用户 + 换消息要 owns_save

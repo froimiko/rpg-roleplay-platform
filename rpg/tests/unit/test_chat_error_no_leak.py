@@ -7,7 +7,10 @@ from pathlib import Path
 
 from routes.game import _client_safe_error
 
-SRC = (Path(__file__).resolve().parents[2] / "routes" / "game.py").read_text(encoding="utf-8")
+SRC = "\n".join(
+    _p.read_text(encoding="utf-8")
+    for _p in sorted((Path(__file__).resolve().parents[2] / "routes" / "game").glob("*.py"))
+)
 
 
 class ChatErrorNoLeak(unittest.TestCase):

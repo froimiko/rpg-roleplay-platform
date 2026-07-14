@@ -1,0 +1,628 @@
+"""routes.game.chat —— chat SSE 主路径(/api/chat)+ 上下文预估(/api/chat/estimate)+
+context breakdown(/api/chat/context-breakdown)+ 打断(/api/stop)。
+
+⚠️ /api/chat SSE 流式端点的 yield 顺序、异常兜底链(GeneratorExit/CancelledError 断连
+「打断即落库」+ _done_streamed 防双落库 + _client_safe_error 清洗)一个字不能动。
+"""
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+from fastapi import Depends
+from fastapi.responses import JSONResponse, StreamingResponse
+
+from routes._deps_fastapi import get_current_user
+from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse, OkResponse
+from schemas.game import ChatEstimateRequest, ChatRequest
+
+from ._shared import router, _client_safe_error, _log, _note_channel_health_failure
+
+
+@router.post("/api/chat/estimate", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
+async def api_chat_estimate(
+    body: ChatEstimateRequest,
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> JSONResponse:
+    """实时上下文预估。前端 debounce 用户输入后调用，显示 ctx X/Y (Z%) · in~A out~B。
+
+    估算思路（轻量，避免真的跑 retrieval）：
+      input_tokens ≈ system_prompt + history_window + retrieved_budget + 当前输入
+      output_tokens ≈ 该用户最近 10 轮该模型的平均输出
+    """
+    from app import (
+        _ensure_loaded,
+        _resolve_persist_target,
+        selected_model,
+    )
+    body_dict = body.model_dump(exclude_none=True)
+    message = (body_dict.get("message") or "").strip()
+    include_retrieval = bool(body_dict.get("include_retrieval", True))
+
+    state = _ensure_loaded(api_user)
+    model = selected_model()
+    api_id = model["api_id"]
+    model_name = model["real_name"]
+
+    # 各部分粗估
+    from platform_app.usage import average_output_tokens, context_window_for, estimate_input_tokens
+    history = state.history_messages()  # 已限制 MAX_HISTORY_TURNS
+    history_text = "\n".join(m.get("content", "") for m in history)
+    # system prompt 用 GM 模板的近似长度；不真正构建避免昂贵
+    system_estimate = 1200  # 世界观+伯林局势+穿越者补丁 加起来约 1.2K tokens
+    # 召回部分按预算（context_engine 配置的 ~800 token）
+    retrieval_estimate = 800 if include_retrieval else 0
+    # 玩家档案/记忆摘要
+    profile_estimate = estimate_input_tokens(state.short_summary())
+
+    input_tokens = (
+        system_estimate
+        + profile_estimate
+        + estimate_input_tokens(history_text)
+        + retrieval_estimate
+        + estimate_input_tokens(message)
+    )
+    persist_user_id, _ = _resolve_persist_target(api_user)
+    output_estimate = average_output_tokens(persist_user_id, model_name) if persist_user_id else 600
+    if output_estimate <= 0:
+        output_estimate = 600  # 没历史时的默认猜测
+
+    ctx_max = context_window_for(api_id, model_name) or 0
+    total_estimate = input_tokens + output_estimate
+    ctx_pct = round(100 * input_tokens / ctx_max, 1) if ctx_max else 0
+    will_overflow = (input_tokens + output_estimate > ctx_max) if ctx_max else False
+
+    return JSONResponse({
+        "ok": True,
+        "api_id": api_id,
+        "model": model_name,
+        "context_used": input_tokens,
+        "context_max": ctx_max,
+        "context_pct": ctx_pct,
+        "estimated_output_tokens": output_estimate,
+        "estimated_total_tokens": total_estimate,
+        "will_overflow": will_overflow,
+        "breakdown": {
+            "system_prompt": system_estimate,
+            "profile_and_memory": profile_estimate,
+            "history": estimate_input_tokens(history_text),
+            "retrieval_budget": retrieval_estimate,
+            "current_input": estimate_input_tokens(message),
+        },
+        "headroom_tokens": max(0, ctx_max - input_tokens - output_estimate) if ctx_max else 0,
+    })
+
+
+# layer id → (category key, label, color)
+_LAYER_CATEGORY = {
+    # 对话历史
+    "recent_chat": ("history", "对话历史", "#4f8ef7"),
+    # 系统提示 / 规则
+    "rules": ("system_prompt", "系统提示", "#9b6bdf"),
+    "agent_runtime": ("system_prompt", "系统提示", "#9b6bdf"),
+    "timeline_pending": ("system_prompt", "系统提示", "#9b6bdf"),
+    "worldline": ("system_prompt", "系统提示", "#9b6bdf"),
+    "write_results": ("system_prompt", "系统提示", "#9b6bdf"),
+    "context_agent": ("system_prompt", "系统提示", "#9b6bdf"),
+    "candidate_actions": ("system_prompt", "系统提示", "#9b6bdf"),
+    "state_schema": ("system_prompt", "系统提示", "#9b6bdf"),
+    # 状态摘要
+    "state": ("system_prompt", "系统提示", "#9b6bdf"),
+    # RAG 召回
+    "rag": ("retrieved_chunks", "RAG 召回", "#2bae8a"),
+    "novel_retrieval": ("retrieved_chunks", "RAG 召回", "#2bae8a"),
+    # 长期记忆
+    "fact_groups": ("memory_facts", "长期记忆", "#e6a817"),
+    "hypotheses": ("memory_facts", "长期记忆", "#e6a817"),
+    "memory": ("memory_facts", "长期记忆", "#e6a817"),
+    # 角色卡
+    "player_card": ("character_cards", "角色卡", "#e05c7a"),
+    "npc_cards": ("character_cards", "角色卡", "#e05c7a"),
+    "novel_characters": ("character_cards", "角色卡", "#e05c7a"),
+    # 酒馆模式的卡层(AI 角色 / 用户 persona / 卡内高优先级指令)—— 此前未映射 → 错归 system_prompt。
+    "tavern_character": ("character_cards", "角色卡", "#e05c7a"),
+    "tavern_persona": ("character_cards", "角色卡", "#e05c7a"),
+    "tavern_card_system": ("character_cards", "角色卡", "#e05c7a"),
+    # 世界书
+    "worldbook": ("worldbook", "世界书", "#3dbad4"),
+    "novel_worldbook": ("worldbook", "世界书", "#3dbad4"),
+    "module_worldbook": ("worldbook", "世界书", "#3dbad4"),
+    # 阶段摘要
+    "novel_timeline": ("phase_digests", "阶段摘要", "#f07a3c"),
+    "runtime_phase_digests": ("phase_digests", "阶段摘要", "#f07a3c"),
+    # 玩家输入（不计入 breakdown，归入 history）
+    "user_input": ("history", "对话历史", "#4f8ef7"),
+}
+
+_CATEGORY_ORDER = [
+    ("history", "对话历史", "#4f8ef7"),
+    ("system_prompt", "系统提示", "#9b6bdf"),
+    ("retrieved_chunks", "RAG 召回", "#2bae8a"),
+    ("memory_facts", "长期记忆", "#e6a817"),
+    ("character_cards", "角色卡", "#e05c7a"),
+    ("worldbook", "世界书", "#3dbad4"),
+    ("phase_digests", "阶段摘要", "#f07a3c"),
+    ("tools", "工具/MCP", "#8899aa"),
+]
+
+
+@router.get("/api/chat/context-breakdown", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
+async def api_context_breakdown(
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> JSONResponse:
+    from app import _ensure_loaded
+    from platform_app.usage import context_window_for
+    state = _ensure_loaded(api_user)
+    last_ctx = (state.data.get("memory") or {}).get("last_context") or {}
+    layers = last_ctx.get("layers") or []
+    total_tokens = int(last_ctx.get("estimated_tokens") or 0)
+
+    # 按 category 累加
+    cat_tokens: dict[str, int] = {}
+    for layer in layers:
+        lid = layer.get("id") or ""
+        tok = int(layer.get("estimated_tokens") or 0)
+        mapping = _LAYER_CATEGORY.get(lid)
+        if mapping:
+            key = mapping[0]
+        else:
+            # 未知 layer → 归入 system_prompt
+            key = "system_prompt"
+        cat_tokens[key] = cat_tokens.get(key, 0) + tok
+
+    # layer bundle 之外的真实发送构成(master.respond_stream_with_tools 记录到 last_context):
+    # 系统模板 + 工具定义拼进 system 字符串;历史走 messages[] —— 三者都不是 context 层,
+    # 否则 breakdown 把它们漏算(角色卡/对话历史/工具 显示 0、总量严重偏低)。
+    cat_tokens["system_prompt"] = cat_tokens.get("system_prompt", 0) + int(last_ctx.get("system_prompt_tokens") or 0)
+    cat_tokens["tools"] = cat_tokens.get("tools", 0) + int(last_ctx.get("tools_tokens") or 0)
+    cat_tokens["history"] = cat_tokens.get("history", 0) + int(last_ctx.get("history_tokens") or 0)
+
+    from app import _get_user_preferences_cached, selected_model
+    model = selected_model()
+    ctx_limit = int(context_window_for(model["api_id"], model["real_name"]) or 0)
+    # 与 _payload 的圆环分母一致:min(模型原生, 用户 context_size 默认 16384)。
+    # 不再回退到悬空 1M —— 那是"未配置"假象,且与「模型参数」里的设置不符(用户报的 bug)。
+    try:
+        _prefs = _get_user_preferences_cached(api_user) if api_user else {}
+        _ucs = int(float(_prefs.get("settings.context_size") or _prefs.get("context_size") or 16384))
+        ctx_limit = min(ctx_limit, _ucs) if ctx_limit else _ucs
+    except Exception:
+        ctx_limit = ctx_limit or 16384
+
+    breakdown = []
+    used_sum = 0
+    for key, label, color in _CATEGORY_ORDER:
+        tok = cat_tokens.get(key, 0)
+        used_sum += tok
+        pct = round(100 * tok / ctx_limit, 1) if ctx_limit else 0.0
+        breakdown.append({"key": key, "label": label, "tokens": tok, "pct": pct, "color": color})
+
+    free_tokens = max(0, ctx_limit - used_sum)
+    free_pct = round(100 * free_tokens / ctx_limit, 1) if ctx_limit else 0.0
+    breakdown.append({"key": "free", "label": "剩余空间", "tokens": free_tokens, "pct": free_pct, "color": "#555e6a"})
+
+    return JSONResponse({
+        "ok": True,
+        # total = 所有类目之和(含历史/系统/工具),与 breakdown 一致;不再只取 layer bundle 的
+        # estimated_tokens(那会漏掉历史/系统/工具,圆环与明细对不上)。
+        "total_tokens": used_sum or total_tokens,
+        "ctx_limit": ctx_limit,
+        "breakdown": breakdown,
+    })
+
+
+@router.post("/api/chat")
+async def api_chat(
+    body: ChatRequest,
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> StreamingResponse:
+    import time
+
+    import app as _self_mod
+    from app import (
+        _acceptance_verifier_mode,
+        _active_script_id,
+        _apply_chat_rule_candidates,
+        _build_usage_payload,
+        _chat_rule_candidates,
+        _chat_max_tokens,
+        _clarify_threshold,
+        _command_response,
+        _current_run_id,
+        _ensure_loaded,
+        _get_gm,
+        _get_run_state,
+        _get_sub_gm,
+        _is_black_swan_enabled,
+        _is_extractor_enabled,
+        _is_set_parser_enabled,
+        _is_stop_requested_global,
+        _mark_context_run,
+        _message_with_attachments,
+        _payload,
+        _payload_sse,
+        _persist_chat_turn,
+        _persist_runtime_checkpoint,
+        _resolve_persist_target,
+        _rule_results_prompt,
+        _save_attachments,
+        _sse,
+        _verify_acceptance,
+    )
+    from platform_app import knowledge as platform_knowledge
+
+    body_dict = body.model_dump(exclude_none=True)
+    # task 31：前端历史上同时存在 {message:...} 和 {text:...} 两套契约。
+    # 老的 Game Console.html 发 text，新的 game-app.jsx 也偶尔走 message。
+    # 后端必须两边兼容，否则用户输入直接被 "空消息" error 吞掉。
+    message = (body_dict.get("message") or body_dict.get("text") or "").strip()
+    # 输入上限:nginx client_max_body_size=50m 是外层兜底,但 app 层缺单条消息上限 →
+    # 超长消息会进上下文撑爆 LLM(困惑的 context overflow)并膨胀 history/DB。给清晰 400。
+    # 32KB 对正常角色扮演输入极宽裕(约万余汉字)。
+    _MAX_CHAT_MSG_CHARS = 32000
+    if len(message) > _MAX_CHAT_MSG_CHARS:
+        return StreamingResponse(
+            iter([_sse("error", {"message": f"消息过长({len(message)} 字符,上限 {_MAX_CHAT_MSG_CHARS});请拆分后发送"})]),
+            media_type="text/event-stream",
+        )
+    attachments = _save_attachments(body_dict.get("attachments") or [], user_id=api_user["id"] if api_user else None)
+    message_for_model = _message_with_attachments(message, attachments)
+    if not message_for_model.strip():
+        return StreamingResponse(iter([_sse("error", {"message": "空消息"})]), media_type="text/event-stream")
+
+    # F#1:把本轮所有上传附件的落盘路径挂到 state.data["_uploaded_files"],供 agent 工具按需读取:
+    #   · import_character_card  → 选最近一张卡片类(.png/.json/.webp)
+    #   · read_attached_text     → 读文本类(.txt/.md/.json/.csv/.log)全文
+    #   · import_attached_script → 把文本类作为剧本导入(章节拆分/全流水线)
+    # 只读服务端 user 作用域落盘路径(_save_attachments 已限大小/校验 base64),非 agent 注入 → 安全。
+    try:
+        _attach_files = [
+            {
+                "name": a.get("name"), "path": a.get("path"),
+                "type": a.get("type"), "is_image": bool(a.get("is_image")),
+                "size": a.get("size"),
+            }
+            for a in (attachments or [])
+            if a.get("path")
+        ]
+        if _attach_files and api_user:
+            _ensure_loaded(api_user).data["_uploaded_files"] = _attach_files
+    except Exception:
+        pass
+
+    # task #61: 多 tab 冲突检测 — 前端带 save_id 时校验是否与 user_runtime 匹配
+    client_save_id = body_dict.get("save_id")
+    if client_save_id and api_user:
+        from platform_app import runtime as _platform_runtime
+        _rt = _platform_runtime.read_runtime(user_id=api_user["id"])
+        _active_sid = int((_rt or {}).get("save_id") or 0)
+        if _active_sid and int(client_save_id) != _active_sid:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "code": "save_id_mismatch",
+                    "message": "当前激活存档已切换，请刷新页面后重试",
+                    "client_save_id": int(client_save_id),
+                    "active_save_id": _active_sid,
+                },
+            )
+
+    # RATH v4(A7):玩家回合自动暂停——玩家回归本身就证明"不在场演化"该让位,离线世界
+    # 在玩家仍活跃时继续跑没有意义(且吃 tick 预算)。非致命 try/except,绝不阻断聊天;
+    # 只在拿到 active save id 处做一次 CAS 式 UPDATE,命中才落 trace。ticker(run_due_ticks)
+    # 侧对称:玩家离场约 2h(该 save 最新 branch_commit 距今)后自动 resume。
+    if api_user:
+        try:
+            # 热路径纪律:绝大多数用户没有 RATH 实验,先做一次 (user_id,status) 索引点查
+            # (idx_rath_exp_user,~恒空),只有真有 running 实验才解析激活存档——优先复用
+            # 请求体里的 client_save_id,缺失才读 runtime(runtime 行含大快照,能省则省)。
+            from platform_app.db import connect as _rath_connect
+            with _rath_connect() as _rath_db:
+                _rath_running = _rath_db.execute(
+                    "select id, save_id, world_clock_min from rath_experiments "
+                    "where user_id=%s and status='running'",
+                    (api_user["id"],),
+                ).fetchall()
+            if _rath_running:
+                _rath_sid = int(client_save_id or 0)
+                if not _rath_sid:
+                    from platform_app import runtime as _rath_runtime
+                    _rath_rt = _rath_runtime.read_runtime(user_id=api_user["id"])
+                    _rath_sid = int((_rath_rt or {}).get("save_id") or 0)
+                _rath_hits = [r for r in _rath_running if int(r["save_id"]) == _rath_sid]
+                if _rath_hits:
+                    with _rath_connect() as _rath_db:
+                        _rath_db.execute(
+                            "update rath_experiments set status='paused', pause_reason='player_active', "
+                            "paused_at=now(), last_tick_at=now() "
+                            "where id = any(%s) and status='running'",
+                            ([int(r["id"]) for r in _rath_hits],),
+                        )
+                        if hasattr(_rath_db, "commit"):
+                            _rath_db.commit()
+                    from rath.engine import _trace as _rath_trace
+                    for _r in _rath_hits:
+                        _rath_trace(int(_r["id"]), "玩家回归,世界暂停",
+                                    clock=int(_r.get("world_clock_min") or 0))
+        except Exception:
+            pass
+
+    _chat_start_time = time.time()
+
+    # 多用户隔离：当前用户的 run_id 自增、stop_event 清零
+    run_id, stop_event = _get_run_state(api_user)
+
+    state = _ensure_loaded(api_user)
+    gm = _get_gm(api_user)
+
+    async def stream():
+        # task #51: chat 主流程拆到 chat_pipeline.py 5 个 phase。
+        # 这里只剩:
+        #   - /命令短路 (本 endpoint 自己处理,不进 pipeline)
+        #   - 构造 PipelineContext + 依次跑 phase + SSE 透传
+        #   - 兜底 except 包到 error 事件
+        from chat_pipeline import (
+            PipelineContext,
+            apply_player_directives_phase,
+            persist_turn_phase,
+            run_context_phase,
+            run_gm_phase,
+            run_rules_phase,
+        )
+
+        response = ""
+        _done_streamed = False  # 已发过 done(正常完成或已打断落库)→ 断连兜底绝不二次落库
+        command_text, changed = ("", False) if attachments else _command_response(message, state)
+        if command_text:
+            if changed:
+                _persist_runtime_checkpoint(state, api_user)
+                yield _sse("status", _payload_sse(api_user))
+            # #13 沉浸感: 斜杠命令回执是确定性后端字符串(非 GM 叙事),不再以
+            # token 流出(会被前端当正文累加进主聊天 transcript),改 system_receipt
+            # 事件 → 前端 toast。changed=True 时侧栏已由上面的 status 事件刷新。
+            yield _sse("system_receipt", {"text": command_text, "changed": changed})
+            yield _sse("done", {"status": _payload_sse(api_user), "interrupted": False, "command": True})
+            return
+
+        sub_gm = _get_sub_gm(api_user)
+        pipeline_ctx = PipelineContext(
+            api_user=api_user,
+            state=state,
+            gm=gm,
+            sub_gm=sub_gm,
+            message_for_model=message_for_model,
+            run_id=run_id,
+            stop_event=stop_event,
+            chat_start_time=_chat_start_time,
+        )
+
+        try:
+            # Phase 1: 玩家 directive (过期问题 + /set 工具化 + 正则 fallback + set_parser + timeline anchor)
+            async for evt, data in apply_player_directives_phase(
+                pipeline_ctx,
+                resolve_persist_target=_resolve_persist_target,
+                persist_runtime_checkpoint=_persist_runtime_checkpoint,
+                payload_fn=_payload_sse,
+                is_set_parser_enabled=_is_set_parser_enabled,
+                active_script_id=_active_script_id,
+            ):
+                if evt == "done":
+                    _done_streamed = True
+                yield _sse(evt, data)
+            if pipeline_ctx.early_return:
+                return
+
+            # Phase 2: context agent (子 GM curator)
+            # 注入 run_context_agent 让测试 monkeypatch (app.run_context_agent = ...) 能透到 pipeline。
+            async for evt, data in run_context_phase(
+                pipeline_ctx,
+                resolve_persist_target=_resolve_persist_target,
+                payload_fn=_payload_sse,
+                active_script_id=_active_script_id,
+                clarify_threshold=_clarify_threshold,
+                persist_chat_turn=_persist_chat_turn,
+                mark_context_run=_mark_context_run,
+                apply_chat_rule_candidates=_apply_chat_rule_candidates,
+                chat_rule_candidates=_chat_rule_candidates,
+                rule_results_prompt=_rule_results_prompt,
+                persist_runtime_checkpoint=_persist_runtime_checkpoint,
+                platform_knowledge_mod=platform_knowledge,
+                run_context_agent_fn=getattr(_self_mod, "run_context_agent", None),
+            ):
+                if evt == "done":
+                    _done_streamed = True
+                yield _sse(evt, data)
+            if pipeline_ctx.early_return:
+                return
+
+            # 酒馆模式(tavern_gm):跳过 GM 专属阶段 —— 世界书/剧本检索(Phase 2.5)与 5E 规则(Phase 3)。
+            # 纯角色扮演不"翻剧本"、不跑规则;绑定剧本后的检索由 context provider 按需触发,不在此前缀强灌。
+            from context_providers.registry import resolve_content_pack as _resolve_cp
+            _is_tavern = (_resolve_cp(state).get("gm_policy") or {}).get("mode") == "tavern_gm"
+
+            # Phase 2.5 — task 86/87: 世界书子代理 (确定性, 不调 LLM, ~20ms)
+            # 翻阅 phase_digests + chapter_facts + worldbook → 注入 ctx_text。
+            # SSE 广播 worldbook_consulting/ready, 前端显示"翻阅设定中"。
+            if not _is_tavern:
+                try:
+                    from agents import worldbook_agent
+                    script_id_for_wb = _active_script_id(api_user)
+                    world = state.data.get("world", {}) or {}
+                    memory = state.data.get("memory", {}) or {}
+                    cur_phase = str((world.get("timeline") or {}).get("current_phase") or "")
+                    cur_time = str(world.get("time") or "")
+                    yield _sse("worldbook_consulting", {
+                        "query": message_for_model[:80],
+                        "phase": cur_phase,
+                        "time": cur_time,
+                    })
+                    wb_query = " ".join(filter(None, [
+                        message_for_model,
+                        str(memory.get("current_objective") or ""),
+                    ]))[:300]
+                    _, _wb_save_id = _resolve_persist_target(api_user)
+                    wb_result = worldbook_agent.consult(
+                        script_id=int(script_id_for_wb or 0),
+                        query=wb_query,
+                        save_id=int(_wb_save_id) if _wb_save_id else None,  # 群反馈实锤:没传=存档级条目全盲
+                        current_phase=cur_phase,
+                        current_time=cur_time,
+                    )
+                    yield _sse("worldbook_ready", {
+                        "confidence": round(wb_result.confidence, 2),
+                        "sources": wb_result.sources,
+                        "phase": (wb_result.timeline_anchor or {}).get("phase"),
+                        "elapsed_ms": wb_result.elapsed_ms,
+                    })
+                    if wb_result.confidence > 0:
+                        wb_text = wb_result.to_context_text()
+                        if wb_text:
+                            pipeline_ctx.ctx_text = (pipeline_ctx.ctx_text or "") + "\n\n" + wb_text
+                    # 把 confidence + progress_note 也塞 bundle 让 GM prompt 知道是否"翻阅未果"
+                    if pipeline_ctx.bundle is None:
+                        pipeline_ctx.bundle = {}
+                    pipeline_ctx.bundle.setdefault("worldbook", {})
+                    pipeline_ctx.bundle["worldbook"].update({
+                        "confidence": wb_result.confidence,
+                        "progress_note": wb_result.progress_note,
+                        "sources": wb_result.sources,
+                    })
+                except Exception as wb_exc:
+                    yield _sse("worldbook_ready", {
+                        "confidence": 0.0, "error": f"{type(wb_exc).__name__}: {wb_exc}",
+                    })
+
+            # Phase 3: 5E rules preflight + rule candidates + clarify 短路
+            if not _is_tavern:
+                async for evt, data in run_rules_phase(
+                    pipeline_ctx,
+                    payload_fn=_payload_sse,
+                    persist_chat_turn=_persist_chat_turn,
+                    persist_runtime_checkpoint=_persist_runtime_checkpoint,
+                    resolve_persist_target=_resolve_persist_target,
+                    mark_context_run=_mark_context_run,
+                    clarify_threshold=_clarify_threshold,
+                    apply_chat_rule_candidates=_apply_chat_rule_candidates,
+                    chat_rule_candidates=_chat_rule_candidates,
+                    rule_results_prompt=_rule_results_prompt,
+                    platform_knowledge_mod=platform_knowledge,
+                ):
+                    if evt == "done":
+                        _done_streamed = True
+                    yield _sse(evt, data)
+                if pipeline_ctx.early_return:
+                    return
+
+            # Phase 4: GM 主响应 (token + tool_call + extractor + acceptance)
+            async for evt, data in run_gm_phase(
+                pipeline_ctx,
+                payload_fn=_payload_sse,
+                persist_chat_turn=_persist_chat_turn,
+                mark_context_run=_mark_context_run,
+                current_run_id_fn=_current_run_id,
+                is_stop_requested_global=_is_stop_requested_global,
+                is_extractor_enabled=_is_extractor_enabled,
+                is_black_swan_enabled=_is_black_swan_enabled,
+                acceptance_verifier_mode=_acceptance_verifier_mode,
+                verify_acceptance=_verify_acceptance,
+                active_script_id=_active_script_id,
+                chat_max_tokens=_chat_max_tokens,
+            ):
+                if evt == "done":
+                    _done_streamed = True
+                yield _sse(evt, data)
+            if pipeline_ctx.early_return:
+                return
+
+            # Phase 5: 持久化 + done
+            async for evt, data in persist_turn_phase(
+                pipeline_ctx,
+                payload_fn=_payload_sse,
+                persist_chat_turn=_persist_chat_turn,
+                build_usage_payload=_build_usage_payload,
+            ):
+                if evt == "done":
+                    _done_streamed = True
+                yield _sse(evt, data)
+        except (GeneratorExit, asyncio.CancelledError):
+            # 纯网络断连(SSE 被客户端/代理关闭):半截正文「打断即落库」,玩家重连不再整
+            # 回合作废。玩家主动 /api/stop 与新回合顶掉 run_id 走 run_gm_phase 内的既有
+            # 打断分支;这里只兜断连(取消经 CancelledError/GeneratorExit 直接打断 await,
+            # 不经过那个 if 判断)。_done_streamed=已发过 done(正常完成或已打断落库)→
+            # 绝不二次落库。persist 为同步调用无 await(取消语境 await 会立刻再抛);
+            # 写库毫秒级,连接已死,短阻塞可接受。
+            _partial = str(getattr(pipeline_ctx, "response", "") or "").strip()
+            if _partial and not _done_streamed:
+                try:
+                    _persist_chat_turn(
+                        api_user, pipeline_ctx.state, pipeline_ctx.message_for_model,
+                        _partial + "\n\n【网络中断,已保留部分内容】",
+                        persist_user_id=pipeline_ctx.persist_user_id,
+                        active_save_id=pipeline_ctx.active_save_id,
+                        interrupted=True,
+                    )
+                    _mark_context_run(
+                        pipeline_ctx.context_run_id, "stopped",
+                        duration_ms=int((time.time() - _chat_start_time) * 1000),
+                    )
+                    _log.info("[chat] 断连打断落库:保留 %d 字部分内容", len(_partial))
+                except Exception as _pe:
+                    _log.warning("[chat] 断连打断落库失败(放弃,不影响清理): %s", _pe)
+            raise
+        except Exception as exc:
+            _mark_context_run(
+                pipeline_ctx.context_run_id,
+                "failed",
+                error=str(exc),
+                duration_ms=int((time.time() - _chat_start_time) * 1000),
+            )
+            _note_channel_health_failure(exc, gm.api_id, api_user)
+            yield _sse("error", {"message": _client_safe_error(exc), "partial": pipeline_ctx.response or response})
+            yield _sse("done", {"interrupted": True, "status": _payload_sse(api_user)})
+
+    async def _stream_with_done_guard():
+        # BUGFIX(工具调用后一直转圈):保证任何退出路径(early_return 未发 done / 中途异常 /
+        # schema-echo 截停)结束时前端都能收到一个 done。否则 Composer 的 streaming 旗标永不清,
+        # 圆环/思考流也因 applyState 不跑而出不来。done 走 _sse 前缀 "event: done\n" 可靠识别。
+        _done_seen = False
+        _disconnected = False
+        try:
+            async for _chunk in stream():
+                if isinstance(_chunk, str) and _chunk.startswith("event: done\n"):
+                    _done_seen = True
+                yield _chunk
+        except GeneratorExit:
+            # 客户端断开 → 不能在 finally 里再 yield(否则 "generator ignored GeneratorExit")
+            _disconnected = True
+            raise
+        finally:
+            if not _done_seen and not _disconnected:
+                try:
+                    yield _sse("done", {"status": _payload_sse(api_user), "interrupted": True})
+                except Exception:
+                    yield _sse("done", {"interrupted": True})
+
+    return StreamingResponse(_stream_with_done_guard(), media_type="text/event-stream")
+
+
+@router.post("/api/stop", response_model=OkResponse, responses=COMMON_ERROR_RESPONSES)
+async def api_stop(
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> JSONResponse:
+    """打断当前用户正在跑的 chat。其他用户的 chat 不受影响。
+    task 87 Phase 6: 同时调 dispatcher stop_current_chat 工具,把 stop_signal 写到 state.permissions。"""
+    from app import _ensure_loaded, _resolve_persist_target, _stop_user
+    _stop_user(api_user)  # 真正的 stop_event 仍由 _stop_user 处理 (跨 chat handler 协程)
+    # 同时通过 dispatcher 记录 audit 与 state.permissions.stop_signal
+    try:
+        state = _ensure_loaded(api_user)
+        from tools_dsl.ui_dispatch_helper import dispatch_ui_tool
+        dispatch_ui_tool(
+            tool_name="stop_current_chat", args={},
+            user_id=int(api_user.get("id")) if api_user else 0,
+            save_id=_resolve_persist_target(api_user)[1] or 0,
+            state=state,
+        )
+    except Exception:
+        pass
+    return JSONResponse({"ok": True})

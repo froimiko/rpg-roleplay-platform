@@ -14,7 +14,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_routes_disconnect_persist_clause():
-    src = (_ROOT / "routes" / "game.py").read_text(encoding="utf-8")
+    src = "\n".join(_p.read_text(encoding="utf-8") for _p in sorted((_ROOT / "routes" / "game").glob("*.py")))
     ge = src.index("except (GeneratorExit, asyncio.CancelledError):")
     exc = src.index("except Exception as exc:", ge)
     clause = src[ge:exc]
@@ -32,6 +32,6 @@ def test_pipeline_keeps_ctx_response_fresh():
 
 
 def test_done_tracking_covers_all_phase_loops():
-    src = (_ROOT / "routes" / "game.py").read_text(encoding="utf-8")
+    src = "\n".join(_p.read_text(encoding="utf-8") for _p in sorted((_ROOT / "routes" / "game").glob("*.py")))
     # 每个 `yield _sse(evt, data)` 之前都应有 done 追踪(5 个 phase 透传点)
     assert src.count("yield _sse(evt, data)") == src.count('if evt == "done":')
