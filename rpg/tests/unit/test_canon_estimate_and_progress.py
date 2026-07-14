@@ -28,7 +28,9 @@ _PKG = PROJECT / "platform_app" / "import_pipeline"
 PIPELINE = "\n".join(
     p.read_text(encoding="utf-8") for p in sorted(_PKG.glob("*.py"))
 )
-SCRIPTS_JSX = (PROJECT.parent / "frontend" / "src" / "pages" / "scripts.jsx").read_text(encoding="utf-8")
+# scripts.jsx 已按页面拆分:IMPORT_STAGES(含 extract 阶段 tok_per_chap 标定)搬到了
+# components/scripts/ScriptsImport.jsx(纯机械搬家,断言逻辑不变,仅读取路径指向新住址)。
+SCRIPTS_JSX = (PROJECT.parent / "frontend" / "src" / "components" / "scripts" / "ScriptsImport.jsx").read_text(encoding="utf-8")
 
 
 class CanonEstimateUsesBudget(unittest.TestCase):

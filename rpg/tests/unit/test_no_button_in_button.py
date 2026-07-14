@@ -11,8 +11,8 @@ React 在浏览器里报：
 塞进 <button class="pl-api-card-head"> 里 → 浏览器报 4 个 warning + 点 toggle
 还会冒泡触发外层展开。
 
-住址更新(平台拆分):SettingsToggle 现住 components/platform/shared.jsx;
-ModelsSection 现住 pages/settings.jsx(API 折叠卡整体重建为表格,旧
+住址更新(平台拆分 → settings 拆分):SettingsToggle 现住 components/platform/shared.jsx;
+ModelsSection 现住 components/settings/models-section.jsx(API 折叠卡整体重建为表格,旧
 pl-api-card-head 折叠条已不存在,toggle 单元格用 stopPropagation 的 <span> 包)。
 """
 from __future__ import annotations
@@ -23,7 +23,9 @@ from pathlib import Path
 
 FRONTEND_SRC = Path(__file__).resolve().parents[3] / "frontend" / "src"
 SHARED_JSX = (FRONTEND_SRC / "components" / "platform" / "shared.jsx").read_text(encoding="utf-8")
-SETTINGS_JSX = (FRONTEND_SRC / "pages" / "settings.jsx").read_text(encoding="utf-8")
+# ModelsSection 拆分后住 components/settings/models-section.jsx(SettingsToggle 渲染点 /
+# role="button" 哨兵均随之搬家);断言逻辑不变,仅把读取路径指向新住址。
+SETTINGS_JSX = (FRONTEND_SRC / "components" / "settings" / "models-section.jsx").read_text(encoding="utf-8")
 
 
 class NoButtonInButton(unittest.TestCase):

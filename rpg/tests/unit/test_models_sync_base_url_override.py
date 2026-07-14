@@ -25,7 +25,9 @@ PROJECT = Path(__file__).resolve().parents[3]
 MODELS_PY = (PROJECT / "rpg" / "routes" / "models.py").read_text(encoding="utf-8")
 MODEL_PROBE_PY = (PROJECT / "rpg" / "model_probe.py").read_text(encoding="utf-8")
 OPENAI_COMPAT_PY = (PROJECT / "rpg" / "agents" / "gm" / "backends" / "openai_compat.py").read_text(encoding="utf-8")
-SETTINGS_JSX = (PROJECT / "frontend" / "src" / "pages" / "settings.jsx").read_text(encoding="utf-8")
+# ModelsSection(provider 行 / 编辑弹窗)拆分后住 components/settings/models-section.jsx;
+# 断言不变,仅把读取路径指向新住址。
+SETTINGS_JSX = (PROJECT / "frontend" / "src" / "components" / "settings" / "models-section.jsx").read_text(encoding="utf-8")
 MOBILE_SETTINGS_JSX = (PROJECT / "frontend" / "src" / "mobile" / "pages" / "MobileSettings.jsx").read_text(encoding="utf-8")
 
 

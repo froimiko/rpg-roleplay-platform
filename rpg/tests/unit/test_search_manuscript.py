@@ -47,7 +47,9 @@ def _patch_db(monkeypatch, rows):
 
     monkeypatch.setattr(dbmod, "connect", fake_connect)
     monkeypatch.setattr(dbmod, "init_db", lambda: None)
-    monkeypatch.setattr(sw, "_user_can_read_script", lambda db, sid, uid: True)
+    # 拆包后 _t_search_manuscript 住在 sw.chapters,读的是 chapters 命名空间里的
+    # _user_can_read_script;patch-where-used 重定向到该子模块(patch sw 门面无效)。
+    monkeypatch.setattr(sw.chapters, "_user_can_read_script", lambda db, sid, uid: True)
 
 
 def _row(ci, title, content):
