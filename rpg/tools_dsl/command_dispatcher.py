@@ -227,28 +227,77 @@ def _get_sync_scope_lock(key: tuple[int, int | None]) -> threading.RLock:
 # 按原语义报错 —— 宁漏勿误。
 _FULLWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
 _INT_GROUP_RE = re.compile(r"-?\d+")
-# 工具失败结果串的两种既有惯例:"失败: ..."(裸前缀)与 "<tool_name> 失败: ..."。
-# 老检测只认裸前缀,后者被记成 ok=True → 前端把失败计进「设定已更新」。
-_RESULT_FAILURE_RE = re.compile(r"^(?:失败|ERROR|拒绝)|^\S{1,64}\s失败\s*[::]")
+# 工具失败结果串的全平台既有惯例(审计穷举后收编,单点识别别再散落):
+#   ①"失败: ..."/"ERROR..."/"拒绝..."/"unknown tool: ..."(裸前缀)
+#   ②"<tool> 失败: ..."/"<tool> 执行异常: ..."(带空格)
+#   ③"委派失败: ..."/"提取失败:..."/"生图失败(...)"(动词+失败无空格,冒号/括号锚定)
+# 老检测只认①的前三种,②③被记成 ok=True → 前端把失败计进「设定已更新」、
+# delegate_writing_task 等工具的失败路径恒报成功。
+_RESULT_FAILURE_RE = re.compile(
+    r"^(?:失败|ERROR|拒绝|unknown tool:)"
+    r"|^\S{1,64}\s(?:失败|执行异常)\s*[::(（]"
+    r"|^\S{1,64}?(?:失败|执行异常)\s*[::(（]"
+)
 
 
-def _coerce_declared_integers(spec: ToolSpec, args: dict[str, Any]) -> None:
-    """按 spec.input_schema 对 args 做保守的整数纠偏(原地修改)。"""
-    props = (spec.input_schema or {}).get("properties") or {}
-    for key, prop in props.items():
-        if not isinstance(prop, dict) or prop.get("type") != "integer":
-            continue
-        v = args.get(key)
-        if v is None or isinstance(v, bool) or isinstance(v, int):
-            continue
+def _coerce_numeric_value(v: Any, declared: str) -> Any:
+    """单值纠偏:声明 integer/number 的参数收到字符串/浮点时保守转数值,转不了返回原值。"""
+    if v is None or isinstance(v, bool):
+        return v
+    if declared == "integer":
+        if isinstance(v, int):
+            return v
         if isinstance(v, float):
-            if v.is_integer():
-                args[key] = int(v)
-            continue
+            return int(v) if v.is_integer() else v
         if isinstance(v, str):
             groups = _INT_GROUP_RE.findall(v.strip().translate(_FULLWIDTH_DIGITS))
             if len(groups) == 1:
-                args[key] = int(groups[0])
+                return int(groups[0])
+        return v
+    if declared == "number":
+        if isinstance(v, (int, float)):
+            return v
+        if isinstance(v, str):
+            # number 不做数字组提取(小数/科学计数歧义面大),只接纯数值串
+            try:
+                return float(v.strip().translate(_FULLWIDTH_DIGITS))
+            except ValueError:
+                return v
+    return v
+
+
+def _coerce_declared_integers(spec: ToolSpec, args: dict[str, Any]) -> None:
+    """按 spec.input_schema 对 args 做保守的数值纠偏(原地修改)。
+
+    覆盖三层(与仓内工具表实际用到的 schema 形状对齐,不做通用 JSON-schema walker):
+      1. 顶层 properties 的 integer/number;
+      2. 顶层 array 且 items 为 integer/number → 逐元素(delete_saves.save_ids);
+      3. 顶层 array 且 items 为 object → 每个元素 dict 的 integer/number 子属性
+         (upsert_worldbook_entries.entries[].priority、report_writing_issues.issues[].chapter)。
+    """
+    props = (spec.input_schema or {}).get("properties") or {}
+    for key, prop in props.items():
+        if not isinstance(prop, dict):
+            continue
+        ptype = prop.get("type")
+        if ptype in ("integer", "number"):
+            if key in args:  # 缺失键不补(别改变 args 形状)
+                args[key] = _coerce_numeric_value(args[key], ptype)
+            continue
+        if ptype == "array" and isinstance(args.get(key), list):
+            items_schema = prop.get("items") or {}
+            itype = items_schema.get("type") if isinstance(items_schema, dict) else None
+            if itype in ("integer", "number"):
+                args[key] = [_coerce_numeric_value(x, itype) for x in args[key]]
+            elif itype == "object":
+                sub_props = items_schema.get("properties") or {}
+                for element in args[key]:
+                    if not isinstance(element, dict):
+                        continue
+                    for sk, sp in sub_props.items():
+                        stype = sp.get("type") if isinstance(sp, dict) else None
+                        if stype in ("integer", "number") and sk in element:
+                            element[sk] = _coerce_numeric_value(element[sk], stype)
 
 
 class ToolDispatcher:
@@ -469,10 +518,22 @@ class ToolDispatcher:
             # task 109b: 工具可以返 dict (e.g. ui_set_field 返 __ui_action__ payload);
             # dict 默认 ok=True, 由上层 console_assistant 解释 __ui_action__ 转 SSE
             if isinstance(text, dict):
-                ok = True
+                # dict 惯例:显式 ok:false 才算失败(__ui_action__ 等无 ok 键的照旧成功)
+                ok = text.get("ok") is not False
             else:
-                # str 走老路径: "失败/ERROR/拒绝" 前缀 或 "<tool> 失败:" 惯例判失败
-                ok = not _RESULT_FAILURE_RE.match(str(text))
+                # str 走老路径: 失败串惯例族(见 _RESULT_FAILURE_RE 注释)
+                _s = str(text)
+                ok = not _RESULT_FAILURE_RE.match(_s)
+                if ok and _s.lstrip()[:1] == "{":
+                    # JSON 字符串契约(如 recommend_player_identity 返 json.dumps
+                    # {"ok": false, "error": ...}):裸正则接不住,按结构识别
+                    try:
+                        import json as _j
+                        _parsed = _j.loads(_s)
+                        if isinstance(_parsed, dict) and _parsed.get("ok") is False:
+                            ok = False
+                    except Exception:
+                        pass
             return self._record(env, spec, ok=ok, result=text)
         except Exception as exc:
             return self._record(

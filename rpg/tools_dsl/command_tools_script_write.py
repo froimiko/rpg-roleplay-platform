@@ -674,7 +674,11 @@ def _t_upsert_worldbook_entries(user_id: int, script_id: int | None, args: dict,
         _invalidate_worldbook_cache(sid)
         ok = [r for r in results if r.get("ok")]
         bad = [r for r in results if not r.get("ok")]
-        lines = [f"批量世界书:成功 {len(ok)}/{len(results)} 条(剧本 #{sid})"]
+        # 全军覆没(0 成功)必须以失败惯例开头,否则 dispatcher 记 ok=True=报成功
+        if results and not ok:
+            lines = [f"批量世界书失败:成功 0/{len(results)} 条(剧本 #{sid})"]
+        else:
+            lines = [f"批量世界书:成功 {len(ok)}/{len(results)} 条(剧本 #{sid})"]
         for r in ok:
             lines.append(f"- {'更新' if r.get('action') == 'updated' else '创建'} #{r.get('id')} {r.get('title', '')}")
         for r in bad:

@@ -345,7 +345,11 @@ def _t_delete_saves(user_id: int, args: dict) -> str:
         "protected": protected,
         "errors": errors,
     }
-    summary_lines = [f"批量删除结果 (请求 {len(ids)} 个):"]
+    # 全军覆没(0 删除)必须以失败惯例开头,否则 dispatcher 记 ok=True=报成功
+    if ids and not deleted:
+        summary_lines = [f"批量删除失败(请求 {len(ids)} 个,成功 0):"]
+    else:
+        summary_lines = [f"批量删除结果 (请求 {len(ids)} 个):"]
     if deleted:
         summary_lines.append(f"  ✓ 成功删除 {len(deleted)} 个: " + ", ".join(
             f"{d['id']}({d['title']!r},turn={d['turn']})" for d in deleted

@@ -568,6 +568,66 @@ class IntegerArgCoercion(unittest.TestCase):
         d._validate(env)
         self.assertEqual(env.args["to_chapter"], 30)
 
+    def test_missing_optional_key_not_inserted(self):
+        # 纠偏不该给缺失的可选参数补 None 键(别改变 args 形状/去重签名/遥测)
+        from tools_dsl.command_dispatcher import _coerce_declared_integers
+        spec = ToolSpec(
+            name="x", description="", executor=lambda s, a: "",
+            input_schema={"type": "object", "properties": {
+                "n": {"type": "integer"}, "f": {"type": "number"}}})
+        args = {}
+        _coerce_declared_integers(spec, args)
+        self.assertEqual(args, {})
+
+
+class NestedNumericCoercion(unittest.TestCase):
+    """审计盲区收口:array items / items.properties 里声明的 integer/number
+    (delete_saves.save_ids / upsert_worldbook_entries.entries[].priority /
+    report_writing_issues.issues[].chapter)也必须纠偏。"""
+
+    def _coerce(self, schema_props, args):
+        from tools_dsl.command_dispatcher import _coerce_declared_integers
+        spec = ToolSpec(
+            name="x", description="", executor=lambda s, a: "",
+            input_schema={"type": "object", "properties": schema_props})
+        _coerce_declared_integers(spec, args)
+        return args
+
+    def test_array_of_integers(self):
+        args = self._coerce(
+            {"save_ids": {"type": "array", "items": {"type": "integer"}}},
+            {"save_ids": ["第10144号", "36", 7, "从3到5"]})
+        self.assertEqual(args["save_ids"], [10144, 36, 7, "从3到5"])
+
+    def test_array_of_objects_integer_subprops(self):
+        args = self._coerce(
+            {"issues": {"type": "array", "items": {"type": "object", "properties": {
+                "chapter": {"type": "integer"}, "note": {"type": "string"}}}}},
+            {"issues": [{"chapter": "第12章", "note": "第3章的note别动"},
+                        {"chapter": 5}]})
+        self.assertEqual(args["issues"][0]["chapter"], 12)
+        self.assertEqual(args["issues"][0]["note"], "第3章的note别动")
+        self.assertEqual(args["issues"][1]["chapter"], 5)
+
+    def test_number_type_plain_numeric_string(self):
+        args = self._coerce(
+            {"probability": {"type": "number"}},
+            {"probability": "0.35"})
+        self.assertEqual(args["probability"], 0.35)
+
+    def test_number_type_unit_string_untouched(self):
+        # number 不做数字组提取(宁漏勿误):带文字的串保持原值
+        args = self._coerce(
+            {"probability": {"type": "number"}},
+            {"probability": "35%"})
+        self.assertEqual(args["probability"], "35%")
+
+    def test_non_list_value_for_array_untouched(self):
+        args = self._coerce(
+            {"save_ids": {"type": "array", "items": {"type": "integer"}}},
+            {"save_ids": "第3号"})
+        self.assertEqual(args["save_ids"], "第3号")
+
 
 class FailureResultDetection(unittest.TestCase):
     """结果串失败识别:老检测只认「失败/ERROR/拒绝」裸前缀,漏掉平台更普遍的
@@ -600,6 +660,46 @@ class FailureResultDetection(unittest.TestCase):
     def test_midstring_failure_word_not_flagged(self):
         # 「失败」出现在正文中间(非失败惯例形态)不误判
         self.assertTrue(self._make("记录:上次尝试失败的教训已写入笔记").ok)
+
+    # ── 审计B收编的漏网形态 ──────────────────────────────
+
+    def test_nospace_verb_failure_colon(self):
+        # 「委派失败: 」「提取失败:」动词+失败无空格惯例
+        self.assertFalse(self._make("委派失败: 没找到可用模型。").ok)
+        self.assertFalse(self._make("提取失败:模型未返回有效结构").ok)
+
+    def test_nospace_verb_failure_paren(self):
+        # 「生图失败(image_id=3):」「委派失败(凭据校验出错):」括号锚定
+        self.assertFalse(self._make("生图失败(image_id=3):未知错误。").ok)
+        self.assertFalse(self._make("委派失败(凭据校验出错): KeyError: x").ok)
+        self.assertFalse(self._make("批量删除失败(请求 5 个,成功 0):").ok)
+
+    def test_batch_worldbook_all_failed(self):
+        self.assertFalse(self._make("批量世界书失败:成功 0/3 条(剧本 #1)").ok)
+        self.assertTrue(self._make("批量世界书:成功 2/3 条(剧本 #1)").ok)
+
+    def test_unknown_tool_and_exec_exception(self):
+        self.assertFalse(self._make("unknown tool: foo_bar").ok)
+        self.assertFalse(self._make("set_world_time 执行异常: ValueError: x").ok)
+
+    def test_json_string_ok_false_contract(self):
+        # recommend_player_identity 契约:json.dumps({"ok": false, ...})
+        self.assertFalse(self._make('{"ok": false, "error": "script_id 必填"}').ok)
+        self.assertTrue(self._make('{"ok": true, "identities": []}').ok)
+        # 非 JSON 的 { 开头串不误判
+        self.assertTrue(self._make("{占位符}已更新").ok)
+
+    def test_dict_ok_false_detected(self):
+        r = self._make({"ok": False, "error": "boom"})
+        self.assertFalse(r.ok)
+        r2 = self._make({"__ui_action__": {"kind": "click"}})
+        self.assertTrue(r2.ok)
+
+    def test_partial_success_midstring_failure_stays_ok(self):
+        # 有意的「部分成功」语义:主操作成功,side-effect 失败拼在句中,不翻 ok
+        self.assertTrue(self._make("角色.name 已更新(角色卡写回失败: X)").ok)
+        self.assertTrue(self._make("OK: 历史锚点已写入 [级联失败:Y]").ok)
+        self.assertTrue(self._make("pending_write p1 已拒绝").ok)
 
 
 if __name__ == "__main__":

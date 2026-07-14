@@ -597,11 +597,25 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
             sid = args.get("save_id")
             if not sid:
                 return "advance_story_progress 失败: 无 active save(存档未就绪)"
+            clamp_note = ""
             try:
                 from platform_app.db import connect
                 from gm_serving.settings import advance_progress, read_settings
                 from gm_serving.settings import set_user_progress_floor
                 with connect() as db:
+                    # 手滑护栏:advance_progress 是 max-only 单调,目标超剧本实际章数
+                    # (如想打 30 打成 300)会顶死进度并炸开全部防剧透 → 钳到最后一章。
+                    # 无剧本档(script_id null/酒馆)或章表空时不钳,发散语义保留。
+                    row = db.execute(
+                        "select coalesce(max(sc.chapter_index), 0) as m "
+                        "from game_saves gs join script_chapters sc on sc.script_id = gs.script_id "
+                        "where gs.id = %s",
+                        (int(sid),),
+                    ).fetchone()
+                    max_ch = int((row or {}).get("m") or 0)
+                    if max_ch > 0 and to_ch > max_ch:
+                        clamp_note = f"(目标第 {to_ch} 章超出剧本共 {max_ch} 章,已按第 {max_ch} 章推进)"
+                        to_ch = max_ch
                     before = (read_settings(db, int(sid)) or {}).get("progress_chapter")
                     advance_progress(db, int(sid), to_ch)  # max-only,单调只增
                     # 玩家显式跳章=确定性地板,揭示钳制(clamp_reveal_progress)对它放行,
@@ -611,8 +625,8 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
             except Exception as exc:
                 return f"advance_story_progress 失败: {type(exc).__name__}: {exc}"
             if before is not None and after is not None and int(after) == int(before):
-                return f"进度未变:已在第 {after} 章(目标第 {to_ch} 章 ≤ 当前,单调不回退)"
-            return f"进度推进:第 {before} 章 → 第 {after} 章"
+                return f"进度未变:已在第 {after} 章(目标第 {to_ch} 章 ≤ 当前,单调不回退){clamp_note}"
+            return f"进度推进:第 {before} 章 → 第 {after} 章{clamp_note}"
         if name in ("add_memory_fact", "add_memory_resource", "add_memory_ability",
                      "pin_memory", "add_memory_note"):
             bucket = {

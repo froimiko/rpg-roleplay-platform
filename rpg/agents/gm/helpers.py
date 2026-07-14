@@ -108,9 +108,14 @@ def _format_tools_for_prompt(tools: list[dict[str, Any]]) -> str:
         required = schema.get("required") or []
         arg_hint = ""
         if props:
-            arg_hint = " · 参数: " + ", ".join(
-                f"{k}{'*' if k in required else ''}" for k in list(props.keys())[:8]
-            )
+            # 带上类型:text-marker 模型只见这段文档,丢类型会把 integer 参数
+            # 传成原话字符串("第30章"),与 command_agent._schema_args 同族病
+            def _p(k: str) -> str:
+                spec = props.get(k)
+                ftype = spec.get("type") if isinstance(spec, dict) else None
+                star = "*" if k in required else ""
+                return f"{k}{star}:{ftype}" if ftype else f"{k}{star}"
+            arg_hint = " · 参数: " + ", ".join(_p(k) for k in list(props.keys())[:8])
         lines.append(f"  · {sid}/{name}: {desc}{arg_hint}")
     return "\n".join(lines)
 

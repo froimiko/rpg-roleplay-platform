@@ -269,7 +269,7 @@ def _execute_generate_image(state: Any, args: dict[str, Any]) -> str | dict[str,
                 "[image_gate] quota_exceeded user=%s save_id=%s",
                 user_id, enqueue_save_id,
             )
-            return "【生图配额】今日生图次数已达上限，请明天再试。"
+            return "生图失败(配额): 今日生图次数已达上限,请明天再试。"
 
         image_id = result.get("image_id")
         log.info(
