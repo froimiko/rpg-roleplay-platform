@@ -293,7 +293,15 @@ def parse_card(data: dict[str, Any] | str | bytes) -> dict[str, Any]:
                 data = inner
                 break
     # 是 V2 还是 V1？
-    if data.get("spec") == "chara_card_v2" or data.get("spec") == "chara_card_v3":
+    if data.get("spec") in ("chara_card_v2", "chara_card_v3"):
+        return _normalize_v2(data)
+    # 幂等性：我们自己做的 V1 归一化会产出 spec="chara_card_v1" 且字段嵌套在 data 下（溯源标记）。
+    # 真正的扁平 V1 卡从不带 "spec" 键，所以把 spec=chara_card_v1 + data 为 dict 的输入
+    # 路由到 _normalize_v2 不会误路由真正的 V1 输入。
+    # 没有这个分支，parse_card(parse_card(v1))——以及由此而来的
+    # write_png_card(parse_card(v1)) → parse_png_card 自然往返——会报
+    # "V1 角色卡缺少 name"。
+    if data.get("spec") == "chara_card_v1" and isinstance(data.get("data"), dict):
         return _normalize_v2(data)
     return _v1_to_v2(data)
 

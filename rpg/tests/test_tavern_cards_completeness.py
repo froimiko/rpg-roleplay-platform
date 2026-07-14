@@ -162,6 +162,49 @@ def test_v1_missing_name_raises():
         parse_card({"description": "no name here"})
 
 
+# ── parse_card: 幂等性(移植自 tavern-card 库 0.1.1 修复) ──────────────
+# 扁平 V1 卡归一化后会产出 spec="chara_card_v1" 且字段嵌套在 data 下（溯源标记）。
+# 若再次喂给 parse_card，之前会被误当成扁平 V1 解析，导致
+# write_png_card(parse_card(v1)) -> parse_png_card 这种自然往返直接炸掉。
+
+def test_parse_card_idempotent_on_v1():
+    """parse_card(parse_card(v1)) 必须等于 parse_card(v1) —— 归一化后的 V1
+    输出（spec=chara_card_v1 + 嵌套 data）不能被重新路由进扁平 V1 分支。"""
+    v1 = {"name": "Luna", "description": "d", "first_mes": "hi"}
+    once = parse_card(v1)
+    twice = parse_card(once)
+    assert once == twice
+    assert twice["data"]["name"] == "Luna"
+
+
+def test_v1_card_png_roundtrip():
+    """还原 write_png_card(parse_card(v1)) -> parse_png_card 的自然使用路径。"""
+    v1 = {"name": "Luna", "description": "d", "first_mes": "hi"}
+    card = parse_card(v1)
+    blob = write_png_card(card)
+    back = parse_png_card(blob)
+    assert back["data"]["name"] == "Luna"
+    assert back["data"]["description"] == "d"
+
+
+def test_flat_v1_without_spec_key_routes_through_v1_to_v2():
+    """真扁平 V1 卡（无 spec 键）的路由不受幂等分支影响，仍走 _v1_to_v2。"""
+    from unittest import mock
+
+    v1 = {"name": "Flat Hero", "description": "Brave warrior"}
+    assert "spec" not in v1
+    with mock.patch(
+        "platform_app.tavern_cards._v1_to_v2", wraps=_v1_to_v2
+    ) as spy_v1, mock.patch(
+        "platform_app.tavern_cards._normalize_v2", wraps=_normalize_v2
+    ) as spy_v2:
+        result = parse_card(v1)
+    spy_v1.assert_called_once()
+    # _v1_to_v2 内部会再调用一次 _normalize_v2 来补全字段，属预期行为。
+    assert spy_v2.call_count == 1
+    assert result["data"]["name"] == "Flat Hero"
+
+
 # ── parse_card: JSON string / base64 ─────────────────────────────────
 
 def test_parse_json_string():
