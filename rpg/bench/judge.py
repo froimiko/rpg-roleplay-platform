@@ -55,6 +55,10 @@ _RUBRIC: dict[str, str] = {
 
 def judge_dim_prompt(dim: str, case: dict, resp_a: str, resp_b: str) -> str:
     """按维度构建裁判 prompt。只注入该维度需要的上下文字段。"""
+    # batch_judge 传入的 response 可能为 None(生成失败位):prompt 构造在
+    # judge_pair 的 try/except 之外,不钳空会 TypeError 炸掉整批(拆库审计回灌)
+    resp_a = resp_a or ""
+    resp_b = resp_b or ""
     lines = [
         f"你是一个专业的叙事质量裁判。你的任务是对以下【{dim}】维度做出判断。",
         "",

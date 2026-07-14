@@ -57,7 +57,8 @@ def writing_messages(case: dict) -> list[dict]:
 
 
 def _ngrams(s: str, n: int) -> set:
-    return {s[i:i + n] for i in range(max(0, len(s) - n))}
+    # len-n+1 窗口:旧写法丢末 gram,style_overlap/prefix_copy 的 Jaccard 系统性偏低(拆库审计回灌)
+    return {s[i:i + n] for i in range(max(0, len(s) - n + 1))}
 
 
 def _jaccard(a: str, b: str, n: int) -> float:

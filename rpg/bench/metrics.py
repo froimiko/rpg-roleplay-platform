@@ -40,7 +40,8 @@ def field_kind(field: str) -> str:
 def m_degeneration(resp: str, ctx: dict) -> dict:
     s = resp or ""
     n = 8
-    grams = [s[i:i + n] for i in range(max(0, len(s) - n))]
+    # len(s)-n+1 个窗口:旧写法 len(s)-n 丢最后一个 gram,恰好 n 长的串产出 0 gram(拆库审计回灌)
+    grams = [s[i:i + n] for i in range(max(0, len(s) - n + 1))]
     repeat_ratio = 0.0
     if grams:
         c = Counter(grams)
@@ -153,10 +154,11 @@ def m_prior_echo(resp: str, ctx: dict) -> dict:
     if not prev or not resp:
         return {"echo_ratio": 0.0}
     n = 10
-    prev_grams = {prev[i:i + n] for i in range(max(0, len(prev) - n))}
+    # len-n+1 窗口修复同 m_degeneration:旧写法下恰 10 字的回复复读永远漏检(拆库审计回灌)
+    prev_grams = {prev[i:i + n] for i in range(max(0, len(prev) - n + 1))}
     if not prev_grams:
         return {"echo_ratio": 0.0}
-    resp_grams = [resp[i:i + n] for i in range(max(0, len(resp) - n))]
+    resp_grams = [resp[i:i + n] for i in range(max(0, len(resp) - n + 1))]
     if not resp_grams:
         return {"echo_ratio": 0.0}
     echoed = sum(1 for g in resp_grams if g in prev_grams)

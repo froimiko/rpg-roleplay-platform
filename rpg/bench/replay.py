@@ -13,20 +13,33 @@ from typing import Any
 from bench.runner import run_scorecard
 
 
+def _disambiguate(harnesses: list) -> list[tuple[str, Any]]:
+    """同名 harness(两个 RecordedHarness / 同标签候选模型)按名字建桶会静默合并
+    记分卡——一份 2x cases、另一份消失(拆库审计回灌)。重名追加 #2/#3 后缀。"""
+    seen: dict[str, int] = {}
+    out: list[tuple[str, Any]] = []
+    for h in harnesses:
+        base = str(getattr(h, "name", "") or "harness")
+        seen[base] = seen.get(base, 0) + 1
+        out.append((base if seen[base] == 1 else f"{base}#{seen[base]}", h))
+    return out
+
+
 def run_replay(cases: list[dict], harnesses: list, on_progress=None) -> dict[str, Any]:
-    per_harness_cases: dict[str, list[dict]] = {h.name: [] for h in harnesses}
-    gen_errors: dict[str, int] = {h.name: 0 for h in harnesses}
+    named = _disambiguate(harnesses)
+    per_harness_cases: dict[str, list[dict]] = {name: [] for name, _ in named}
+    gen_errors: dict[str, int] = {name: 0 for name, _ in named}
 
     for i, case in enumerate(cases):
-        for h in harnesses:
+        for name, h in named:
             resp = h.generate(case)
             if isinstance(resp, str) and resp.startswith("__GEN_ERROR__"):
-                gen_errors[h.name] += 1
+                gen_errors[name] += 1
                 continue
             # 复用 case 上下文(canon/prior)给指标,只换被打分的 response
             scored = dict(case)
             scored["gm_response"] = resp
-            per_harness_cases[h.name].append(scored)
+            per_harness_cases[name].append(scored)
         if on_progress:
             on_progress(i + 1, len(cases))
 
