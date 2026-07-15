@@ -33,20 +33,20 @@ RPG Roleplay drops a long-form novel into a self-hosted, LLM-driven RPG runtime:
 | Layer | Status |
 |---|---|
 | **Python core game loop** (state, ops, scenes, dice, D&D 5E core, encounters, inventory, retrieval, agents) | ✅ Stable |
-| **LLM routing** (Anthropic native, OpenAI Responses, Vertex Gemini, OpenAI-compatible) | ✅ Stable, streaming + tool-use + multimodal |
-| **Postgres + pgvector storage**, 90+ versioned migrations, auto-apply on boot under advisory lock | ✅ Stable |
+| **LLM routing** (Anthropic native, OpenAI, Vertex Gemini, OpenAI-compatible) | ✅ Stable, streaming + tool-use + multimodal |
+| **Postgres + pgvector storage**, v96+ versioned migrations, auto-apply on boot under advisory lock | ✅ Stable |
 | **Vite + React 19**, JSDoc type annotations, multi-page entries | ✅ Stable |
 | **Branchable saves** — commit / ref / checkout work like Git, hard-delete with 30-day grace queue | ✅ Stable |
 | **Script ingestion** — TXT / ZIP upload, 7 chapter splitters, auto-extract character cards + worldbook + timeline, vector index | ✅ Stable |
 | **SillyTavern V2/V3 import** — character cards (PNG tEXt / JSON) + chat history (JSONL → new save) | ✅ Stable |
 | **Tavern Mode** — SillyTavern-style 1:1 character chat: drop-in cards, agent tools (create/swap character, popup choices, import/export card), per-conversation system-prompt editor, round-trip JSONL | ✅ Stable |
 | **Script & novel editor** (`/md-editor`) — three-pane IDE (file tree · CodeMirror 6 · AI side-panel) over chapters / cards / worldbook / personas with lossless Markdown round-trip; AI writing copilot: inline ghost-text continuation, per-hunk diff accept/reject, persistent Problems panel, delegated BYOK sub-models | ✅ Stable |
-| **Native iOS / iPadOS client** — ⚠️ *closed-source companion app, **not** in this repo*; a proprietary SwiftUI client (bring-your-own-server) that connects to this open-source server over its public API. Mirrors the web game console; QR scan-login, invite-link join, register / OTP / forgot-password | 🟡 Beta · proprietary |
+| **Native iOS / iPadOS client** — native SwiftUI client (bring-your-own-server) that connects to this open-source server over its public API, **in this repo under `ios/`** (XcodeGen + Xcode automatic signing). Mirrors the web game console; QR scan-login, invite-link join, register / OTP / forgot-password | ✅ Open source (beta) |
 | **Achievements** — declarative catalog, unlock toasts, public profile wall | ✅ Stable |
 | **Image generation** — covers / avatars / in-chat scene art / character + persona portraits, unified provider layer, BYOK | ✅ Stable |
-| **Provider catalog** — 10 providers (Anthropic / OpenAI / Vertex / Google AI Studio / DeepSeek / DashScope / Hunyuan / MiMo / xAI / OpenRouter), BYOK encrypted at-rest (AES-256-GCM HKDF per-user-per-api), live model sniffing | ✅ Stable |
-| **i18n** — zh-CN + en, ~2000 keys, full UI coverage (settings / login / platform / game / admin) | ✅ Stable |
-| **Help system** — in-app HelpDrawer with 27 module docs | ✅ Stable |
+| **Provider catalog** — 11 providers (Anthropic / OpenAI / Vertex / DeepSeek / DashScope / Doubao / Hunyuan / MiniMax / SiliconFlow / OpenRouter / MiMo), BYOK encrypted at-rest (AES-256-GCM HKDF per-user-per-api), live model sniffing | ✅ Stable |
+| **i18n** — zh-CN + en, ~6400 keys, full UI coverage (settings / login / platform / game / admin) | ✅ Stable |
+| **Help system** — in-app HelpDrawer with ~34 module docs | ✅ Stable |
 | **Compliance suite** — adult-content splash gate, AGPL legal banner, feedback channel with NSFW pre-moderation, AUP/DMCA/CSAM admin runbooks | ✅ Stable |
 | **Auth + registration** — invite-code gate, email verification (Resend), Argon2id with rehash-on-login, forgot-password, two-step register | ✅ Stable |
 | **Account lifecycle** — soft deactivate, request-delete (30-day grace), data export, hard-delete cron | ✅ Stable |
@@ -68,6 +68,8 @@ Worldbook overlays, character-book ingestion, a deterministic opening (`first_me
 
 ## Quick start
 
+Four ways to play the same server: **self-hosted web** (below), the **desktop app** (Electron, one-click), **iOS / iPadOS** (native SwiftUI, built from `ios/`), and **Android** (Expo app in `mobile/`).
+
 ### Easiest — desktop app (no setup, one click)
 
 Don't want to touch a terminal? Download the desktop app — it bundles its own PostgreSQL + Python and runs the whole stack locally with one click (fully offline, your data never leaves the machine; NSFW is on you). It also has an online mode that just connects to the cloud account.
@@ -81,9 +83,7 @@ Don't want to touch a terminal? Download the desktop app — it bundles its own 
 
 ### Native iOS / iPadOS app
 
-> **⚠️ Closed-source companion — NOT part of this open-source repository.** The iOS / iPadOS app is a **proprietary, closed-source** client distributed through the App Store / TestFlight. It is a thin client that connects to the open-source server in this repo over the public API. The server, web frontend, and desktop wrapper here are AGPL-licensed open source; the native mobile app is **not**, and its source is not published here. The AGPL license in this repo covers the server/web/desktop code only.
-
-A SwiftUI companion client (bring-your-own-server) that mirrors the web game console. Point it at the official cloud or your own self-hosted server; sign in by typing your credentials or by **scanning a QR code** from the desktop app — either a passwordless login QR for your own account, or an invite link to register on a self-hosted LAN instance. Currently in private beta.
+The native SwiftUI client (bring-your-own-server) now lives **in this repo under `ios/`** and is covered by the same AGPL license as the rest of the codebase. Point it at the official cloud or your own self-hosted server; sign in by typing your credentials or by **scanning a QR code** from the desktop app — either a passwordless login QR for your own account, or an invite link to register on a self-hosted LAN instance. Build it with XcodeGen + Xcode automatic signing — see [`ios/README.md`](./ios/README.md). Currently in beta.
 
 ### Self-host from source — one command
 
@@ -119,10 +119,9 @@ cd rpg/
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# 4. Configure .env
-#    No rpg/.env.example yet? Copy from deploy/test-server/.env.example
-cp .env.example .env   # or: cp ../deploy/test-server/.env.example .env
-$EDITOR .env           # set DATABASE_URL, RPG_MASTER_KEY, RESEND_API_KEY etc.
+# 4. Configure .env  (only DATABASE_URL is required to boot)
+cp .env.example .env   # rpg/.env.example — annotated template
+$EDITOR .env           # set DATABASE_URL; everything else degrades gracefully
 
 # 5. Run migrations — fresh DB requires "full", not "up"
 #    !! Must run from rpg/ directory (module resolution depends on cwd) !!
@@ -173,31 +172,46 @@ You'll land on the Login page, create a user, then bounce to `Platform.html` (li
 ┌────────────────────────────┐   ┌────────────────────────────┐
 │  pgbouncer :6432           │   │  LLM providers (BYOK)      │
 │  Postgres 16 + pgvector    │   │  Anthropic · OpenAI ·      │
-│  90+ migrations            │   │  Vertex (Gemini) ·         │
-│                            │   │  DeepSeek · DashScope ·    │
-│  Redis :6379               │   │  Hunyuan · MiMo · xAI ·    │
-│  session · cache · ratelim │   │  OpenRouter                │
+│  v96+ migrations           │   │  Vertex · DeepSeek ·       │
+│                            │   │  DashScope · Doubao ·      │
+│  Redis :6379               │   │  Hunyuan · MiniMax · MiMo  │
+│  session · cache · ratelim │   │  SiliconFlow · OpenRouter  │
 └────────────────────────────┘   └────────────────────────────┘
 ```
 
-FastAPI backend with ~30+ route modules / agents / state mixins, ~1k pytest cases.
+FastAPI backend with ~30+ route modules / agents / state mixins, ~2700 pytest cases.
 
 ## LLM providers
 
 | Provider | Catalog | Streaming | Tool use | Multimodal | Extended thinking |
 |---|---|---|---|---|---|
 | Anthropic | ✅ | ✅ | ✅ | ✅ | ✅ |
-| OpenAI (Responses) | ✅ | ✅ | ✅ | ✅ | — |
+| OpenAI (Chat Completions, openai-compat backend) | ✅ | ✅ | ✅ | ✅ | — |
 | Google Vertex (Gemini) | ✅ | ✅ | ✅ | ✅ | — |
 | OpenRouter | ✅ | ✅ via OpenAI-compat | partial | — | — |
 | DeepSeek | ✅ | ✅ via OpenAI-compat | partial | — | — |
-| xAI (Grok) | ✅ | ✅ via OpenAI-compat | partial | — | — |
+| SiliconFlow | ✅ | ✅ via OpenAI-compat | partial | — | — |
+| MiniMax | ✅ | ✅ via OpenAI-compat | partial | — | — |
+| Doubao (ByteDance) | ✅ | ✅ via OpenAI-compat | partial | — | — |
 | MiMo (Xiaomi) | ✅ | ✅ via OpenAI-compat | partial | — | — |
 | Hunyuan (Tencent) | ✅ | ✅ via OpenAI-compat | partial | — | — |
 | DashScope (Qwen) | catalog only | — | — | — | — |
-| Google AI Studio | catalog only | — | — | — | — |
+
+> Google AI Studio was delisted (datacenter-IP ban); Gemini is served through Vertex AI instead.
 
 Adding a provider = one entry in `rpg/config/model_catalog.json` + (if a new wire protocol) one backend in `rpg/agents/gm/backends/`. Everything else — picker, capability filtering, cost accounting — is automatic.
+
+## Companion PyPI packages
+
+Seven reusable pieces were extracted from this repo and published standalone under MIT (author `felixchaos`):
+
+- [`tavern-card`](https://pypi.org/project/tavern-card/) — SillyTavern V2/V3 character-card parse / import / export
+- [`llm-scrub`](https://pypi.org/project/llm-scrub/) — PII / secret scrubbing for LLM inputs & outputs
+- [`zh-narrative-guard`](https://pypi.org/project/zh-narrative-guard/) — deterministic Chinese-narrative consistency checks (dates / weekdays / time)
+- [`byok-vault`](https://pypi.org/project/byok-vault/) — per-user AES-256-GCM HKDF encryption for BYOK credentials
+- [`gram-recall`](https://pypi.org/project/gram-recall/) — episodic / long-form recall helpers for retrieval
+- [`safe-outbound`](https://pypi.org/project/safe-outbound/) — SSRF-safe outbound HTTP (urlopen / httpx) layer
+- [`zh-chapter-splitter`](https://pypi.org/project/zh-chapter-splitter/) — Chinese-novel chapter splitters
 
 ## Stack
 
@@ -219,65 +233,66 @@ We love SillyTavern. It's an incredible character-card playground. But it answer
 | Worldbook | YAML / JSON files | DB-backed entries with semantic activation |
 | Multi-user | Single-user app | Auth + per-user runtime + quota |
 | Stack | Node, plain HTML/CSS | Python + FastAPI + pgvector + React |
-| Tests | Mostly ad-hoc | ~1k pytest cases |
+| Tests | Mostly ad-hoc | ~2700 pytest cases |
 
 Use SillyTavern when your story is a character. Use RPG Roleplay when your story is a *world*. The two import the same V2 card format, so moving sideways is trivial.
 
 ## Configuration
 
+Only `DATABASE_URL` is required to boot; everything else is optional and degrades gracefully.
+
 | Variable | Purpose | Required |
 |---|---|---|
-| `DATABASE_URL` | Postgres connection string (via pgbouncer) | ✅ |
-| `ANTHROPIC_API_KEY` | Default LLM provider — needed for first-run | ✅ at first |
-| `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_API_KEY` | Embedding model for retrieval | ✅ |
-| `REDIS_URL` | Rate-limit + cache backend | ✅ |
-| `RPG_CORS_ORIGINS` | Comma-separated allowed origins | ✅ in prod |
-| `RPG_PORT` / `RPG_HOST` | Override default `0.0.0.0:7860` | optional |
-| `RPG_RATE_LIMIT_PER_MIN` | Per-IP token bucket | optional |
-| `RPG_REQUEST_TIMEOUT_SECS` | Non-streaming response timeout | optional |
+| `DATABASE_URL` | Postgres connection string. Use a **direct** 5432 connection — `migrate` cannot go through PgBouncer (its advisory lock breaks under transaction pooling) | ✅ |
+| `RPG_MASTER_KEY` | Encrypts stored BYOK keys at rest; auto-generated + persisted on first boot if unset (back it up) | optional |
+| `RPG_REQUIRE_AUTH` | `0` = local single-user, auth off; `1` = multi-user / public (login + registration) | optional |
+| `ANTHROPIC_API_KEY` | Server-side fallback LLM before any user configures BYOK | optional |
+| `EMBED_API_ID` / `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_API_KEY` | Embedding provider for semantic retrieval; unset = keyword search only | optional |
+| `EMBED_DIM` | Vector dimension of the embedding model (default 768); must be fixed before the first deploy | optional |
+| `REDIS_URL` | Rate-limit + cache backend; unset = in-process fallback (fine for a single node) | optional |
+| `RPG_CORS_ORIGINS` | Comma-separated allowed origins (multi-user / public deploys) | optional |
+| `RESEND_API_KEY` / `RESEND_FROM` | Resend email for registration verification codes; required only for self-service signup | optional |
+| `EMAIL_CODE_SECRET` | HMAC key for email OTP; set the same value across workers when `workers>1` | optional |
+| `RPG_SETUP_TOKEN` | One-time token that promotes the first registration to admin (server mode) | optional |
 | `RPG_SKIP_AUTO_MIGRATE=1` | Skip the boot-time migration runner | optional |
 
-A full annotated example lives in `deploy/.env.example`.
+A full annotated example lives in [`rpg/.env.example`](./rpg/.env.example).
 
 ## Project layout
 
 ```
 .
-├── rpg/                       # Backend (Python 3.12+)
-│   ├── app.py                 # FastAPI · uvicorn :7860
+├── rpg/                       # Backend (Python 3.12+) — FastAPI app + GM / KB / import / LLM
+│   ├── app.py                 # FastAPI · uvicorn :7860 (router assembly + lifespan)
 │   ├── platform_app/          # auth / saves / branches / scripts / cards / admin
 │   │   ├── api/               # FastAPI route modules
-│   │   ├── db/migrations.py   # versioned migrations + auto-apply
+│   │   ├── db/migrations.py   # v96+ versioned migrations + auto-apply
 │   │   ├── knowledge/         # chapter indexer / canon repo
+│   │   ├── import_pipeline/   # script-import stage orchestration
 │   │   ├── tavern_cards.py    # SillyTavern V2 PNG/JSON import
 │   │   └── crypto.py          # AES-256-GCM HKDF per-user key
-│   ├── agents/
-│   │   ├── gm/master.py       # Main GM (streaming SSE)
-│   │   ├── gm/backends/       # Anthropic / OpenAI / Vertex / OpenAI-compat
-│   │   ├── context_agent.py
-│   │   ├── extractor.py
-│   │   ├── black_swan_agent.py
-│   │   └── acceptance_verifier.py
+│   ├── chat_pipeline/         # /api/chat SSE turn pipeline (directives → context → rules → gm → persist)
+│   ├── agents/gm/             # three-sage GM (master.py) + backends/ (Anthropic / OpenAI / Vertex / compat)
+│   ├── context_engine/        # layered context assembly (+ context_providers/)
+│   ├── kb/ · extract/ · ingest/   # save KB · novel → facts extraction · split / clean
+│   ├── retrieval/             # BM25-lite + pgvector (packaged)
+│   ├── tools_dsl/             # tool registry + dispatcher + MCP broker
 │   ├── state/                 # GameState + op protocol
-│   ├── tools_dsl/             # Tool registry + MCP broker
-│   ├── retrieval.py           # BM25-lite + pgvector
-│   ├── chat_pipeline.py       # Phase 0-4 orchestration
-│   └── tests/                 # pytest cases
+│   └── tests/                 # ~2700 pytest cases
 │
 ├── frontend/                  # React 19 + Vite (multi-page ESM)
 │   ├── Login.html · Platform.html · Game Console.html
-│   └── src/
-│       ├── pages/             # settings/scripts/cards/saves/admin
-│       ├── components/        # HelpDrawer/AdultSplash/FeedbackDrawer
-│       ├── i18n/              # zh-CN + en
-│       └── api-client.js
+│   └── src/                   # pages/ · components/ · i18n/ (zh-CN + en) · api-client.js
 │
-├── deploy/
-│   ├── bare-metal/README.md   # Production bare-metal runbook
-│   ├── test-server/           # Test environment templates
-│   └── Dockerfile / docker-compose.yml
+├── ios/                       # Native SwiftUI client (BYO-server, XcodeGen) — see ios/README.md
+├── mobile/                    # Expo / React Native app (rpg-roleplay-mobile)
+├── desktop/                   # Electron desktop shell (self-updating, channel B)
+├── docs-site/                 # Starlight documentation site (Astro)
+├── scripts/                   # dev.sh / setup.sh / bump_version.sh
 │
-└── docs/                      # Architecture design docs
+├── deploy/                    # Docker / bare-metal production templates
+├── docs/                      # design docs · runbooks · docs/knowledge/ (AI-collaborator map)
+└── CLAUDE.md                  # repo navigation for AI collaborators
 ```
 
 ## Community
@@ -292,7 +307,7 @@ This is an open-source project — contributions welcome. For now, please file i
 
 ## License
 
-Licensed under the **GNU Affero General Public License v3.0 or later** (AGPL-3.0-or-later). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+Licensed under the **GNU Affero General Public License v3.0 or later** (AGPL-3.0-or-later). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE). The license covers the **entire** repository — server, web frontend, desktop shell, and the native iOS client under `ios/`.
 
 **Why AGPL?** RPG Roleplay is a server-side application. AGPL ensures any operator running it as a public service must also make their modified source available to users — keeping the engine open even when used as a SaaS.
 

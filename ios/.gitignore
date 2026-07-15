@@ -1,0 +1,8 @@
+# XcodeGen 生成,project.yml 为单一真源
+Stellatrix.xcodeproj/
+# 构建产物
+build/
+DerivedData/
+*.ipa
+*.xcarchive
+.DS_Store

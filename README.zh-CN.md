@@ -33,20 +33,20 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 | 层 | 状态 |
 |---|---|
 | **Python 核心游戏循环**(state, op, scene, 骰子, 5E 核心, 遭遇, 物品栏, 检索, agents) | ✅ 稳定 |
-| **LLM 路由**(Anthropic 原生 / OpenAI Responses / Vertex Gemini / OpenAI 兼容) | ✅ 稳定 — 流式 + 工具调用 + 多模态 |
-| **Postgres + pgvector** 存储, 90+ 版本化迁移, 启动时自动加咨询锁顺序执行 | ✅ 稳定 |
+| **LLM 路由**(Anthropic 原生 / OpenAI / Vertex Gemini / OpenAI 兼容) | ✅ 稳定 — 流式 + 工具调用 + 多模态 |
+| **Postgres + pgvector** 存储, v96+ 版本化迁移, 启动时自动加咨询锁顺序执行 | ✅ 稳定 |
 | **Vite + React 19**, JSDoc 类型注解, 多页面入口 | ✅ 稳定 |
 | **可分支存档** — commit / ref / checkout 像 Git 一样工作 + 硬删 30 天宽限队列 | ✅ 稳定 |
 | **剧本导入** — TXT / ZIP 上传, 7 种章节切分, 自动抽角色卡 + 世界书 + 时间线 + 向量索引 | ✅ 稳定 |
 | **SillyTavern V2/V3 导入** — 角色卡(PNG tEXt / JSON) + 聊天记录(JSONL → 新存档) | ✅ 稳定 |
 | **酒馆模式** — SillyTavern 风 1:1 角色对话:拖卡即用、agent 工具(建/换角色、弹出选择、导入/导出卡)、本对话系统提示编辑、JSONL 往返 | ✅ 稳定 |
 | **剧本/小说编辑器**(`/md-editor`)— 三栏 IDE(文件树 · CodeMirror 6 · AI 侧栏)编辑章节 / 角色卡 / 世界书 / 人设,Markdown 无损往返;AI 写作搭档:正文内联 ghost-text 续写、逐块 diff 接受/拒绝、持久化 Problems 面板、可委派 BYOK 子模型 | ✅ 稳定 |
-| **原生 iOS / iPadOS 客户端** — ⚠️ *闭源配套 App,**不在本仓库***;一个专有(闭源)SwiftUI 客户端(自带服务器地址),通过公开 API 连接本仓库的开源服务器。镜像网页游戏台;扫码登录、邀请链接加入、注册 / 验证码 / 找回密码 | 🟡 Beta · 闭源 |
+| **原生 iOS / iPadOS 客户端** — 原生 SwiftUI 客户端(自带服务器地址),通过公开 API 连接本仓库的开源服务器,**就在本仓库 `ios/` 下**(XcodeGen + Xcode 自动签名)。镜像网页游戏台;扫码登录、邀请链接加入、注册 / 验证码 / 找回密码 | ✅ 开源(内测) |
 | **成就系统** — 声明式目录、解锁 toast、公开主页墙 | ✅ 稳定 |
 | **图像生成** — 封面 / 头像 / 聊天场景图 / 角色 + 人设立绘,统一模型层,BYOK | ✅ 稳定 |
-| **Provider 目录** — 10 家(Anthropic / OpenAI / Vertex / Google AI Studio / DeepSeek / DashScope / Hunyuan / MiMo / xAI / OpenRouter), BYOK 加密存储(AES-256-GCM HKDF per-user-per-api), 实时模型嗅探 | ✅ 稳定 |
-| **i18n** — 简体中文 + 英文, ~2000 keys, UI 全覆盖(设置 / 登录 / 平台 / 游戏 / 管理) | ✅ 稳定 |
-| **帮助系统** — 应用内 HelpDrawer, 27 个模块文档 | ✅ 稳定 |
+| **Provider 目录** — 11 家(Anthropic / OpenAI / Vertex / DeepSeek / DashScope / Doubao / Hunyuan / MiniMax / SiliconFlow / OpenRouter / MiMo), BYOK 加密存储(AES-256-GCM HKDF per-user-per-api), 实时模型嗅探 | ✅ 稳定 |
+| **i18n** — 简体中文 + 英文, ~6400 keys, UI 全覆盖(设置 / 登录 / 平台 / 游戏 / 管理) | ✅ 稳定 |
+| **帮助系统** — 应用内 HelpDrawer, ~34 个模块文档 | ✅ 稳定 |
 | **合规套件** — 18+ 启动页, AGPL 法律横幅, 反馈通道 + NSFW 预审, AUP/DMCA/CSAM 管理 runbook | ✅ 稳定 |
 | **认证 + 注册** — 邀请码闸, 邮件验证(Resend), Argon2id 登录时 rehash, 忘记密码, 两步注册 | ✅ 稳定 |
 | **账号生命周期** — 软停用, 请求删除(30 天宽限), 数据导出, 硬删 cron | ✅ 稳定 |
@@ -68,6 +68,8 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 
 ## 快速开始
 
+同一个服务器有四种玩法:**自托管网页端**(见下)、**桌面应用**(Electron,一键)、**iOS / iPadOS**(原生 SwiftUI,从 `ios/` 自建)、**Android**(`mobile/` 里的 Expo app)。
+
 ### 最简单 — 桌面应用(免配置,一键)
 
 不想碰命令行?下载桌面应用 —— 它**自带 PostgreSQL + Python**,一键在本机起整套服务(完全离线、数据不出本机、NSFW 自主)。也内置在线模式,直接连云端账号。
@@ -81,9 +83,7 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 
 ### 原生 iOS / iPadOS 客户端
 
-> **⚠️ 闭源配套客户端 —— 不属于本开源仓库。** iOS / iPadOS App 是通过 App Store / TestFlight 分发的**专有、闭源**客户端,只是一个通过公开 API 连接本仓库开源服务器的瘦客户端。本仓库里的服务器、网页前端、桌面端是 AGPL 开源;原生移动 App **不是**,其源码不在此公开。本仓库的 AGPL 许可只覆盖服务器/网页/桌面端代码。
-
-一个 SwiftUI 配套客户端(自带服务器地址),镜像网页游戏台。可指向官方云端,也可指向你自部署的服务器;登录方式:手输账号密码,或**扫桌面端二维码** —— 扫自己的免密码登录码直接进号,或扫邀请链接在自部署局域网实例上注册。目前内测中。
+原生 SwiftUI 客户端(自带服务器地址)现在**就在本仓库 `ios/` 下**,与其余代码一样受同一份 AGPL 许可覆盖。可指向官方云端,也可指向你自部署的服务器;登录方式:手输账号密码,或**扫桌面端二维码** —— 扫自己的免密码登录码直接进号,或扫邀请链接在自部署局域网实例上注册。用 XcodeGen + Xcode 自动签名构建 —— 见 [`ios/README.md`](./ios/README.md)。目前内测中。
 
 ### 从源码自部署 — 一条命令
 
@@ -119,10 +119,9 @@ cd rpg/
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# 4. 配 .env
-#    若 rpg/.env.example 不存在，从 deploy/test-server/.env.example 复制
-cp .env.example .env   # 或: cp ../deploy/test-server/.env.example .env
-$EDITOR .env           # 填 DATABASE_URL、RPG_MASTER_KEY、RESEND_API_KEY 等
+# 4. 配 .env（只有 DATABASE_URL 必填即可启动）
+cp .env.example .env   # rpg/.env.example —— 带注释的样例
+$EDITOR .env           # 填 DATABASE_URL;其余都优雅降级,不填也能跑
 
 # 5. 首次跑 migration（fresh DB 必须用 full，不能用 up）
 #    !! 必须在 rpg/ 目录下运行（模块查找依赖工作目录）!!
@@ -173,31 +172,46 @@ open http://localhost:5173/Login.html
 ┌────────────────────────────┐   ┌────────────────────────────┐
 │  pgbouncer :6432           │   │  LLM providers (BYOK)      │
 │  Postgres 16 + pgvector    │   │  Anthropic · OpenAI ·      │
-│  90+ migrations            │   │  Vertex (Gemini) ·         │
-│                            │   │  DeepSeek · DashScope ·    │
-│  Redis :6379               │   │  Hunyuan · MiMo · xAI ·    │
-│  session · cache · ratelim │   │  OpenRouter                │
+│  v96+ migrations           │   │  Vertex · DeepSeek ·       │
+│                            │   │  DashScope · Doubao ·      │
+│  Redis :6379               │   │  Hunyuan · MiniMax · MiMo  │
+│  session · cache · ratelim │   │  SiliconFlow · OpenRouter  │
 └────────────────────────────┘   └────────────────────────────┘
 ```
 
-FastAPI 后端，~30+ 个路由模块 / agents / state mixin，~1k pytest 用例。
+FastAPI 后端，~30+ 个路由模块 / agents / state mixin，~2700 pytest 用例。
 
 ## LLM 厂家
 
 | 厂家 | 已列入目录 | 流式 | 工具调用 | 多模态 | 扩展思考 |
 |---|---|---|---|---|---|
 | Anthropic | ✅ | ✅ | ✅ | ✅ | ✅ |
-| OpenAI (Responses) | ✅ | ✅ | ✅ | ✅ | — |
+| OpenAI (Chat Completions, openai-compat 后端) | ✅ | ✅ | ✅ | ✅ | — |
 | Google Vertex (Gemini) | ✅ | ✅ | ✅ | ✅ | — |
 | OpenRouter | ✅ | ✅(OpenAI 兼容) | 部分 | — | — |
 | DeepSeek | ✅ | ✅(OpenAI 兼容) | 部分 | — | — |
-| xAI (Grok) | ✅ | ✅(OpenAI 兼容) | 部分 | — | — |
+| SiliconFlow（硅基流动）| ✅ | ✅(OpenAI 兼容) | 部分 | — | — |
+| MiniMax | ✅ | ✅(OpenAI 兼容) | 部分 | — | — |
+| Doubao（字节豆包）| ✅ | ✅(OpenAI 兼容) | 部分 | — | — |
 | MiMo（小米）| ✅ | ✅(OpenAI 兼容) | 部分 | — | — |
 | Hunyuan（腾讯混元）| ✅ | ✅(OpenAI 兼容) | 部分 | — | — |
 | DashScope（通义千问）| 仅目录 | — | — | — | — |
-| Google AI Studio | 仅目录 | — | — | — | — |
+
+> Google AI Studio 已下架（机房 IP 被封）;Gemini 改走 Vertex AI 提供。
 
 加一家 provider = `rpg/config/model_catalog.json` 里多一个条目 +(若是新协议)`rpg/agents/gm/backends/` 里多一个后端实现. 选模型 / 能力过滤 / token 计费这些都是自动的.
+
+## 拆分出的 PyPI 包
+
+有 7 个可复用组件从本仓库拆出并以 MIT 独立发布(作者 `felixchaos`):
+
+- [`tavern-card`](https://pypi.org/project/tavern-card/) — SillyTavern V2/V3 角色卡解析 / 导入 / 导出
+- [`llm-scrub`](https://pypi.org/project/llm-scrub/) — LLM 输入输出的 PII / 密钥脱敏
+- [`zh-narrative-guard`](https://pypi.org/project/zh-narrative-guard/) — 中文叙事一致性的确定性校验(日期 / 星期 / 时间)
+- [`byok-vault`](https://pypi.org/project/byok-vault/) — BYOK 凭据的按用户 AES-256-GCM HKDF 加密
+- [`gram-recall`](https://pypi.org/project/gram-recall/) — 检索用的情节 / 长程召回辅助
+- [`safe-outbound`](https://pypi.org/project/safe-outbound/) — 防 SSRF 的出站 HTTP(urlopen / httpx)层
+- [`zh-chapter-splitter`](https://pypi.org/project/zh-chapter-splitter/) — 中文小说章节切分器
 
 ## 技术栈
 
@@ -219,65 +233,66 @@ FastAPI 后端，~30+ 个路由模块 / agents / state mixin，~1k pytest 用例
 | 世界书 | YAML / JSON 文件 | 数据库条目 + 语义激活 |
 | 多用户 | 单机应用 | 鉴权 + 用户级 runtime + 配额 |
 | 技术栈 | Node + 原生 HTML/CSS | Python + FastAPI + pgvector + React |
-| 测试 | 多为临时 | ~1k pytest 用例 |
+| 测试 | 多为临时 | ~2700 pytest 用例 |
 
 故事是一个角色 → 用 SillyTavern。故事是一整个**世界** → 用 RPG Roleplay。两边都吃同一份 V2 卡格式,横移成本几乎为零.
 
 ## 配置
 
+只有 `DATABASE_URL` 必填即可启动;其余全部可选,不填也会优雅降级.
+
 | 变量 | 用途 | 必填 |
 |---|---|---|
-| `DATABASE_URL` | Postgres 连接串(走 pgbouncer) | ✅ |
-| `ANTHROPIC_API_KEY` | 默认 LLM provider, 首次跑起来必须有 | ✅ 首次 |
-| `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_API_KEY` | 检索用 embedding 模型 | ✅ |
-| `REDIS_URL` | 限流 + 缓存后端 | ✅ |
-| `RPG_CORS_ORIGINS` | 逗号分隔的允许 origin | ✅ 生产 |
-| `RPG_PORT` / `RPG_HOST` | 改默认 `0.0.0.0:7860` | 可选 |
-| `RPG_RATE_LIMIT_PER_MIN` | 按 IP 的 token bucket | 可选 |
-| `RPG_REQUEST_TIMEOUT_SECS` | 非流式响应超时 | 可选 |
+| `DATABASE_URL` | Postgres 连接串。用**直连** 5432 —— `migrate` 不能走 PgBouncer(它用的咨询锁在事务池化下会失效) | ✅ |
+| `RPG_MASTER_KEY` | 加密落地存储的 BYOK 密钥;不设则首次启动自动生成并持久化(记得备份) | 可选 |
+| `RPG_REQUIRE_AUTH` | `0` = 本地单用户、关鉴权;`1` = 多用户 / 公开(开登录 + 注册) | 可选 |
+| `ANTHROPIC_API_KEY` | 用户配置 BYOK 之前的服务端兜底 LLM | 可选 |
+| `EMBED_API_ID` / `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_API_KEY` | 语义检索用的 embedding provider;不设 = 只有关键词检索 | 可选 |
+| `EMBED_DIM` | embedding 模型的向量维度(默认 768);必须在首次部署前定好 | 可选 |
+| `REDIS_URL` | 限流 + 缓存后端;不设 = 进程内兜底(单节点足够) | 可选 |
+| `RPG_CORS_ORIGINS` | 逗号分隔的允许 origin(多用户 / 公开部署) | 可选 |
+| `RESEND_API_KEY` / `RESEND_FROM` | Resend 邮件发注册验证码;仅自助注册需要 | 可选 |
+| `EMAIL_CODE_SECRET` | 邮箱验证码的 HMAC 密钥;`workers>1` 时各 worker 必须设同一值 | 可选 |
+| `RPG_SETUP_TOKEN` | 让首个注册者成为管理员的一次性 token(服务器模式) | 可选 |
 | `RPG_SKIP_AUTO_MIGRATE=1` | 跳过启动时自动迁移 | 可选 |
 
-完整带注释的样例在 `deploy/.env.example`.
+完整带注释的样例在 [`rpg/.env.example`](./rpg/.env.example).
 
 ## 工程结构
 
 ```
 .
-├── rpg/                       # 后端（Python 3.12+）
-│   ├── app.py                 # FastAPI · uvicorn :7860
+├── rpg/                       # 后端（Python 3.12+）—— FastAPI 应用 + GM / KB / 导入 / LLM
+│   ├── app.py                 # FastAPI · uvicorn :7860（装配路由 + lifespan）
 │   ├── platform_app/          # 鉴权 / 存档 / 分支 / scripts / cards / admin
 │   │   ├── api/               # FastAPI 路由模块
-│   │   ├── db/migrations.py   # 版本化迁移 + 自动应用
+│   │   ├── db/migrations.py   # v96+ 版本化迁移 + 自动应用
 │   │   ├── knowledge/         # chapter indexer / canon repo
+│   │   ├── import_pipeline/   # 剧本导入 stage 编排
 │   │   ├── tavern_cards.py    # SillyTavern V2 PNG/JSON 导入
 │   │   └── crypto.py          # AES-256-GCM HKDF 按用户密钥
-│   ├── agents/
-│   │   ├── gm/master.py       # 主 GM（流式 SSE）
-│   │   ├── gm/backends/       # Anthropic / OpenAI / Vertex / OpenAI-compat
-│   │   ├── context_agent.py
-│   │   ├── extractor.py
-│   │   ├── black_swan_agent.py
-│   │   └── acceptance_verifier.py
+│   ├── chat_pipeline/         # /api/chat SSE 回合流水线（directives → context → rules → gm → persist）
+│   ├── agents/gm/             # 三贤者 GM（master.py）+ backends/（Anthropic / OpenAI / Vertex / 兼容）
+│   ├── context_engine/        # 分层上下文组装（+ context_providers/）
+│   ├── kb/ · extract/ · ingest/   # 存档 KB · 小说 → 事实提取 · 切分 / 清洗
+│   ├── retrieval/             # BM25-lite + pgvector（已包化）
+│   ├── tools_dsl/             # 工具登记表 + dispatcher + MCP broker
 │   ├── state/                 # GameState + op 协议
-│   ├── tools_dsl/             # 工具登记表 + MCP broker
-│   ├── retrieval.py           # BM25-lite + pgvector
-│   ├── chat_pipeline.py       # Phase 0-4 编排
-│   └── tests/                 # pytest 用例
+│   └── tests/                 # ~2700 pytest 用例
 │
 ├── frontend/                  # React 19 + Vite（多页 ESM）
 │   ├── Login.html · Platform.html · Game Console.html
-│   └── src/
-│       ├── pages/             # settings/scripts/cards/saves/admin
-│       ├── components/        # HelpDrawer/AdultSplash/FeedbackDrawer
-│       ├── i18n/              # zh-CN + en
-│       └── api-client.js
+│   └── src/                   # pages/ · components/ · i18n/（zh-CN + en）· api-client.js
 │
-├── deploy/
-│   ├── bare-metal/README.md   # 生产裸机 runbook
-│   ├── test-server/           # 测试环境模板
-│   └── Dockerfile / docker-compose.yml
+├── ios/                       # 原生 SwiftUI 客户端（BYO-server, XcodeGen）—— 见 ios/README.md
+├── mobile/                    # Expo / React Native app（rpg-roleplay-mobile）
+├── desktop/                   # Electron 桌面壳（自更新,渠道 B）
+├── docs-site/                 # Starlight 文档站（Astro）
+├── scripts/                   # dev.sh / setup.sh / bump_version.sh
 │
-└── docs/                      # 架构设计文档
+├── deploy/                    # Docker / 裸机生产模板
+├── docs/                      # 设计文档 · runbook · docs/knowledge/（AI 协作者知识地图）
+└── CLAUDE.md                  # 给 AI 协作者的仓库导航
 ```
 
 ## 交流
@@ -292,7 +307,7 @@ FastAPI 后端，~30+ 个路由模块 / agents / state mixin，~1k pytest 用例
 
 ## 许可证
 
-本项目采用 **GNU Affero General Public License v3.0 或更新版本**(AGPL-3.0-or-later)。详见 [LICENSE](./LICENSE) 和 [NOTICE](./NOTICE)。
+本项目采用 **GNU Affero General Public License v3.0 或更新版本**(AGPL-3.0-or-later)。详见 [LICENSE](./LICENSE) 和 [NOTICE](./NOTICE)。许可覆盖**整个**仓库 —— 服务器、网页前端、桌面壳,以及 `ios/` 下的原生 iOS 客户端。
 
 **为什么 AGPL?** RPG Roleplay 是服务端应用。AGPL 确保任何把它作为公开服务运营的人,必须开放其修改后的源代码给用户 — 即使作为 SaaS 使用,引擎也保持开放。
 
