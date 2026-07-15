@@ -70,8 +70,6 @@ export const SCHEMAS = {
   },
 };
 
-export const EDITABLE_KINDS = Object.keys(SCHEMAS);
-
 const isPlainObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
 function toStrArray(v) {
@@ -135,15 +133,4 @@ export function fromMd(kind, text) {
   patch[sc.bodyField] = body;
   for (const k of sc.readonly) delete patch[k];   // 双保险:readonly 绝不进 patch
   return patch;
-}
-
-// 取实体在树/标签里的显示标题(尽量用人类可读字段)。
-export function nodeTitle(kind, row) {
-  if (!row) return '';
-  if (kind === 'chapter') return `第${row.chapter_index}章 ${row.title || ''}`.trim();
-  if (kind === 'card') return row.name + (row.full_name && row.full_name !== row.name ? ` (${row.full_name})` : '');
-  if (kind === 'worldbook') return row.title || `(条目 ${row.id})`;
-  if (kind === 'anchor') return `${row.story_time_label || row.story_phase || ''}（${row.chapter_min}-${row.chapter_max}）`;
-  if (kind === 'canon') return `${row.name}（${row.type}）`;
-  return String(row.id ?? '');
 }

@@ -27,8 +27,6 @@ export const pendingField = StateField.define({
 
 function pendingState(view) { return view.state.field(pendingField, false) || null; }
 
-export function hasPending(view) { return !!pendingState(view); }
-
 export function acceptPending(view) {
   const p = pendingState(view);
   if (!p) return false;

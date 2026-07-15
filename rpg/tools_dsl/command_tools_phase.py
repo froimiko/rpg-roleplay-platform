@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
+from tools_dsl._arg_guards import require_int_arg
 
 # Origins: console_assistant + ui_button + api_direct
 # (LLM free-chat should not spontaneously advance phases)
@@ -28,8 +29,9 @@ _PHASE_MUTATE_ORIGINS = frozenset({"ui_button", "api_direct", "console_assistant
 def _t_phase_list(user_id: int, args: dict) -> str:
     """List all save_phase_digests for the given save_id."""
     save_id = args.get("save_id")
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id)
     try:
         from platform_app.db import connect, init_db
@@ -73,8 +75,9 @@ def _t_phase_list(user_id: int, args: dict) -> str:
 def _t_phase_advance(user_id: int, args: dict) -> str:
     """Manually open a new phase for the given save_id."""
     save_id = args.get("save_id")
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id)
     label = (args.get("label") or "").strip()
     try:
@@ -117,10 +120,12 @@ def _t_phase_rebuild(user_id: int, args: dict) -> str:
     """
     save_id = args.get("save_id")
     phase_index = args.get("phase_index")
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
-    if not isinstance(phase_index, (int, float, str)) or not str(phase_index).lstrip("-").isdigit():
-        return "失败: phase_index 必须整数"
+    _chk = require_int_arg(save_id, "save_id")
+    if isinstance(_chk, str):
+        return _chk
+    _chk = require_int_arg(phase_index, "phase_index")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id)
     phase_index = int(phase_index)
     try:

@@ -1643,7 +1643,8 @@ def _active_script_id(api_user: dict[str, Any] | None) -> int | None:
 
 
 def _sse(event: str, data: Any) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    from core.sse import sse_frame
+    return sse_frame(event, data)
 
 
 def _split_inline_assignment(text: str) -> tuple[str, str]:

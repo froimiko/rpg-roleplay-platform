@@ -168,7 +168,3 @@ export function installWarmTheme() {
     console.error('[cloudscape-theme] applyTheme failed:', e);
   }
 }
-
-export function resetWarmTheme() {
-  if (_reset) _reset();
-}

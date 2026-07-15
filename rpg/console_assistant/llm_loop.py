@@ -8,6 +8,7 @@ from typing import Any
 from console_assistant.conversations import _new_call_id, _trim_messages
 from console_assistant.prompts import build_system_prompt
 from console_assistant.tools import dispatch_assistant_tool, get_tool_spec, list_assistant_tools
+from core.sse import sse_frame
 from tools_dsl.command_dispatcher import ToolCallEnvelope, ToolResult
 
 # 安全: navigate_to_setting 的目标必须在白名单内, 避免任意字符串经 SSE 传到前端
@@ -79,7 +80,7 @@ def _validate_owned_script_id(user_id: int, script_id: Any) -> int | None:
 
 
 def _sse_event(event: str, data: Any) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    return sse_frame(event, data)
 
 
 def _fetch_save_details(user_id: int, save_ids: list[Any]) -> list[dict[str, Any]]:

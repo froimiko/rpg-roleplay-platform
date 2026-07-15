@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..db import connect, expose, init_db, limit_value, page_payload
+from ..db import connect, cursor_id, expose, init_db, limit_value, page_payload
 from ..perms import script_owned
 
 
@@ -11,7 +11,7 @@ def list_chapters(user_id: int, script_id: int, limit: int | str | None = None, 
     # 章节列表只回 180-char preview 元数据,放宽 limit 上限到 5000 — 给章节
     # 浏览 modal 一次拉完;500 万字小说约 1200 章,5000 cap 留 4x 余量
     page_limit = limit_value(limit, default=200, maximum=5000)
-    before_index = _cursor_index(cursor)
+    before_index = cursor_id(cursor)
     with connect() as db:
         script = script_owned(db, script_id, user_id)
         if not script:
@@ -34,14 +34,9 @@ def list_chapters(user_id: int, script_id: int, limit: int | str | None = None, 
     return payload
 
 
-def _cursor_index(value: str | None) -> int | None:
-    if value in (None, ""):
-        return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
+# 游标解析单一真相源 = db.cursor_id;保留 _cursor_index 名做薄别名,门面
+# script_import/__init__.py 按名 re-export 本符号,保留 name parity。
+_cursor_index = cursor_id
 
 
 # ══════════════════════════════════════════════════════════════════════

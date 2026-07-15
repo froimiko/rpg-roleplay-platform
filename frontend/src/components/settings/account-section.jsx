@@ -461,47 +461,6 @@ function OnlinePublish() {
   );
 }
 
-function DeviceApprove() {
-  const { t } = useTranslation();
-  const [code, setCode] = useStatePL('');
-  const [info, setInfo] = useStatePL(null);
-  const [busy, setBusy] = useStatePL(false);
-  const lookup = async () => {
-    setBusy(true); setInfo(null);
-    try { const r = await window.api.federation.deviceLookup(code.trim().toUpperCase()); setInfo(r.device); }
-    catch (e) { window.__apiToast?.(t('settings.more.online_lib.device_code_not_found'), { kind: 'warn', detail: e?.payload?.error || e?.message }); }
-    finally { setBusy(false); }
-  };
-  const decide = async (deny) => {
-    setBusy(true);
-    try {
-      await window.api.federation.deviceApprove(code.trim().toUpperCase(), deny);
-      window.__apiToast?.(deny ? t('settings.more.online_lib.device_denied') : t('settings.more.online_lib.device_approved'), { kind: 'ok' });
-      setInfo(null); setCode('');
-    } catch (e) { window.__apiToast?.(t('settings.more.online_lib.op_fail'), { kind: 'danger', detail: e?.payload?.error || e?.message }); }
-    finally { setBusy(false); }
-  };
-  return (
-    <CSSpaceBetween size="s">
-      <div style={{ display: 'flex', gap: 8, maxWidth: 360 }}>
-        <div style={{ flex: 1 }}>
-          <CSInput value={code} placeholder="WXYZ-7K9M" onChange={({ detail }) => setCode(detail.value)} />
-        </div>
-        <CSButton loading={busy} disabled={!code.trim()} onClick={lookup}>{t('settings.more.online_lib.device_lookup_btn')}</CSButton>
-      </div>
-      {info && (
-        <CSAlert type="info" header={t('settings.more.online_lib.device_confirm_header')}>
-          <div>{t('settings.more.online_lib.device_confirm_client')}{info.client_name || t('settings.more.online_lib.untitled')} · {t('settings.more.online_lib.device_confirm_scopes')}{(info.scopes || []).join(', ')}</div>
-          <CSSpaceBetween direction="horizontal" size="xs">
-            <CSButton variant="primary" loading={busy} onClick={() => decide(false)}>{t('settings.more.online_lib.device_approve_btn')}</CSButton>
-            <CSButton loading={busy} onClick={() => decide(true)}>{t('settings.more.online_lib.device_deny_btn')}</CSButton>
-          </CSSpaceBetween>
-        </CSAlert>
-      )}
-    </CSSpaceBetween>
-  );
-}
-
 function PatManager() {
   const { t } = useTranslation();
   const [items, setItems] = useStatePL([]);

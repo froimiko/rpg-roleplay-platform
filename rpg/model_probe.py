@@ -570,6 +570,11 @@ def _classify_probe_error(exc: Exception, err_str: str) -> str:
     """把异常分类为 status_detail 枚举值。
 
     各 SDK 的 HTTP 错误报法不同，统一按字符串匹配兜底。
+
+    ⚠️防误合(2026-07-15 经 54 例等价核证):本函数与 agents/provider_errors.
+    classify_provider_error(7 类权威分类器)是【粗细两套投影】,不可互相委托——
+    探测桶需要比 7 类更细的 401/403 拆分,且要识别 7 类未标记的裸串形态;
+    委托方案=双层逻辑零删减,可维护性反降。两者并存是正确终态。
     """
     err_lower = err_str.lower()
     # Anthropic SDK: anthropic.AuthenticationError (status_code=401)

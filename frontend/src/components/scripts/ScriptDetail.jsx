@@ -547,12 +547,7 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
         ) },
         { id: 'timeline', label: t('scripts.editor.tab_timeline'), content: (
           <CSSpaceBetween size="l">
-            {/* 收敛处置⑦:孤儿组件 AnchorEditorView 通读后发现它期望 GET /api/scripts/{id}/anchors
-                (列表,带 phase/chapter 过滤)做初始加载,但后端 script_edit.py 只注册了
-                PUT/POST/DELETE /api/scripts/{id}/anchors(单条),没有对应的列表 GET 路由——
-                接上会导致组件首次加载即 404 卡死。按任务指示降级:时间线 tab 保持现有只读列表
-                (数据源 window.api.scripts.timeline,与 AnchorEditorView 期望的端点不同),
-                不接 AnchorEditorView。重做卡按处置⑤删除,去知识库中心统一操作。 */}
+            {/* AnchorEditorView 已删（2026-07-15 死码清理），锚点编辑走 timeline 数据源 */}
             {(loading && tl == null)
               ? <CSBox color="text-body-secondary">{t('common.loading')}</CSBox>
               : (!tl || tl.length === 0)

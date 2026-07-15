@@ -782,8 +782,13 @@ def confirm_email_verification(email: str, code: str) -> tuple[dict[str, Any], s
 
 
 def _hash_token(token: str) -> str:
-    """session token → sha256 hex(DB 只存哈希,不存明文)。"""
-    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+    """session token → sha256 hex(DB 只存哈希,不存明文)。
+
+    委托 core.security.hash_token(token 哈希单一真相源)。函数内惰性 import:
+    core.security 顶层 re-export 本模块,直接顶层 import 会成加载期循环。
+    """
+    from core.security import hash_token
+    return hash_token(token)
 
 
 def _issue_session(db, user_id: int) -> str:

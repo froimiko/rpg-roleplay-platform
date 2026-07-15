@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import Any
 
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
+from tools_dsl._arg_guards import require_int_arg
 
 # task 87 Phase 7 安全审查:跨"世界泡"隔离
 # task 48 新增 console_assistant:控制台助手是「用户带方向盘的 agent」,
@@ -54,8 +55,9 @@ def _t_create_save(user_id: int, args: dict) -> str:
     返回字符串 "save 创建: id=X title='...' script=Y"。
     """
     script_id = args.get("script_id")
-    if not isinstance(script_id, (int, float, str)) or not str(script_id).lstrip("-").isdigit():
-        return "失败: script_id 必填且必须是整数"
+    _chk = require_int_arg(script_id, "script_id", fail="失败: script_id 必填且必须是整数")
+    if isinstance(_chk, str):
+        return _chk
     title = (args.get("title") or "").strip()
     character: dict[str, Any] | None = None
     if args.get("script_card_id") is not None:
@@ -185,8 +187,9 @@ def _t_list_my_saves(user_id: int, args: dict) -> str:
 
 def _t_activate_save(user_id: int, args: dict) -> str:
     save_id = args.get("save_id")
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须是整数"
+    _chk = require_int_arg(save_id, "save_id", fail="失败: save_id 必须是整数")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app import branches as _branches
         result = _branches.activate_save(int(user_id), int(save_id))
@@ -212,8 +215,9 @@ def _t_activate_save(user_id: int, args: dict) -> str:
 def _t_rename_save(user_id: int, args: dict) -> str:
     save_id = args.get("save_id")
     title = (args.get("title") or "").strip()
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须是整数"
+    _chk = require_int_arg(save_id, "save_id", fail="失败: save_id 必须是整数")
+    if isinstance(_chk, str):
+        return _chk
     if not title:
         return "失败: title 不能为空"
     try:
@@ -237,8 +241,9 @@ def _t_rename_save(user_id: int, args: dict) -> str:
 
 def _t_delete_save(user_id: int, args: dict) -> str:
     save_id = args.get("save_id")
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须是整数"
+    _chk = require_int_arg(save_id, "save_id", fail="失败: save_id 必须是整数")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app.db import connect, init_db
         init_db()
@@ -371,8 +376,9 @@ def _t_delete_saves(user_id: int, args: dict) -> str:
 
 def _t_list_branches(user_id: int, args: dict) -> str:
     save_id = args.get("save_id")
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须是整数"
+    _chk = require_int_arg(save_id, "save_id", fail="失败: save_id 必须是整数")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app.db import connect, init_db
         init_db()
@@ -403,8 +409,9 @@ def _t_list_branches(user_id: int, args: dict) -> str:
 
 def _t_activate_branch(user_id: int, args: dict) -> str:
     branch_id = args.get("branch_id")
-    if not isinstance(branch_id, (int, float, str)) or not str(branch_id).lstrip("-").isdigit():
-        return "失败: branch_id 必须是整数"
+    _chk = require_int_arg(branch_id, "branch_id", fail="失败: branch_id 必须是整数")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app import branches as _branches
 
@@ -431,8 +438,9 @@ def _t_activate_branch(user_id: int, args: dict) -> str:
 
 def _t_delete_branch(user_id: int, args: dict) -> str:
     branch_id = args.get("branch_id")
-    if not isinstance(branch_id, (int, float, str)) or not str(branch_id).lstrip("-").isdigit():
-        return "失败: branch_id 必须是整数"
+    _chk = require_int_arg(branch_id, "branch_id", fail="失败: branch_id 必须是整数")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app.db import connect, init_db
         init_db()
@@ -455,10 +463,12 @@ def _t_continue_branch(user_id: int, args: dict) -> str:
     save_id = args.get("save_id")
     from_turn = args.get("from_turn")
     label = (args.get("label") or "").strip() or None
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须是整数"
-    if not isinstance(from_turn, (int, float, str)) or not str(from_turn).lstrip("-").isdigit():
-        return "失败: from_turn 必须是整数"
+    _chk = require_int_arg(save_id, "save_id", fail="失败: save_id 必须是整数")
+    if isinstance(_chk, str):
+        return _chk
+    _chk = require_int_arg(from_turn, "from_turn", fail="失败: from_turn 必须是整数")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app import branches as _branches
         if hasattr(_branches, "continue_branch"):

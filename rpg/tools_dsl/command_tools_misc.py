@@ -32,6 +32,7 @@ import json
 from typing import Any
 
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
+from tools_dsl._arg_guards import require_int_arg
 
 # task 87 Phase 7 安全审查:
 #   _USER_READ      : 任意 origin (含 LLM 与 console_assistant) — read-only
@@ -246,8 +247,9 @@ def _t_select_model(user_id: int, args: dict) -> str:
 
 def _t_get_save_detail(user_id: int, args: dict) -> str:
     save_id = args.get("save_id")
-    if not isinstance(save_id, (int, float, str)) or not str(save_id).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app.db import connect, init_db
         init_db()

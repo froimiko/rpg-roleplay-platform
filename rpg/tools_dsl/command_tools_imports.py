@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
+from tools_dsl._arg_guards import require_int_arg
 
 _USER_READ = frozenset({"ui_button", "api_direct", "llm_set", "llm_chat", "console_assistant"})
 _USER_MUTATE = frozenset({"ui_button", "api_direct", "console_assistant"})
@@ -43,8 +44,9 @@ def _t_start_script_import(user_id: int, args: dict) -> str:
 
 def _t_get_import_status(user_id: int, args: dict) -> str:
     script_id = args.get("script_id")
-    if not isinstance(script_id, (int, float, str)) or not str(script_id).lstrip("-").isdigit():
-        return "失败: script_id 必须整数"
+    _chk = require_int_arg(script_id, "script_id")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app import script_import
         status = script_import.get_sync_status(user_id, int(script_id))
@@ -93,8 +95,9 @@ def _t_cancel_import_job(user_id: int, args: dict) -> str:
 def _t_resplit_script(user_id: int, args: dict) -> str:
     script_id = args.get("script_id")
     mode = (args.get("mode") or "regex").strip() or "regex"
-    if not isinstance(script_id, (int, float, str)) or not str(script_id).lstrip("-").isdigit():
-        return "失败: script_id 必须整数"
+    _chk = require_int_arg(script_id, "script_id")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app import script_import
         result = script_import.resplit_script(user_id=user_id, script_id=int(script_id), split_rule=mode)
@@ -106,8 +109,9 @@ def _t_resplit_script(user_id: int, args: dict) -> str:
 def _t_delete_script(user_id: int, args: dict) -> str:
     script_id = args.get("script_id")
     force = bool(args.get("force"))
-    if not isinstance(script_id, (int, float, str)) or not str(script_id).lstrip("-").isdigit():
-        return "失败: script_id 必须整数"
+    _chk = require_int_arg(script_id, "script_id")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app import script_import
         result = script_import.delete_script(user_id=user_id, script_id=int(script_id), force=force)
@@ -135,8 +139,9 @@ def _t_rebuild_script_module(user_id: int, args: dict) -> str:
     """对已导入剧本重建单个知识模块(切块/章节事实/规范实体/角色卡/世界书/时间线/向量),
     并【闭环等真实结果】回灌。剧本编辑器(console_assistant)里「只重做某一个模块」用它。"""
     script_id = args.get("script_id")
-    if not isinstance(script_id, (int, float, str)) or not str(script_id).lstrip("-").isdigit():
-        return "失败: script_id 必须整数"
+    _chk = require_int_arg(script_id, "script_id")
+    if isinstance(_chk, str):
+        return _chk
     raw_module = (args.get("module") or "").strip()
     module = _REBUILD_MODULE_ALIASES.get(raw_module.lower(), raw_module.lower())
     if module not in _REBUILD_MODULE_NAMES:

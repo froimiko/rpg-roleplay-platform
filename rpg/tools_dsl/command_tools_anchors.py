@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
+from tools_dsl._arg_guards import require_int_arg
 
 _ANCHOR_READ_ORIGINS = frozenset({"ui_button", "api_direct", "console_assistant", "llm_chat", "llm_set"})
 # GM 直接负责标记锚点状态, 必须给 llm_chat origin
@@ -43,8 +44,9 @@ def _t_list_pending_anchors(user_id: int, args: dict) -> str:
       include_metadata: 默认 false, true 时附带 participants/locations/concepts
     """
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id_raw)
     phase_label = (args.get("phase_label") or "").strip() or None
     try:
@@ -107,8 +109,9 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
       occurred_at_turn: 可选,默认拿存档当前最大 turn
     """
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id_raw)
     anchor_key = (args.get("anchor_key") or "").strip()
     anchor_id_raw = args.get("anchor_id")
@@ -220,8 +223,9 @@ def _t_mark_anchor_superseded(user_id: int, args: dict) -> str:
     例如玩家穿越前就阻止了某事件的前置条件。需要 reason。
     """
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id_raw)
     anchor_key = (args.get("anchor_key") or "").strip()
     anchor_id_raw = args.get("anchor_id")
@@ -299,8 +303,9 @@ def _t_record_history_anchor(user_id: int, args: dict) -> str:
       source            : 'gm_generated' | 'player_declared',默认前者
     """
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     summary = (args.get("summary") or "").strip()
     if not summary:
         return "失败: summary 必填"
@@ -384,8 +389,9 @@ def _t_check_pending_anchor_drift(user_id: int, args: dict) -> str:
     空数组表示该 anchor 未被任何 history 改写,GM 仍应正常触发。
     """
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     aks = args.get("anchor_keys")
     if not isinstance(aks, list) or not aks:
         return "失败: anchor_keys 必填且为非空数组"
@@ -414,8 +420,9 @@ def _t_list_recent_history(user_id: int, args: dict) -> str:
       character_filter  : 可选,只返 characters 含该名字的
     """
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     # 安全围栏:save 必须属于当前用户(防 LLM 注入异档 save_id 跨用户读)
     from platform_app.db import connect, init_db
     init_db()
@@ -439,8 +446,9 @@ def _t_list_recent_history(user_id: int, args: dict) -> str:
 def _t_summarize_anchors(user_id: int, args: dict) -> str:
     """summarize_anchors — 当前存档的整体锚点收束状态。"""
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id_raw)
     try:
         from platform_app.db import connect, init_db
@@ -486,8 +494,9 @@ def _t_claim_protagonist_pov(user_id: int, args: dict) -> str:
       original_protag_name: 强烈建议显式传 — 不传按 type='character' importance desc 第 1 取兜底
     """
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id_raw)
     explicit_name = (args.get("original_protag_name") or "").strip()
     try:
@@ -581,8 +590,9 @@ def _t_revoke_protagonist_pov(user_id: int, args: dict) -> str:
       original_protag_name: 必填 — 要撤销哪个原作主角的 POV 声明
     """
     save_id_raw = args.get("save_id")
-    if not isinstance(save_id_raw, (int, float, str)) or not str(save_id_raw).lstrip("-").isdigit():
-        return "失败: save_id 必须整数"
+    _chk = require_int_arg(save_id_raw, "save_id")
+    if isinstance(_chk, str):
+        return _chk
     save_id = int(save_id_raw)
     name = (args.get("original_protag_name") or "").strip()
     if not name:

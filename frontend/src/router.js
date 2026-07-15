@@ -41,8 +41,3 @@ export function plNavigate(id, opts = {}) {
   try { history[replace ? 'replaceState' : 'pushState'](null, '', url); } catch (_) {}
   try { window.dispatchEvent(new CustomEvent('pl-navigate', { detail: id })); } catch (_) {}
 }
-
-// 跨文档跳转(进入 Game Console 等独立文档时用):整页导航到干净路径。
-export function plHardNavigate(path) {
-  location.href = path;
-}

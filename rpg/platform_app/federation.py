@@ -17,7 +17,6 @@ federation.py — 本地部署 ↔ 在线剧本库打通(功能 B)
 """
 from __future__ import annotations
 
-import hashlib
 import secrets
 import threading
 import time
@@ -26,6 +25,8 @@ from typing import Any
 
 import httpx
 from psycopg.types.json import Jsonb
+
+from core.security import hash_token
 
 from . import user_credentials
 from .db import connect, expose, init_db
@@ -96,7 +97,7 @@ def _now() -> datetime:
 
 
 def _hash(token: str) -> str:
-    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+    return hash_token(token)
 
 
 def _clean_scopes(scopes: Any) -> list[str]:

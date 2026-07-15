@@ -8,7 +8,6 @@ import Modal from '../Modal.jsx';
 import { usePlatformData, ResizableSplit } from '../../platform-app.jsx';
 import { NewGameModal } from '../../pages/saves.jsx';
 import { ScriptReview } from '../../pages/script-review.jsx';
-import { ModuleRebuildPanel } from '../../pages/script-modules-panel.jsx';
 import { ScriptDetailPanel } from './ScriptDetail.jsx';
 import { ScriptsImportView } from './ScriptsImport.jsx';
 import { ScriptsLibraryView } from './ScriptsLibraryView.jsx';
@@ -57,7 +56,7 @@ function ScriptsListView() {
   const SCRIPT_PAGE_SIZE = 50;
 
   // 收敛处置②:triggerEmbed(POST /api/scripts/{id}/embed,后端自认废弃 alias)已删——
-  // 触发入口收敛到知识库中心(ModuleRebuildPanel → rebuild/embeddings)。这里只保留
+  // 触发入口收敛到知识库中心(ScriptDetailPanel → rebuild/embeddings)。这里只保留
   // GET /embed/status 的只读轮询,喂概览 tab 的"向量索引"只读进度子卡。
   // task 51: 自动 poll 所有 running 状态的 script,每 3s 刷一次 progress
   useEffectPL(() => {

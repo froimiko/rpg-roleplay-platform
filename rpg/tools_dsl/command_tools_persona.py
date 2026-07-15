@@ -15,6 +15,7 @@ import json
 from typing import Any
 
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
+from tools_dsl._arg_guards import require_int_arg
 
 # 角色卡/persona「创建·克隆」类(非破坏)tool 的 origin。
 # 历史(task 87)排除 llm_chat,把这些工具圈在侧栏控制台助手里;但用户已退役控制台助手,
@@ -51,8 +52,9 @@ def _t_create_persona(user_id: int, args: dict) -> str:
 
 def _t_delete_persona(user_id: int, args: dict) -> str:
     pid = args.get("persona_id")
-    if not isinstance(pid, (int, float, str)) or not str(pid).lstrip("-").isdigit():
-        return "失败: persona_id 必须整数"
+    _chk = require_int_arg(pid, "persona_id")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app.db import connect, init_db
         init_db()
@@ -95,8 +97,9 @@ def _t_create_character_card(user_id: int, args: dict) -> str:
 
 def _t_delete_character_card(user_id: int, args: dict) -> str:
     cid = args.get("card_id")
-    if not isinstance(cid, (int, float, str)) or not str(cid).lstrip("-").isdigit():
-        return "失败: card_id 必须整数"
+    _chk = require_int_arg(cid, "card_id")
+    if isinstance(_chk, str):
+        return _chk
     try:
         from platform_app.db import connect, init_db
         init_db()
