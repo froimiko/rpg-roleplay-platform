@@ -692,6 +692,8 @@ function App() {
     // #7 深度思考: 30s→120s。思考模型(reasoning)首 token 前可能静默 30-90s,30s 太短会把
     // 正常深度思考误判超时。reasoning/status/token 等任何活动都会重置此计时(见各 handler)。
     const STREAM_IDLE_TIMEOUT_MS = 120000;
+    // 新一轮开跑即清「失败轮未落库」标记(onRetry 在调 startRun 之前消费它;本轮再失败会重新置位)
+    runRef.current.lastRunFailedUnpersisted = false;
     let openedAssistant = false;
     let gotReceipt = false;  // #13: 本轮是否收到 system_receipt(斜杠命令回执)
     let gotDone = false;
@@ -712,6 +714,10 @@ function App() {
     const restoreFailedDraft = () => {
       if (!isCurrentRun()) return;
       if (openedAssistant) return;
+      // 失败轮未落库标记:「重试」据此跳过 rollback。不标的话,气泡被下面移除后,
+      // onRetry 从历史找到的最后一条玩家输入是【上一个好回合】,rollback 会把它滚进
+      // trash = 每次失败重试多吃一个好回合(群反馈:安全过滤失败自动回退到前一回合)。
+      runRef.current.lastRunFailedUnpersisted = true;
       // 「保留未响应轮」(设置开关 gc.keepFailedTurn,默认关):失败/未响应/中断时不回退本轮玩家
       // 气泡,保留在对话里,由错误条的「重试」按钮重发。开=直接 no-op(气泡即本轮记录,
       // 输入框已在发送时清空;失败轮不落库,推进/重试时会被后端真值自然替换)。
@@ -1247,7 +1253,13 @@ function App() {
     // reloadState 后历史截到本轮之前,再 startRun 重走 → 真正实现「删除本轮 + 重发」。
     const saveId = activeSave?.id ?? null;
     let rolled = false;
-    if (saveId != null && pIdx >= 0) {
+    // 【off-by-one 防线】失败轮未落库时(安全过滤/生成失败,restoreFailedDraft 已把本轮气泡
+    // 移除),历史里最后一条玩家输入是【上一个好回合】——rollback 会成功地把好回合滚进 trash,
+    // 每次失败重试多吃一轮(群反馈:自动回退到前一回合,要去分支里找最新回合)。两重判据:
+    // ①失败标记 ②定位到的历史输入与将要重发的文本不一致 → 都跳过 rollback 直接重发。
+    const _failedUnpersisted = runRef.current.lastRunFailedUnpersisted === true;
+    const _pContent = pIdx >= 0 ? String(h[pIdx]?.content || '').trim() : '';
+    if (!_failedUnpersisted && _pContent === t2 && saveId != null && pIdx >= 0) {
       try {
         const r = await window.api.branches.rollbackToMessage(saveId, pIdx);
         if (r && r.ok === false) throw new Error(r.error || r.detail || 'rollback denied');
