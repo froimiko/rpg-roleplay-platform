@@ -11,7 +11,7 @@ import secrets
 from fastapi import Depends, HTTPException, Request
 
 from ...db import connect
-from .._deps import json_response
+from .._deps import _client_ip, json_response
 from ._shared import router, _require_admin
 
 
@@ -99,7 +99,7 @@ async def api_internal_allowlist_bulk(request: Request):
     # SEC(M-7): per-IP 速率上限,blunt 对共享 secret 的暴力探测(纵深防御;首选仍是 nginx 内网白名单)。
     try:
         import redis_bus as _rb
-        _ip = (request.client.host if request.client else "") or "-"
+        _ip = _client_ip(request) or "-"
         _c = _rb.rate_incr(f"intl_allowlist:{_ip}", 60)
         if _c and _c > 20:
             raise HTTPException(status_code=429, detail="rate limited")

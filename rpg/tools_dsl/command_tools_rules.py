@@ -220,8 +220,6 @@ def _t_consume_item(state: Any, args: dict) -> str:
     qty = args.get("qty") or 1
     if not item_id:
         return "失败: item_id 为空"
-    seed = args.get("seed")
-    int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
     try:
         from rules_bridge import consume_item_action
         res = consume_item_action(state, item_id=item_id, qty=int(qty))

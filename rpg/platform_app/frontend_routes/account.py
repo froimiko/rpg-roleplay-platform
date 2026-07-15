@@ -12,7 +12,7 @@ import json
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
-from ..api import _delete_session_cookie, json_response, require_user
+from ..api import _client_ip, _delete_session_cookie, json_response, require_user
 from ..db import connect, init_db
 from ._shared import _bad, router
 
@@ -159,7 +159,7 @@ async def api_account_request_delete(request: Request):
     except Exception:
         pass
     reason = body.get("reason", "user-requested")
-    ip = request.client.host if request.client else ""
+    ip = _client_ip(request)
     init_db()
     with connect() as db:
         # 幂等：若已有未完成的队列行，直接返回现有计划时间
