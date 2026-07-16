@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..db import connect, cursor_id, expose, init_db, limit_value, page_payload
-from ..perms import script_owned
+from ..perms import script_owned, script_readable
 
 
 def list_chapters(user_id: int, script_id: int, limit: int | str | None = None, cursor: str | None = None) -> dict[str, Any]:
@@ -13,7 +13,11 @@ def list_chapters(user_id: int, script_id: int, limit: int | str | None = None, 
     page_limit = limit_value(limit, default=200, maximum=5000)
     before_index = cursor_id(cursor)
     with connect() as db:
-        script = script_owned(db, script_id, user_id)
+        # 读权限 = owner ∪ subscriber(script_readable),与同资源的全文搜索分支/单章
+        # 详情端点同谓词。此前误用 script_owned(写谓词)→ 订阅者点「章节」列表恒 400,
+        # 而搜索/详情却能看(同文件三路两种权限,自相矛盾)。写操作(下方编辑/合并/拆分)
+        # 仍走 script_owned,不受影响。
+        script = script_readable(db, script_id, user_id)
         if not script:
             raise ValueError("无权访问该剧本")
         rows = db.execute(

@@ -717,11 +717,22 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
             (name, info) for name, info in variables.items()
             if name != "story_intent"
         ]
+        # 窗口取「最近设定的 12 条」:dict 键序过 jsonb 落库后不保(键按长度/字节重排),
+        # 直接取头 [:12] = 任意子集。变量自带 turn,按它升序后取尾恢复真实时序。
+        def _var_turn(kv):
+            info = kv[1]
+            if isinstance(info, dict):
+                try:
+                    return int(info.get("turn") or 0)
+                except (TypeError, ValueError):
+                    return 0
+            return 0
+        _public_vars.sort(key=_var_turn)
         if _public_vars:
             variable_text = "\n".join(
                 f"  · {name}={info.get('value', '')}"
                 if isinstance(info, dict) else f"  · {name}={info}"
-                for name, info in _public_vars[:12]
+                for name, info in _public_vars[-12:]
             )
         else:
             variable_text = "  （暂无用户变量）"

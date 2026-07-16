@@ -188,8 +188,13 @@ def materialize(db, save_id: int, commit_id: int) -> dict[str, Any]:
                 _mem[_bk] = [x for x in _lst if not is_acceptance_meta(x)]
 
     # 关系层 → 还原 relationships(玩家视角)。metadata 非空=原 dict 关系;空=原字符串关系用 kind 还原。
+    # dict 按 born_commit(最后更新的 commit)升序插入 → 键序=更新时序,下游所有
+    # 「最近 N 条」窗口(short_summary[-20:]/史官快照[-8:])才有真实语义。此前按
+    # logical_key(名字)序重建 + state jsonb 落库不保键序,窗口=按名字字节序的任意子集
+    # (实测长局 65 关系只随机可见 20)。
     rels = live_repo._newest_visible(db, "kb_relationships", save_id, commit_id,
                                      ("logical_key", "from_key", "to_key", "kind", "metadata"))
+    rels.sort(key=lambda r: int(r.get("born_commit") or 0))
     state["relationships"] = {r["to_key"]: (r["metadata"] if r.get("metadata") else r["kind"])
                               for r in rels if r["from_key"] == "_player"}
 

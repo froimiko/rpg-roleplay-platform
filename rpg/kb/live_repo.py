@@ -67,13 +67,15 @@ def _newest_visible(db, table: str, save_id: int, commit_id: int, extra_cols: tu
             where save_id = %(save)s
               and born_commit in (select cid from ancestry)
         )
-        select {cols} from visible
+        select {cols}, born_commit from visible
         where rn = 1 and retired_at_commit is null
         order by logical_key
         """
     )
     rows = db.execute(sql, {"commit": commit_id, "save": save_id}).fetchall()
     # SQL 文本序对 index-keyed 键(fact:10 < fact:2)不安全 → Python 侧数字感知重排。
+    # born_commit 一并返回:关系等「按更新时序取窗」的消费者用它恢复真实 recency
+    # (state 落库是 jsonb,dict 键序不保;名字序重建同样丢时序)。
     rows.sort(key=lambda r: logical_key_order(r["logical_key"]))
     return rows
 

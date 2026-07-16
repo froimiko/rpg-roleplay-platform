@@ -76,3 +76,29 @@ def test_cow_fork_isolation_and_tombstone():
             assert any(e["logical_key"] == "alice" for e in cp["snapshot"]["entities"])
         finally:
             db.execute("delete from game_saves where id=%s", (save_id,))
+
+
+def test_relationships_materialize_in_update_recency_order():
+    """materialize 还原的 relationships dict 键序 = born_commit(最后更新)升序。
+
+    state 落库是 jsonb(不保 dict 键序)、旧实现按名字序重建 → 下游「最近 N 条」
+    窗口(short_summary[-20:]/史官快照[-8:])变成按名字字节序的任意子集。
+    现按 born_commit 升序插入:最近更新的关系恒在尾部、恒落进窗口。
+    """
+    connect = _db_or_skip()
+    from kb import live_repo as L
+    from kb import save_kb
+
+    with connect() as db:
+        save_id, c1, c2, c3 = _seed_save_and_commits(db)
+        try:
+            # c1 登记 张三、李四(名字序会把「李四」排前);c2 更新 张三 → 张三 最新
+            L.set_relationship(db, save_id, c1, "_player->张三", from_key="_player", to_key="张三", kind="警惕")
+            L.set_relationship(db, save_id, c1, "_player->李四", from_key="_player", to_key="李四", kind="盟友")
+            L.set_relationship(db, save_id, c2, "_player->张三", from_key="_player", to_key="张三", kind="信任")
+            st = save_kb.materialize(db, save_id, c2)
+            keys = list(st["relationships"].keys())
+            assert keys[-1] == "张三", f"最近更新的关系应在尾部,实际 {keys}"
+            assert st["relationships"]["张三"] == "信任"
+        finally:
+            db.execute("delete from game_saves where id=%s", (save_id,))

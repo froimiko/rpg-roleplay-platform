@@ -9,6 +9,15 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.69.3] - 2026-07-16 (@ 5704b3ffe)
+
+### Fixed
+- **横扫第二轮(时序恢复/归属谓词)**:
+  - **relationships「最近 N 条」窗口语义修复**:state 落库为 jsonb(不保 dict 键序)+ KB 档 materialize 按名字序重建 → GM 的关系窗口([-20:])实为按名字字节序的任意子集(实测长局 65 关系随机可见 20)。materialize 改按 `born_commit`(最后更新)升序重建 dict,窗口恢复「最近更新的关系」真实语义;`_newest_visible` 一并返回 `born_commit` 供时序消费者使用。
+  - **user_variables 注入窗口同病同修**:jsonb 打乱键序后取头 `[:12]`=任意子集;按变量自带 `turn` 升序取尾。
+  - **订阅剧本「章节」列表恒 400**:`list_chapters` 误用 owner-only 写谓词,而同资源的全文搜索分支/单章详情都是 owner∪subscriber(后端注释自证应一致)→ 订阅者列表打不开、搜索和详情却能看。换 `script_readable`,写操作(编辑/合并/拆分)不受影响。
+  - **生产验证 v1.69.1 已收敛**:部署后首个回合 kb_events 写行数归零;随后单次 76 行为归档器删 13 条后的合法索引重排(index-keyed 存储对中段删除的固有代价,周期有界,记债)。
+
 ## [1.69.2] - 2026-07-16 (@ c634e1d5d)
 
 ### Fixed
