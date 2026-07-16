@@ -9,6 +9,12 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.69.1] - 2026-07-16 (@ 6b725bd7a)
+
+### Fixed
+- **「本轮已知事件」长期不更新、GM 抓取远古事实(群反馈:行者无疆,长局实锤)**:KB 化存档还原事件列表时按 logical_key **字典序**排序(`kevt:10+` 排在 `kevt:2` 前)→ 列表乱序、GM 注入窗口与面板被最老条目长期占据、新事件落中段不可见;且 materialize→import 往返按乱序重编号,同批文本每回合槽位洗牌(实测单档 1.8 万行 COW 写放大)。改数字序还原,往返顺序稳定、追加落尾。同批:acceptance 验收元信息过滤闸从 memory.facts 扩到 world.known_events(apply 列表闸 / 工具执行器 / materialize 自愈清洗三入口,存量污染条目下次加载即剥离)。
+- **剧本详情页 NPC 卡头像上传 403「角色卡不存在或无权访问」(群反馈:先知Kevin)**:卡编辑器 scriptId 解析只认角色卡页的 `_raw` 包装载荷,剧本详情页 NPC tab 直传裸 DTO(script_id 在顶层)→ 恒空 → 上传/图库选图落回 user 归属端点,而 NPC 卡 `user_id=NULL` 恒 403。补顶层回退;CharacterCardHero 上传闭包补 scriptId 依赖。本地全栈真浏览器 e2e 验证(拖放上传 → `POST /api/scripts/{sid}/character-cards/{cid}/avatar` 200)。
+
 ## [1.69.0] - 2026-07-15 (@ 59f9006ad)
 
 ### Added

@@ -30,7 +30,10 @@ function CardEditModal({ card, isNew, kind, onClose, onSave, onPromote, targetSc
   const u = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const nameOk = !!form.name.trim();
   const editCardId = card?._raw?.id || card?.id || null;
-  const editScriptId = kind === 'npc' ? (card?._raw?.script_id || targetScriptId || null) : null;
+  // scriptId 双载荷兼容:角色卡页传 {_raw: row} 包装,剧本详情页 NPC tab 直传裸 DTO
+  // (script_id 在顶层)。只认 _raw 曾让后者恒 null → 头像上传落回 user 端点,NPC 卡
+  // (user_id=NULL)被 403「角色卡不存在或无权访问」(群反馈:先知Kevin)。与 editCardId 同款回退。
+  const editScriptId = kind === 'npc' ? (card?._raw?.script_id || card?.script_id || targetScriptId || null) : null;
 
   const doSave = async () => {
     if (!nameOk || submitting) return;

@@ -59,7 +59,7 @@ export default function CharacterCardHero({ card, editable = true, onChanged, sc
       if (r && r.url) onChanged && onChanged(r.url);
     } catch (_) { try { window.__apiToast && window.__apiToast(t('card_hero.upload_failed'), { kind: 'danger' }); } catch (e) {} }
     finally { setUploading(false); }
-  }, [raw.id, onChanged]);
+  }, [raw.id, onChanged, scriptId]);
 
   const onDrop = (e) => {
     e.preventDefault(); setDrag(false);

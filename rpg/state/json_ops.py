@@ -290,6 +290,19 @@ def strip_leaked_scaffold(text: str) -> str:
     return result if result.strip() else text
 
 
+def is_acceptance_meta(item) -> bool:
+    """acceptance 验收元信息(如「acceptance 'GM确认…' 跳过: set 240 6…」)判定。
+
+    这类串属流水线审计,绝不该进玩家级事实/事件库:进 memory.facts 会被 MemoryProvider
+    每回合回读自我强化;进 world.known_events 会长期占据注入窗口(群反馈:状态面板挂着
+    「acceptance …跳过」条目)。谓词刻意收窄(前缀+关键词双条件),宁漏勿误。
+    apply_ops 列表写入闸 / set_world_known_event 工具 / save_kb.materialize 三处共用。
+    """
+    return (isinstance(item, str)
+            and item.lstrip().startswith("acceptance ")
+            and ("跳过" in item or "skip" in item.lower()))
+
+
 def dedupe_json_ops(json_ops: list[dict]) -> list[dict]:
     """同批次内按内容指纹去重(顺序保留首次出现)。
 

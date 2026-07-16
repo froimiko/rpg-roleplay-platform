@@ -27,7 +27,8 @@ class KnownEventsWriteCapped(unittest.TestCase):
         # 源码断言:set_world_known_event 写入处有硬上限删旧
         i = CT_SRC.find('name == "set_world_known_event"')
         self.assertNotEqual(i, -1)
-        block = CT_SRC[i:i + 700]
+        # 窗口覆盖整个执行器分支(acceptance 过滤块加入后 700 不够,守卫意图不变)
+        block = CT_SRC[i:i + 1400]
         self.assertTrue(re.search(r"len\(events\)\s*>\s*\d+", block),
                         "set_world_known_event 写入无硬上限 → state_snapshot 无界膨胀")
         self.assertIn("del events[:-", block, "未删除超限的旧事件")

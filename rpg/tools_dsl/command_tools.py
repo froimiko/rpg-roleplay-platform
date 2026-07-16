@@ -541,6 +541,11 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
             event = (args.get("event") or "").strip()
             if not event:
                 return "set_world_known_event 失败: event 为空"
+            # acceptance 验收元信息属流水线审计,不进玩家可见事件库(与 apply_ops 列表闸/
+            # save_kb.materialize 同谓词,dispatcher 工具路径是第三个写入口)。
+            from state.json_ops import is_acceptance_meta
+            if is_acceptance_meta(event):
+                return "set_world_known_event 忽略: acceptance 验收元信息不进事件库"
             events = state.data.setdefault("world", {}).setdefault("known_events", [])
             if event not in events:
                 events.append(event)

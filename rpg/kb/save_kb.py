@@ -137,6 +137,22 @@ def import_state(db, save_id: int, commit_id: int, state_data: dict) -> dict[str
     return {"vars": n_var, "relationships": n_rel, "events": n_evt, "entities": n_ent, "skipped": n_skip}
 
 
+def _logical_key_order(lk: str) -> tuple:
+    """事件 logical_key(fact:{i}/kevt:{i})的**数字序**排序键。
+
+    致命前科(群反馈:「本轮已知事件很久不更新、GM 抓很久以前的事实」,save 268 turn 798
+    实锤):materialize 曾按 logical_key **字典序**排序 → kevt:10..15 排在 kevt:2 之前 →
+    ① 还原出的列表乱序,GM 注入窗口([-15:])与面板长期被最老的条目占据,新事件永远落在
+    列表中段不可见;② import_state 按乱序重新编号 → 同一批文本每回合在槽位间洗牌 →
+    逐回合海量 COW 重写(该档 18359 行 kevt 历史、≈23 行/回合写放大)。
+    数字序保证 materialize→import 往返顺序稳定:index 单调、追加落尾、洗牌归零。
+    非数字 index 兜底排最后(按原串稳定)。"""
+    prefix, _, idx = lk.partition(":")
+    if idx.isdigit():
+        return (prefix, 0, int(idx), lk)
+    return (prefix, 1, 0, lk)
+
+
 # ── 读:从 KB 完整投影回等价 state ─────────────────────────────────────────────
 def materialize(db, save_id: int, commit_id: int) -> dict[str, Any]:
     v = _vars(db, save_id, commit_id)
@@ -151,9 +167,14 @@ def materialize(db, save_id: int, commit_id: int) -> dict[str, Any]:
     facts, kevts = [], []
     _seen_f: set[str] = set()
     _seen_k: set[str] = set()
-    for e in sorted(evts, key=lambda x: x["logical_key"]):
+    from state.json_ops import is_acceptance_meta
+    for e in sorted(evts, key=lambda x: _logical_key_order(x["logical_key"])):
         src = (e.get("metadata") or {}).get("source")
         summ = e["summary"]
+        # 自愈清洗:历史污染进库的 acceptance 验收元信息条目,还原时直接剥掉
+        # (写入闸已堵新增;这里让存量存档下次加载即干净,import_state 随后退役孤儿行)。
+        if is_acceptance_meta(summ):
+            continue
         if src == "memory.facts" or e["logical_key"].startswith("fact:"):
             if summ not in _seen_f:
                 _seen_f.add(summ)
