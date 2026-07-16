@@ -66,6 +66,8 @@ def backfill_kb_edges(script_id: int) -> dict[str, Any]:
                 parts = [_norm_name(p) for p in (ev.get("participants") or []) if _norm_name(p)]
                 parts = list(dict.fromkeys(parts))  # 去重保序
                 for p in parts:
+                    # dst_key 的 chapter:{N} 只是标识串:章号语义请消费 ch= 传入的整数列
+                    # (first_revealed_chapter),严禁解析/排序这个字符串(字典序对数字键不安全)。
                     counts["in_chapter"] += _ins("entity", p, "chapter", f"chapter:{ch}", "in_chapter", ch=ch)
                 if 2 <= len(parts) <= _MAX_PARTICIPANTS_PER_EVENT:
                     for i in range(len(parts)):

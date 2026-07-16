@@ -331,11 +331,15 @@ async def handle_image_gen(payload: dict[str, Any]) -> None:
     _notify_image_ready(user_id=user_id, image_id=image_id, url=url, kind=kind)
     log.info("[image_jobs] done image_id=%s user=%s url=%s", image_id, user_id, url)
 
-    # 7. attach 写回目标（如有；失败只 log 不抛，不影响生图结果）
+    # 7. attach 写回目标（如有）。写回失败不再静默:图片本身已生成并入图库,但用户
+    # 的原始诉求(设为头像/人设图)没有兑现——只 log 会表现为「提示成功、刷新后头像
+    # 悄悄回旧图」的不可定位故障(横扫记债项)。翻转 ai_images 为 failed 带原因,
+    # 阻塞轮询端(wait_for_image)与任务浮窗都能如实呈现。
     if attach:
         # 把 prompt 注入 attach，供 persona_image 分支写入 prompt_snapshot
         attach_with_prompt = {**attach, "prompt_snapshot": attach.get("prompt_snapshot") or prompt}
-        _attach_image_to_target(user_id=user_id, url=url, attach=attach_with_prompt)
+        if not _attach_image_to_target(user_id=user_id, url=url, attach=attach_with_prompt):
+            _fail(image_id, "attach_failed: 生成成功但目标写回失败(无权限或目标不存在);图片已存入图库")
 
 
 def _attach_image_to_target(
@@ -343,7 +347,7 @@ def _attach_image_to_target(
     user_id: int,
     url: str,
     attach: dict[str, Any],
-) -> None:
+) -> bool:
     """生图完成后把 url 写回目标表，带 ownership 校验。
 
     attach 结构：
@@ -351,7 +355,8 @@ def _attach_image_to_target(
       card_avatar  — {"type": "card_avatar",  "card_id": int}
       script_cover — {"type": "script_cover", "script_id": int}
 
-    失败只 log，不抛异常（不影响生图本身的 done 状态）。
+    返回写回是否成功;不抛异常。False 由调用方翻转 ai_images 为 failed 呈现给用户
+    (此前只 log = 「提示成功但头像悄悄没变」的不可定位故障)。
     """
     from platform_app.db import connect
 
@@ -359,26 +364,27 @@ def _attach_image_to_target(
     try:
         with connect() as db:
             if attach_type == "user_avatar":
-                db.execute(
+                result = db.execute(
                     "update users set avatar_url = %s where id = %s",
                     (url, int(user_id)),
                 )
                 log.info(
                     "[image_jobs] attach user_avatar user=%s url=%s", user_id, url
                 )
+                return result.rowcount > 0
 
             elif attach_type == "card_avatar":
                 card_id = int(attach.get("id") or attach.get("card_id") or 0)
                 if not card_id:
                     log.warning("[image_jobs] attach card_avatar missing card_id user=%s", user_id)
-                    return
+                    return False
                 script_id = int(attach.get("script_id") or 0)
                 if script_id:
                     # NPC 卡(user_id=NULL,挂 script_id):owner 走 scripts.owner_id
                     from platform_app.perms import script_owned
                     if not script_owned(db, script_id, int(user_id)):
                         log.warning("[image_jobs] attach card_avatar(npc) script owner failed script_id=%s user=%s", script_id, user_id)
-                        return
+                        return False
                     result = db.execute(
                         "update character_cards set avatar_path = %s where id = %s and script_id = %s",
                         (url, card_id, script_id),
@@ -397,17 +403,18 @@ def _attach_image_to_target(
                         "[image_jobs] attach card_avatar ownership failed card_id=%s user=%s",
                         card_id, user_id,
                     )
-                else:
-                    log.info(
-                        "[image_jobs] attach card_avatar card_id=%s user=%s url=%s",
-                        card_id, user_id, url,
-                    )
+                    return False
+                log.info(
+                    "[image_jobs] attach card_avatar card_id=%s user=%s url=%s",
+                    card_id, user_id, url,
+                )
+                return True
 
             elif attach_type == "script_cover":
                 script_id = int(attach.get("id") or attach.get("script_id") or 0)
                 if not script_id:
                     log.warning("[image_jobs] attach script_cover missing script_id user=%s", user_id)
-                    return
+                    return False
                 result = db.execute(
                     """
                     update scripts
@@ -421,11 +428,12 @@ def _attach_image_to_target(
                         "[image_jobs] attach script_cover ownership failed script_id=%s user=%s",
                         script_id, user_id,
                     )
-                else:
-                    log.info(
-                        "[image_jobs] attach script_cover script_id=%s user=%s url=%s",
-                        script_id, user_id, url,
-                    )
+                    return False
+                log.info(
+                    "[image_jobs] attach script_cover script_id=%s user=%s url=%s",
+                    script_id, user_id, url,
+                )
+                return True
 
             elif attach_type == "persona_image":
                 # Phase 4：人设图历史写入
@@ -433,7 +441,7 @@ def _attach_image_to_target(
                 card_id = int(attach.get("id") or attach.get("card_id") or 0)
                 if not card_id:
                     log.warning("[image_jobs] attach persona_image missing card_id user=%s", user_id)
-                    return
+                    return False
                 persona_hash: str = str(attach.get("persona_hash") or "")
                 source: str = str(attach.get("source") or "manual")
                 # payload prompt_snapshot
@@ -442,9 +450,12 @@ def _attach_image_to_target(
                 # Callers that need prompt_snapshot should pass it in attach.
                 prompt_snapshot = str(attach.get("prompt_snapshot") or "")
 
-                # ownership 校验
+                # ownership 校验。card_type 显式限定 pc/persona:人设图是用户卡专属能力
+                # (与 generate-persona-image 端点同谓词);此前只靠 NPC 卡 user_id 恰为
+                # NULL 的巧合挡门,语义模糊且功能扩展时会复现 403 家族(横扫记债项)。
                 owned = db.execute(
-                    "select row_version from character_cards where id = %s and user_id = %s",
+                    "select row_version from character_cards where id = %s and user_id = %s"
+                    " and card_type in ('pc', 'persona')",
                     (card_id, int(user_id)),
                 ).fetchone()
                 if not owned:
@@ -452,7 +463,7 @@ def _attach_image_to_target(
                         "[image_jobs] attach persona_image ownership failed card_id=%s user=%s",
                         card_id, user_id,
                     )
-                    return
+                    return False
                 card_row_version: int = int(owned.get("row_version") or 1)
 
                 # ① 翻转 is_current：该卡所有历史行置 false
@@ -480,22 +491,25 @@ def _attach_image_to_target(
                         "[image_jobs] attach persona_image avatar_path update 0 rows card_id=%s user=%s",
                         card_id, user_id,
                     )
-                else:
-                    log.info(
-                        "[image_jobs] attach persona_image card_id=%s user=%s url=%s",
-                        card_id, user_id, url,
-                    )
+                    return False
+                log.info(
+                    "[image_jobs] attach persona_image card_id=%s user=%s url=%s",
+                    card_id, user_id, url,
+                )
+                return True
 
             else:
                 log.warning(
                     "[image_jobs] _attach_image_to_target unknown type=%s user=%s",
                     attach_type, user_id,
                 )
+                return False
     except Exception as exc:
         log.warning(
             "[image_jobs] _attach_image_to_target failed type=%s user=%s: %s",
             attach_type, user_id, exc,
         )
+        return False
 
 
 # ── Phase 4 helpers ─────────────────────────────────────────────────────────
@@ -508,8 +522,10 @@ def list_persona_images(user_id: int, card_id: int) -> list[dict[str, Any]]:
     from platform_app.db import connect
 
     with connect() as db:
+        # card_type 显式限定 pc/persona(人设图家族统一谓词,与 generate-persona-image 一致)
         owned = db.execute(
-            "select 1 from character_cards where id = %s and user_id = %s",
+            "select 1 from character_cards where id = %s and user_id = %s"
+            " and card_type in ('pc', 'persona')",
             (int(card_id), user_id),
         ).fetchone()
         if not owned:
@@ -550,9 +566,10 @@ def set_current_persona_image(user_id: int, card_id: int, image_id: int) -> dict
     from platform_app.db import connect
 
     with connect() as db:
-        # 校验 card 归属 user
+        # 校验 card 归属 user(card_type 限定同 list_persona_images)
         card_row = db.execute(
-            "select id from character_cards where id = %s and user_id = %s",
+            "select id from character_cards where id = %s and user_id = %s"
+            " and card_type in ('pc', 'persona')",
             (int(card_id), user_id),
         ).fetchone()
         if not card_row:

@@ -270,8 +270,10 @@ def set_auto_image_sync(user_id: int, card_id: int, enabled: bool) -> dict[str, 
     """开启/关闭指定卡的人设图自动同步开关。仅 owner 可操作。"""
     init_db()
     with connect() as db:
+        # 人设图家族统一谓词:card_type 限定 pc/persona(同 generate-persona-image)
         result = db.execute(
-            "update character_cards set auto_image_sync = %s where id = %s and user_id = %s",
+            "update character_cards set auto_image_sync = %s where id = %s and user_id = %s"
+            " and card_type in ('pc', 'persona')",
             (bool(enabled), int(card_id), user_id),
         )
     if result.rowcount == 0:

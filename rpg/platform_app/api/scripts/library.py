@@ -78,10 +78,8 @@ async def api_script_visibility(request: Request, script_id: int, user=Depends(r
         body = {}
     is_public = bool(body.get("is_public"))
     with connect() as db:
-        owned = db.execute(
-            "SELECT chapter_count, review_status FROM scripts WHERE id = %s AND owner_id = %s",
-            (script_id, user["id"]),
-        ).fetchone()
+        from ...perms import script_owned
+        owned = script_owned(db, script_id, user["id"])
         if not owned:
             return json_response({"ok": False, "error": "无权操作该剧本"}, status_code=403)
         if is_public:

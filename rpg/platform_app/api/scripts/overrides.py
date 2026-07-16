@@ -38,10 +38,8 @@ async def api_update_script_overrides(request: Request, script_id: int, user=Dep
     Body: overrides data dict（直接替换整条记录）。
     """
     with connect() as db:
-        owned = db.execute(
-            "SELECT 1 FROM scripts WHERE id = %s AND owner_id = %s",
-            (script_id, user["id"]),
-        ).fetchone()
+        from ...perms import script_owned
+        owned = script_owned(db, script_id, user["id"])
     if not owned:
         return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
     try:
@@ -92,9 +90,8 @@ async def api_set_script_gm_style(request: Request, script_id: int, user=Depends
     """写剧本级 GM 叙事风格(仅 owner)。Body: {"gm_style": {旋钮: 0-100}}。
     只 merge 进 data.gm_style,不动其它 override 字段。"""
     with connect() as db:
-        owned = db.execute(
-            "SELECT 1 FROM scripts WHERE id = %s AND owner_id = %s", (script_id, user["id"])
-        ).fetchone()
+        from ...perms import script_owned
+        owned = script_owned(db, script_id, user["id"])
     if not owned:
         return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
     from platform_app.knowledge.script_overrides import get_overrides_by_script_id, upsert_overrides

@@ -137,8 +137,10 @@ async def api_set_persona_image_url(request: Request, card_id: int, user=Depends
         return json_response({"ok": False, "error": "不合法的图片 URL（仅允许站内资产路径）"}, status_code=400)
 
     with connect() as db:
+        # 人设图家族统一谓词:card_type 显式限定 pc/persona(不再靠 NPC 卡 user_id=NULL 巧合挡门)
         owned = db.execute(
-            "select 1 from character_cards where id = %s and user_id = %s",
+            "select 1 from character_cards where id = %s and user_id = %s"
+            " and card_type in ('pc', 'persona')",
             (card_id, user_id),
         ).fetchone()
         if not owned:
@@ -225,15 +227,16 @@ async def api_upload_card_avatar(card_id: int, file: UploadFile = File(...), use
 async def api_upload_persona_image(card_id: int, file: UploadFile = File(...), user=Depends(require_user)):
     """手动上传人设图，插入 card_persona_images 并设为当前图（翻 is_current）。
 
-    鉴权：character_cards WHERE id=card_id AND user_id=user[id]。
+    鉴权：character_cards WHERE id=card_id AND user_id=user[id] AND card_type in (pc, persona)。
     MIME 魔数白名单：PNG / JPEG / WebP。大小上限 8 MB。
     """
     user_id = int(user["id"])
 
-    # 1. ownership 校验
+    # 1. ownership 校验(人设图家族统一谓词:card_type 限定 pc/persona)
     with connect() as db:
         owned = db.execute(
-            "select 1 from character_cards where id = %s and user_id = %s",
+            "select 1 from character_cards where id = %s and user_id = %s"
+            " and card_type in ('pc', 'persona')",
             (card_id, user_id),
         ).fetchone()
     if not owned:

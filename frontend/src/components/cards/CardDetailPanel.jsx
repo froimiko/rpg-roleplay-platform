@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next';
 import AvatarImg from '../AvatarImg.jsx';
 import CharacterCardHero from '../CharacterCardHero.jsx';
 import ImageLightbox from '../ImageLightbox.jsx';
-import GenerateImageModal from '../GenerateImageModal.jsx';
 import CSContainer from '@cloudscape-design/components/container';
 import CSHeader from '@cloudscape-design/components/header';
 import CSButton from '@cloudscape-design/components/button';
@@ -220,19 +219,16 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
   const [tab, setTab] = useStatePL('info');
   const [form, setForm] = useStatePL(null);
   const [saving, setSaving] = useStatePL(false);
-  const [genAvatarOpen, setGenAvatarOpen] = useStatePL(false);
   const [avatarUrl, setAvatarUrl] = useStatePL(raw.avatar_path || null);
   // Phase 4: 人设图状态
   const [autoSync, setAutoSync] = useStatePL(!!raw.auto_image_sync);
   const [autoSyncBusy, setAutoSyncBusy] = useStatePL(false);
   const [genPersonaBusy, setGenPersonaBusy] = useStatePL(false);
-  // W3-C1: 手动上传状态
-  const [uploadAvatarBusy, setUploadAvatarBusy] = useStatePL(false);
+  // W3-C1: 手动上传状态(人设图;头像上传统一走 CharacterCardHero 内置入口)
   const [uploadPersonaBusy, setUploadPersonaBusy] = useStatePL(false);
   // 图2:分享到在线角色卡库(发布/取消公开)
   const [isPub, setIsPub] = useStatePL(raw.is_public === true || raw.scope === 'public');
   const [pubBusy, setPubBusy] = useStatePL(false);
-  const avatarInputRef = React.useRef(null);
   const personaInputRef = React.useRef(null);
   useEffectPL(() => {
     setTab('info');
@@ -288,22 +284,6 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
     } finally { setGenPersonaBusy(false); }
   };
 
-  // W3-C1: 上传头像
-  const doUploadAvatar = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    e.target.value = '';
-    setUploadAvatarBusy(true);
-    window.__apiToast?.(t('cards.page.persona.uploading_avatar'), { kind: 'info', duration: 2000 });
-    try {
-      const res = await window.api.cards.uploadAvatar(raw.id ?? card.id, file);
-      if (res && res.url) setAvatarUrl(res.url);
-      window.__apiToast?.(t('cards.page.persona.avatar_updated'), { kind: 'ok', duration: 2000 });
-    } catch (e2) {
-      window.__apiToast?.(t('cards.page.persona.upload_fail'), { kind: 'danger', detail: e2?.message });
-    } finally { setUploadAvatarBusy(false); }
-  };
-
   // W3-C1: 上传人设图
   const doUploadPersonaImage = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -327,31 +307,11 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
   const sourceLabel = { extracted: t('cards.detail.source_extracted'), user: t('cards.detail.source_user'), persona: t('cards.detail.source_persona'), platform: t('cards.detail.source_platform') };
   const scopeLabel = { script: t('cards.detail.scope_script'), private: t('cards.detail.scope_private'), public: t('cards.detail.scope_public') };
 
-  const genAvatarDefaultPrompt = [raw.name, raw.appearance].filter(Boolean).join('，') || raw.name || '';
-
   return (
     <>
-    {genAvatarOpen && (
-      <GenerateImageModal
-        open={genAvatarOpen}
-        onClose={() => setGenAvatarOpen(false)}
-        kind="card"
-        attach={{ type: 'card_avatar', id: raw.id ?? card.id }}
-        defaultPrompt={genAvatarDefaultPrompt}
-        onDone={(url) => {
-          setAvatarUrl(url);
-          setGenAvatarOpen(false);
-        }}
-      />
-    )}
-    {/* W3-C1: 隐藏 file input — 头像上传 */}
-    <input
-      ref={avatarInputRef}
-      type="file"
-      accept="image/png,image/jpeg,image/webp"
-      style={{ display: 'none' }}
-      onChange={doUploadAvatar}
-    />
+    {/* 头像的生成/上传/图库统一入口 = 下方 CharacterCardHero(内置 MediaStudio);
+        旧 W3-C1 的独立头像 input + GenerateImageModal 无触发器已摘除(横扫确认死代码,
+        且其直调 user 端点的写法对 NPC 卡是 403 陷阱,防复活)。 */}
     {/* W3-C1: 隐藏 file input — 人设图上传 */}
     <input
       ref={personaInputRef}

@@ -9,6 +9,16 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.69.4] - 2026-07-16 (@ 90ae1474d)
+
+### Fixed
+- **横扫债务清缴**:
+  - **生图 attach 失败不再静默**:`_attach_image_to_target` 改显式布尔返回,写回失败(无权限/目标不存在)翻转 ai_images 为 failed 带原因——此前只 log,表现为「提示成功但头像悄悄回旧图」的不可定位故障。
+  - **persona-image 家族谓词收口**:auto-image-sync / persona-images list / set-current / url / upload / attach 六处归属查询显式限定 `card_type in ('pc','persona')`(与 generate-persona-image 一致),不再靠 NPC 卡 `user_id=NULL` 的巧合挡门。通用 /avatar、/avatar-url 不受影响(服务全部用户卡型)。
+  - **reveal_anchors 孤儿退役**:重新抽取/重建后 `chapter_facts.events` 收缩时,旧 `chapter:{n}:event:{idx}` 键(source='novel')随 backfill 清理,不再永久残留悬空 requires;采集集为空时跳过(防重建中途误清)。
+  - **归属 SQL 收敛**:visibility/overrides/gm-style 三处手写 owner 谓词换 `perms.script_owned`(rename 的原子 UPDATE 保留,严格更优)。
+  - **死代码摘除**:CardDetailPanel 无触发器的独立头像上传 input + GenerateImageModal(其 user 端点直调对 NPC 卡是 403 陷阱,防复活);kb_edges `chapter:{N}` 键补消费指引注释。
+
 ## [1.69.3] - 2026-07-16 (@ 5704b3ffe)
 
 ### Fixed

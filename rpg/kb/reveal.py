@@ -146,7 +146,20 @@ def backfill_reveal_anchors(script_id: int) -> dict[str, Any]:
             )
             prev_key = a["anchor_key"]
             seeded += 1
-    return {"ok": True, "script_id": sid, "anchors": seeded}
+        # 孤儿退役:重新抽取/重建后 chapter_facts.events 收缩或重排时,旧的高位
+        # chapter:{n}:event:{idx} 键不再出现在本次采集集 → 若不删除会永久残留
+        # (悬空 requires 引用 + 数据只增不减,横扫记债项)。只清 source='novel'
+        # (手工/其它来源锚点不动);采集集为空时跳过(chapter_facts 重建中途
+        # 可能短暂为空,全删属误伤,宁保守)。
+        removed = 0
+        if rows:
+            _keys = [a["anchor_key"] for a in rows]
+            removed = db.execute(
+                "delete from reveal_anchors where script_id = %s and source = 'novel'"
+                " and not (anchor_key = any(%s))",
+                (sid, _keys),
+            ).rowcount
+    return {"ok": True, "script_id": sid, "anchors": seeded, "removed_stale": removed}
 
 
 # ── P4:存档前沿(reached-set / DAG 可见集) ──────────────────────────────────
