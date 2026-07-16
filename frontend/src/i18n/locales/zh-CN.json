@@ -7392,6 +7392,7 @@
     "skill_hint": "整包 skill 原文作为角色定义，扮演时服务端逐字注入；点上方查看。",
     "skill_load_fail": "加载失败",
     "skill_loading": "加载中…",
+    "skill_npc_unsupported": "剧本 NPC 卡暂不支持在此查看完整 skill",
     "skill_section_label": "人格 skill 定义",
     "skill_truncated": "…（过长已截断，完整内容服务端使用）",
     "skill_view_full": "查看完整 skill"

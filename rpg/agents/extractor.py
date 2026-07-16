@@ -97,8 +97,8 @@ def _build_user_prompt(narrative_text: str, state_data: dict) -> str:
         f"- world.weather = {w.get('weather', '') or '(空)'}\n"
         f"- memory.main_quest = {m.get('main_quest', '') or '(空)'}\n"
         f"- memory.current_objective = {m.get('current_objective', '') or '(空)'}\n"
-        f"- memory.resources = {(m.get('resources') or [])[:5]}\n"
-        f"- relationships = {dict(list(rels.items())[:8])}\n"
+        f"- memory.resources = {(m.get('resources') or [])[-5:]}\n"
+        f"- relationships = {dict(list(rels.items())[-8:])}\n"
     )
     return state_snippet + "\n\n## GM 本轮叙事\n" + (narrative_text or "")[:4000]
 

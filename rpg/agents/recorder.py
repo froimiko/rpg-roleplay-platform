@@ -242,8 +242,10 @@ def _build_user_prompt(
     lines.append(f"- world.weather = {w.get('weather', '') or '(空)'}")
     lines.append(f"- memory.main_quest = {m.get('main_quest', '') or '(空)'}")
     lines.append(f"- memory.current_objective = {m.get('current_objective', '') or '(空)'}")
-    lines.append(f"- memory.resources = {(m.get('resources') or [])[:5]}")
-    lines.append(f"- relationships = {dict(list(rels.items())[:8])}")
+    # 快照窗口取尾:resources 尾部 append、relationships 新键落 dict 尾;取头会让
+    # 史官看不到新近获得的物品/新建立的关系(误判「未知实体」/重复发放)。
+    lines.append(f"- memory.resources = {(m.get('resources') or [])[-5:]}")
+    lines.append(f"- relationships = {dict(list(rels.items())[-8:])}")
 
     # 锚点材料（仅 anchors 任务）
     if "anchors" in tasks:

@@ -120,8 +120,8 @@ function MeOverview() {
   const unlockedCount = ACHIEVEMENTS.filter(a => a.unlocked).length;
   const [overviewAvatarStudioOpen, setOverviewAvatarStudioOpen] = useStatePL(false);
   const [overviewAvatarUrl, setOverviewAvatarUrl] = useStatePL(null);
-  // 实际展示 URL:MediaStudio 更新后用 overviewAvatarUrl,否则回落 user._raw?.avatar_url
-  const displayAvatarUrl = overviewAvatarUrl || user._raw?.avatar_url || null;
+  // 实际展示 URL:MediaStudio 更新后用 overviewAvatarUrl,否则回落 user.avatar_url(._raw 兜底防未来包装层)
+  const displayAvatarUrl = overviewAvatarUrl || user.avatar_url || user._raw?.avatar_url || null;
 
   return (
     <CSSpaceBetween size="l">

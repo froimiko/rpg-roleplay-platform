@@ -135,13 +135,17 @@ function CardEditFields({ form, u, kind = 'user' }) {
 /* 只读角色档展示(设定 tab / 详情用)。纯展示 DTO 结构化字段,不做任何文本解析。 */
 // 人格 skill 完整定义:折叠 + 按需拉取(GET 单卡)+ 高度封顶滚动 + 渲染长度封顶。
 // 关键:不把 30k 原文常驻 DOM(默认折叠)、不随 /api/state 下发(按需拉),避免长 skill 内存爆。
-function SkillContentSection({ cardId }) {
+function SkillContentSection({ cardId, kind }) {
   const { t } = useTranslation();
   const [open, setOpen] = useStatePL(false);
   const [text, setText] = useStatePL('');
   const [loading, setLoading] = useStatePL(false);
   const [err, setErr] = useStatePL('');
+  // 剧本 NPC 卡(kind='npc')的 user_id=NULL,不属于当前用户,不能走用户归属端点
+  // /api/me/character-cards/{id}(会 404)。这类卡直接降级展示提示文案,不发请求。
+  const npcUnsupported = kind === 'npc';
   const toggle = useCallbackPL(async () => {
+    if (npcUnsupported) return;
     if (text) { setOpen((o) => !o); return; }
     if (loading || cardId == null) return;
     setLoading(true); setErr('');
@@ -151,27 +155,35 @@ function SkillContentSection({ cardId }) {
       const sc = (c.metadata && c.metadata.skill_content) || c.background || '';
       setText(sc || t('cards_page.skill_empty')); setOpen(true);
     } catch (e) { setErr(e?.message || t('cards_page.skill_load_fail')); } finally { setLoading(false); }
-  }, [cardId, text, loading, t]);
+  }, [cardId, text, loading, t, npcUnsupported]);
   const MAX = 60000;
   const shown = text.length > MAX ? (text.slice(0, MAX) + '\n' + t('cards_page.skill_truncated')) : text;
   return (
     <div style={{ background: 'var(--panel-2, #282623)', border: '1px solid var(--line-soft, #2a2724)', borderRadius: 10, padding: '12px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ fontSize: 11, letterSpacing: '.08em', color: 'var(--accent, #c96442)', fontWeight: 600, textTransform: 'uppercase' }}>{t('cards_page.skill_section_label')}</div>
-        <button
-          onClick={toggle}
-          style={{ fontSize: 12, color: 'var(--accent, #c96442)', background: 'transparent', border: '1px solid var(--line, #3a352f)', borderRadius: 8, padding: '4px 12px', cursor: 'pointer' }}
-        >
-          {loading ? t('cards_page.skill_loading') : (open ? t('cards_page.skill_collapse') : t('cards_page.skill_view_full'))}
-        </button>
+        {!npcUnsupported && (
+          <button
+            onClick={toggle}
+            style={{ fontSize: 12, color: 'var(--accent, #c96442)', background: 'transparent', border: '1px solid var(--line, #3a352f)', borderRadius: 8, padding: '4px 12px', cursor: 'pointer' }}
+          >
+            {loading ? t('cards_page.skill_loading') : (open ? t('cards_page.skill_collapse') : t('cards_page.skill_view_full'))}
+          </button>
+        )}
       </div>
       {err && <div style={{ color: 'var(--danger, #c8675d)', fontSize: 12, marginTop: 6 }}>{err}</div>}
-      {open && text && (
-        <div style={{ marginTop: 10, maxHeight: 360, overflow: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.7, fontSize: 12.5, color: 'var(--text-quiet, #c8c2b7)', fontFamily: 'ui-monospace, monospace', wordBreak: 'break-word' }}>
-          {shown}
-        </div>
+      {npcUnsupported ? (
+        <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted-2, #8a847b)' }}>{t('cards_page.skill_npc_unsupported')}</div>
+      ) : (
+        <>
+          {open && text && (
+            <div style={{ marginTop: 10, maxHeight: 360, overflow: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.7, fontSize: 12.5, color: 'var(--text-quiet, #c8c2b7)', fontFamily: 'ui-monospace, monospace', wordBreak: 'break-word' }}>
+              {shown}
+            </div>
+          )}
+          {!open && <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted-2, #8a847b)' }}>{t('cards_page.skill_hint')}</div>}
+        </>
       )}
-      {!open && <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted-2, #8a847b)' }}>{t('cards_page.skill_hint')}</div>}
     </div>
   );
 }
@@ -276,7 +288,7 @@ function CardSheet({ card, kind = 'user', dense = false }) {
       {/* 人格 skill 卡:不内联 30k 原文,改折叠按需拉(防内存爆);其余字段照常 */}
       {(raw.metadata && raw.metadata.persona_skill) || tags.includes('人格skill') ? (
         <CSSpaceBetween size="s">
-          <SkillContentSection cardId={raw.id} />
+          <SkillContentSection cardId={raw.id} kind={kind} />
           {block(t('cards.detail.appearance'), raw.appearance)}
           {block(t('cards.detail.personality'), raw.personality)}
           {block(t('cards.detail.speech_style'), raw.speech_style)}

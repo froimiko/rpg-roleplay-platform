@@ -637,12 +637,11 @@ class ApplyOpsMixin:
             items = _split_items(value)
             # fork 收编(污染回路 B):master.py 曾指示 GM 把 acceptance 跳过理由写进 memory.facts,
             # 被 MemoryProvider/short_summary 每回合回读 → curator 验收元信息污染活事实库、自我强化。
-            # acceptance 元信息属审计,不该进玩家级事实。确定性拦截(不依赖 GM 遵守提示词),
-            # 与 master.py 改路由到审计双保险。known_events 同病(群反馈:状态面板事件列表
-            # 挂着「acceptance …跳过」条目、还被注入 GM),同谓词同批拦。
-            if path in ("memory.facts", "world.known_events"):
-                from state.json_ops import is_acceptance_meta
-                items = [it for it in items if not is_acceptance_meta(it)]
+            # acceptance 元信息属审计,不该进任何玩家级列表桶(facts/known_events/notes/pinned/
+            # resources/abilities —— master.py 提示词自己都点名了 notes,闸必须覆盖全部 list kind)。
+            # 确定性拦截(不依赖 GM 遵守提示词);add_memory 内另有单点根闸兜工具通道。
+            from state.json_ops import is_acceptance_meta
+            items = [it for it in items if not is_acceptance_meta(it)]
             # Bug 5 (retest)：value 是 list 且 op=set（既非 append 也非 overwrite）→
             # 视为完整替换。GM 给的「资源完整列表」语义就是"现在背包只剩这些"。
             # 之前 set 走 dedupe-append 路径会把新 Torch ×1 追加到老 Torch ×2 旁边，

@@ -45,7 +45,7 @@ function MeEditProfile() {
   const [saving, setSaving] = useStatePL(false);
   const avatarInputRef = React.useRef(null);
   const [mediaStudioOpen, setMediaStudioOpen] = useStatePL(false);
-  const [avatarUrl, setAvatarUrl] = useStatePL(user._raw?.avatar_url || null);
+  const [avatarUrl, setAvatarUrl] = useStatePL(user.avatar_url || user._raw?.avatar_url || null);
 
   // 从 /api/me/profile 拉真实资料(后端合并了 profile_extras:邮箱/手机/真名/性别/
   // 生日/所在地/网站/代词/语言/时区)。只取表单已知字段,避免把 stats 等无关键污染进 form。
@@ -78,7 +78,8 @@ function MeEditProfile() {
       email: f.email || user._raw?.email || "",
       bio: f.bio || user.bio || "",
     }));
-    if (user._raw?.avatar_url && !avatarUrl) setAvatarUrl(user._raw.avatar_url);
+    const _av = user.avatar_url || user._raw?.avatar_url;
+    if (_av && !avatarUrl) setAvatarUrl(_av);
   }, [user.id, user.username, user.display_name]);
 
   const onSave = async () => {

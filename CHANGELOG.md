@@ -9,6 +9,16 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.69.2] - 2026-07-16 (@ c634e1d5d)
+
+### Fixed
+- **同类横扫(v1.69.1 两 bug 的模式全库排查,三路侦察+逐条复核)**:
+  - **GM 记忆注入窗口方向性错误(严重,全存档生效)**:memory 五桶(facts/notes/abilities/resources/pinned)写入端尾部 append,但 `short_summary`/MemoryProvider/史官与 extractor 状态快照/legacy_facts 回退全部取**头** `[:N]` → 桶超窗后新增条目对 GM **永久不可见**(notes/pinned/abilities/resources 归档豁免、无轮转,一错即永久;史官还会因看不到新资源/新关系而重复发放/误判未知实体)。全部改取尾 `[-N:]`(最近 N 条),与 relationships/known_events 既有正确方向对齐。
+  - **acceptance 元信息闸补全**:原闸只盖 memory.facts+known_events 两桶;现 `add_memory` 加单点根闸(盖 5 桶+dispatcher 五工具+关系标签回退),`update_relationship`/`set_user_variable` 加窄谓词闸,apply 列表闸扩到全部 list 桶,materialize 对归档豁免四桶补自愈清洗。
+  - **数字序保证下沉 live_repo**:`logical_key_order` 移入 `_newest_visible` 层统一兜底,index-keyed 键的正确性不再挂在单个调用点(防 resolve_world_view 等读路径将来接线复现 v1.69.1 乱序)。
+  - **头像展示回归**:`hydratePlatform` 漏抄后端返回的 `avatar_url` 且下游 5 处读从不存在的 `user._raw` → 个人中心/编辑资料/成就分享/移动端「我的」登录后首屏头像恒空。补水合+改读顶层。
+  - **新建存档向导 NPC 预览 kind 写死 "user"**:带「人格skill」标签的剧本 NPC 卡预览会打 user 归属端点 404;kind 按来源传递 + SkillContentSection 组件级 npc 门控降级文案。
+
 ## [1.69.1] - 2026-07-16 (@ 6b725bd7a)
 
 ### Fixed

@@ -536,7 +536,10 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
         ? scriptNpcCards.find(c => String(c.id) === String(opt.id))
         : userCards.find(c => String(c.id || c.slug) === String(opt.id || opt.slug));
     const card = full || { name: opt.name, identity: opt.subtitle };
-    setPreviewCard({ card: { ...card, identity: card.identity || card.role || opt.subtitle }, name: opt.name });
+    // 剧本 NPC 卡 user_id=NULL,不能当 kind="user" 渲染(CardSheet 内 SkillContentSection
+    // 会调用户归属端点 myGet → 404)。按来源记 kind,script_card → 'npc'。
+    const previewKind = opt.kind === 'script_card' ? 'npc' : 'user';
+    setPreviewCard({ card: { ...card, identity: card.identity || card.role || opt.subtitle }, name: opt.name, kind: previewKind });
   };
 
   const node = (
@@ -632,7 +635,7 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
         size="medium"
         footer={<div style={{ textAlign: 'right' }}><CSButton variant="primary" onClick={() => setPreviewCard(null)}>{t('saves.new_game.preview_close')}</CSButton></div>}
       >
-        {previewCard && <CardSheet card={previewCard.card} kind="user" />}
+        {previewCard && <CardSheet card={previewCard.card} kind={previewCard.kind || 'user'} />}
       </CSModal>
     </div>
   );

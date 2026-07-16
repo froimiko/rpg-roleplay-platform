@@ -154,6 +154,7 @@ async function hydratePlatform() {
         role: me.user.role || platform.user.role,
         uid: me.user.uid || "u_" + (me.user.id || ""),
         bio: me.user.bio || platform.user.bio,
+        avatar_url: me.user.avatar_url || '',
         id: me.user.id,
         // 透传首登须知弹窗状态(null=从未 dismiss),否则前端 === null 判断永远拿不到字段
         welcome_dismissed_at: me.user.welcome_dismissed_at ?? null,

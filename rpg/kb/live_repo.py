@@ -36,8 +36,23 @@ with recursive ancestry(cid) as (
 """
 
 
+def logical_key_order(lk: str) -> tuple:
+    """logical_key 的**数字感知**排序键(fact:{i}/kevt:{i} 等 index-keyed 键按数字序,
+    name-slug 键退化为原字典序,稳定无副作用)。
+
+    致命前科(v1.69.1):materialize 曾按字典序排 kevt:{i} → kevt:10 排在 kevt:2 前 →
+    事件列表乱序、GM 注入窗口恒旧、往返重编号每回合洗牌(单档 1.8 万行 COW 写放大)。
+    数字序保证必须在 live_repo 这一层兜底,不能只挂在个别调用点上——resolve_world_view
+    等未来读路径同样吃这里的返回序。"""
+    prefix, _, idx = lk.partition(":")
+    if idx.isdigit():
+        return (prefix, 0, int(idx), lk)
+    return (prefix, 1, 0, lk)
+
+
 def _newest_visible(db, table: str, save_id: int, commit_id: int, extra_cols: tuple[str, ...]) -> list[dict]:
-    """沿谱系取每 logical_key 最新可见行(过滤 tombstone)。通用于 4 张行级表。"""
+    """沿谱系取每 logical_key 最新可见行(过滤 tombstone)。通用于 4 张行级表。
+    返回按 logical_key **数字感知序**(见 logical_key_order)。"""
     cols = ", ".join(extra_cols)
     sql = (
         _ANCESTRY
@@ -57,7 +72,10 @@ def _newest_visible(db, table: str, save_id: int, commit_id: int, extra_cols: tu
         order by logical_key
         """
     )
-    return db.execute(sql, {"commit": commit_id, "save": save_id}).fetchall()
+    rows = db.execute(sql, {"commit": commit_id, "save": save_id}).fetchall()
+    # SQL 文本序对 index-keyed 键(fact:10 < fact:2)不安全 → Python 侧数字感知重排。
+    rows.sort(key=lambda r: logical_key_order(r["logical_key"]))
+    return rows
 
 
 # ── 写:upsert(INSERT 新版本行) ─────────────────────────────────────────────

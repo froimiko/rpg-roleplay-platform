@@ -79,5 +79,51 @@ class KnownEventsWriteGates(unittest.TestCase):
         self.assertEqual(st.data["world"]["known_events"], ["主神光柱降下"])
 
 
+class AcceptanceRootGates(unittest.TestCase):
+    """单点根闸:add_memory(五桶+工具通道)/update_relationship/set_user_variable。"""
+
+    def test_add_memory_rejects_all_buckets(self):
+        st = GameState.new()
+        for bucket in ("facts", "notes", "pinned", "resources", "abilities"):
+            self.assertFalse(st.add_memory(bucket, _ACC))
+            self.assertEqual(st.data["memory"][bucket], [])
+        self.assertTrue(st.add_memory("notes", "正常笔记"))
+
+    def test_dispatcher_memory_tool_blocked(self):
+        from tools_dsl.command_tools import execute_tool
+        st = GameState.new()
+        execute_tool(st, "add_memory_note", {"text": _ACC})
+        self.assertEqual(st.data["memory"]["notes"], [])
+
+    def test_relationship_and_user_variable(self):
+        st = GameState.new()
+        st.update_relationship("雷纳德", _ACC)
+        self.assertNotIn("雷纳德", st.data["relationships"])
+        st.update_relationship("雷纳德", "信任")
+        self.assertEqual(st.data["relationships"]["雷纳德"], "信任")
+        self.assertFalse(st.set_user_variable("x", _ACC, source="gm"))
+        self.assertNotIn("x", st.data["worldline"].get("user_variables", {}))
+
+
+class MemoryWindowDirection(unittest.TestCase):
+    """注入窗口取尾(最近 N 条):桶超窗后新增条目必须可见、最老条目退出窗口。"""
+
+    def test_short_summary_shows_newest_resources(self):
+        st = GameState.new()
+        for i in range(9):
+            st.add_memory("resources", f"资源物品{i:02d}")
+        summary = st.short_summary()
+        self.assertIn("资源物品08", summary)   # 最新的必须在
+        self.assertNotIn("资源物品00", summary)  # 窗口 6,最老的退出
+
+    def test_short_summary_shows_newest_pinned(self):
+        st = GameState.new()
+        for i in range(8):
+            st.add_memory("pinned", f"固定规则{i:02d}")
+        summary = st.short_summary()
+        self.assertIn("固定规则07", summary)
+        self.assertNotIn("固定规则00", summary)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -98,7 +98,7 @@ function AchvShareModal({ user, items, unlockedCount, total, onClose }) {
       <CSSpaceBetween size="m">
         <div className="pl-achv-share-card">
           <div className="pl-achv-share-head">
-            <AvatarImg src={user._raw?.avatar_url || null} name={user.display_name || '?'} size={40} shape="circle" className="pl-achv-share-avatar" />
+            <AvatarImg src={user.avatar_url || user._raw?.avatar_url || null} name={user.display_name || '?'} size={40} shape="circle" className="pl-achv-share-avatar" />
             <div>
               <strong>{user.display_name}</strong>
               <div className="muted-2" style={{ fontSize: 12 }}>{t('platform.achv.unlocked_count', { unlocked: unlockedCount, total, defaultValue: `解锁 ${unlockedCount} / ${total} 成就` })}</div>

@@ -154,31 +154,35 @@ class MemoryProvider(ContextProvider):
                 "与「事实：」冲突时一律以笔记/固定记忆为准,数值/状态以玩家手记为最新。】"
             )
 
+        # 窗口方向:各桶写入端是尾部 append(state.add_memory / apply_ops list 分支),
+        # 「最近 depth 条」必须取尾([-depth:])。旧实现取头 → 桶超过 depth 后,新增的
+        # 能力/资源/固定记忆/笔记/事实对 GM 永久不可见(notes/pinned/abilities/resources
+        # 四桶归档豁免、无任何轮转,一错就是永久)。
         # ── bucket_world_enabled: main_quest / current_objective / facts / notes ─
         if ms.bucket_world_enabled:
             if m.get("main_quest"):
                 _add_line(f"主线：{m['main_quest']}")
             if m.get("current_objective"):
                 _add_line(f"当前目标：{m['current_objective']}")
-            for item in (m.get("facts") or [])[:depth]:
+            for item in (m.get("facts") or [])[-depth:]:
                 if not _add_line(f"事实：{item}"):
                     break
-            for item in (m.get("notes") or [])[:depth]:
+            for item in (m.get("notes") or [])[-depth:]:
                 if not _add_line(f"笔记：{item}"):
                     break
 
         # ── bucket_character_enabled: abilities / resources ───────────────────
         if ms.bucket_character_enabled:
-            for item in (m.get("abilities") or [])[:depth]:
+            for item in (m.get("abilities") or [])[-depth:]:
                 if not _add_line(f"能力：{item}"):
                     break
-            for item in (m.get("resources") or [])[:depth]:
+            for item in (m.get("resources") or [])[-depth:]:
                 if not _add_line(f"资源：{item}"):
                     break
 
         # ── bucket_pinned_enabled: pinned ─────────────────────────────────────
         if ms.bucket_pinned_enabled:
-            for item in (m.get("pinned") or [])[:depth]:
+            for item in (m.get("pinned") or [])[-depth:]:
                 if not _add_line(f"固定记忆：{item}"):
                     break
 

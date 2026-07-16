@@ -137,20 +137,9 @@ def import_state(db, save_id: int, commit_id: int, state_data: dict) -> dict[str
     return {"vars": n_var, "relationships": n_rel, "events": n_evt, "entities": n_ent, "skipped": n_skip}
 
 
-def _logical_key_order(lk: str) -> tuple:
-    """事件 logical_key(fact:{i}/kevt:{i})的**数字序**排序键。
-
-    致命前科(群反馈:「本轮已知事件很久不更新、GM 抓很久以前的事实」,save 268 turn 798
-    实锤):materialize 曾按 logical_key **字典序**排序 → kevt:10..15 排在 kevt:2 之前 →
-    ① 还原出的列表乱序,GM 注入窗口([-15:])与面板长期被最老的条目占据,新事件永远落在
-    列表中段不可见;② import_state 按乱序重新编号 → 同一批文本每回合在槽位间洗牌 →
-    逐回合海量 COW 重写(该档 18359 行 kevt 历史、≈23 行/回合写放大)。
-    数字序保证 materialize→import 往返顺序稳定:index 单调、追加落尾、洗牌归零。
-    非数字 index 兜底排最后(按原串稳定)。"""
-    prefix, _, idx = lk.partition(":")
-    if idx.isdigit():
-        return (prefix, 0, int(idx), lk)
-    return (prefix, 1, 0, lk)
+# 数字感知排序键已下沉到 live_repo(_newest_visible 层统一兜底,v1.69.2);这里保留
+# 别名供本模块显式排序与既有测试引用。前科与语义见 live_repo.logical_key_order 文档串。
+from kb.live_repo import logical_key_order as _logical_key_order
 
 
 # ── 读:从 KB 完整投影回等价 state ─────────────────────────────────────────────
@@ -188,6 +177,15 @@ def materialize(db, save_id: int, commit_id: int) -> dict[str, Any]:
     state.setdefault("world", {})
     if kevts or "world" in state:
         state["world"]["known_events"] = kevts
+    # 自愈补全:memory 顶层 blob(kb_worldline_vars 整存)里的 notes/pinned/resources/
+    # abilities 四桶可能含写入闸补齐(v1.69.2)之前进库的 acceptance 历史污染,还原时
+    # 同样剥离(facts/kevts 已在上面按行清洗;这四桶不走 kb_events,得在 blob 里清)。
+    _mem = state.get("memory")
+    if isinstance(_mem, dict):
+        for _bk in ("notes", "pinned", "resources", "abilities"):
+            _lst = _mem.get(_bk)
+            if isinstance(_lst, list):
+                _mem[_bk] = [x for x in _lst if not is_acceptance_meta(x)]
 
     # 关系层 → 还原 relationships(玩家视角)。metadata 非空=原 dict 关系;空=原字符串关系用 kind 还原。
     rels = live_repo._newest_visible(db, "kb_relationships", save_id, commit_id,

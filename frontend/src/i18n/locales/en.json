@@ -7395,6 +7395,7 @@
     "skill_hint": "The full skill source is used as the character definition and injected verbatim server-side during roleplay. Click above to view.",
     "skill_load_fail": "Failed to load",
     "skill_loading": "Loading…",
+    "skill_npc_unsupported": "Full skill view isn't supported for script NPC cards here",
     "skill_section_label": "Persona Skill Definition",
     "skill_truncated": "…(content truncated — full text is used server-side)",
     "skill_view_full": "View full skill"

@@ -102,7 +102,8 @@ def _fact_groups_layer(state) -> str:
     # 回退：items 没积累 runtime_fact，但旧 memory.facts 有 → 显示 facts
     legacy_facts = []
     if not runtime:
-        legacy_facts = [f for f in (memory.get("facts") or []) if f][:10]
+        # facts 尾部 append → 「最近 10 条」取尾(与上方 items 分组按 turn 倒序同向)
+        legacy_facts = [f for f in (memory.get("facts") or []) if f][-10:]
 
     lines = []
     if canon:

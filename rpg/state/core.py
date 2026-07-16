@@ -696,14 +696,18 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
         if m["current_objective"]:
             memory_lines.append(f"当前目标：{m['current_objective']}")
         memory_lines.extend(f"能力：{x}" for x in m["abilities"][:6])
-        memory_lines.extend(f"资源：{x}" for x in m["resources"][:6])
-        memory_lines.extend(f"固定记忆：{x}" for x in m["pinned"][:6])
+        # 各桶写入端是尾部 append(add_memory / apply_ops list 分支),窗口必须取**尾**
+        # (最近 N 条),与上方 relationships[-20:]/下方 known_events[-15:] 同向。
+        # 旧实现取头([:N])→ 桶一旦超过窗口,新增能力/资源/固定记忆/笔记永久不可见
+        # (群反馈同族:「面板一直是很早以前的」)。
+        memory_lines.extend(f"资源：{x}" for x in m["resources"][-6:])
+        memory_lines.extend(f"固定记忆：{x}" for x in m["pinned"][-6:])
         if m["mode"] == "deep":
-            memory_lines.extend(f"事实：{x}" for x in m["facts"][:10])
-            memory_lines.extend(f"笔记：{x}" for x in m["notes"][:8])
+            memory_lines.extend(f"事实：{x}" for x in m["facts"][-10:])
+            memory_lines.extend(f"笔记：{x}" for x in m["notes"][-8:])
         elif m["mode"] == "normal":
-            memory_lines.extend(f"事实：{x}" for x in m["facts"][:5])
-            memory_lines.extend(f"笔记：{x}" for x in m["notes"][:3])
+            memory_lines.extend(f"事实：{x}" for x in m["facts"][-5:])
+            memory_lines.extend(f"笔记：{x}" for x in m["notes"][-3:])
         memory_text = "\n".join(f"  · {line}" for line in memory_lines) or "  （暂无长期记忆）"
         # task 138: user_variables 里的 story_intent 是 player_private 范畴,不再注入 GM prompt。
         # 旧存档迁移函数已把 story_intent 复制到 player_private.story_intent,这里只是把字面
@@ -926,6 +930,12 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
         text = _clean_item(text)
         if not text:
             return False
+        # acceptance 验收元信息不进任何玩家记忆桶。此处是**单点根闸**:dispatcher 的
+        # add_memory_fact/pin_memory 等 5 工具、apply_ops 的关系标签回退分支、以及一切
+        # 未来调用方都经这里;apply_ops 列表闸/known_event 工具闸是各自入口的前置纵深。
+        from state.json_ops import is_acceptance_meta
+        if is_acceptance_meta(text):
+            return False
         bucket = bucket if bucket in {"resources", "abilities", "facts", "pinned", "notes"} else "notes"
         items = self.data["memory"].setdefault(bucket, [])
         if text not in items:
@@ -1112,6 +1122,10 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
         value = _clean_item(value)
         if not key or not value:
             return False
+        # acceptance 元信息不进用户变量(变量面板可见 + 每回合硬约束注入 GM)
+        from state.json_ops import is_acceptance_meta
+        if is_acceptance_meta(value):
+            return False
         variables = self.data.setdefault("worldline", {}).setdefault("user_variables", {})
         old = variables.get(key, {})
         variables[key] = {
@@ -1224,6 +1238,10 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
         self.data["player"]["current_location"] = loc
 
     def update_relationship(self, char: str, status: str):
+        # acceptance 元信息不进关系状态(人物面板可见;谓词极窄,合法状态文本不可能命中)
+        from state.json_ops import is_acceptance_meta
+        if is_acceptance_meta(status):
+            return
         self.data["relationships"][char] = status
 
     def update_time(self, time_desc: str, source: str = "system"):
