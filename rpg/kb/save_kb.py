@@ -79,35 +79,55 @@ def import_state(db, save_id: int, commit_id: int, state_data: dict) -> dict[str
     # 2) 事实/事件 → kb_events(分别标 source 以便无损还原 memory.facts vs world.known_events)
     mem = dict(sd.get("memory") or {})
     world = dict(sd.get("world") or {})
-    # 去重保序(同一文本绝不占多个 fact:{i})。index-keyed:桶收缩/重排后高 index 的旧 fact:{i} 会变孤儿,
-    # 不退役就被 materialize 重复读出 → 「事实库重复条目」累积根因。故写完按当前长度退役高 index 孤儿。
     _facts = list(dict.fromkeys(str(f) for f in (mem.get("facts") or []) if f is not None and str(f).strip()))
-    for i, summ in enumerate(_facts):
-        lk = f"fact:{i}"
-        if cur_evt.get(lk) == summ:
-            n_skip += 1
-            continue
-        live_repo.record_event(db, save_id, commit_id, lk, summary=summ,
-                               story_time=str(world.get("time") or ""), metadata={"source": "memory.facts"})
-        n_evt += 1
     _kevts = list(dict.fromkeys(str(e) for e in (world.get("known_events") or []) if e is not None and str(e).strip()))
-    for i, summ in enumerate(_kevts):
-        lk = f"kevt:{i}"
-        if cur_evt.get(lk) == summ:
-            n_skip += 1
-            continue
-        live_repo.record_event(db, save_id, commit_id, lk, summary=summ,
-                               story_time=str(world.get("time") or ""), metadata={"source": "world.known_events"})
-        n_evt += 1
-    # 退役孤儿 index(桶变短/去重后 index 超界的旧 fact:/kevt: 行):只退当前可见且确属孤儿的,根治累积。
-    for lk in list(cur_evt):
-        prefix, _, idx_s = lk.partition(":")
-        if not idx_s.isdigit():
-            continue
-        idx = int(idx_s)
-        if (prefix == "fact" and idx >= len(_facts)) or (prefix == "kevt" and idx >= len(_kevts)):
-            live_repo.retire_event(db, save_id, commit_id, lk)
+    _story_time = str(world.get("time") or "")
+    from core.feature_flags import feature_enabled_for_save
+    if feature_enabled_for_save("kb_hash_keys", save_id, db):
+        # 方案A(哈希键+seq):文本即身份(键=内容哈希,槽位概念消失),seq=插入期一次性
+        # 分配的单调序号(非列表位置)→ 中段删除只退役被删行,幸存行零重写,归档窗口期的
+        # O(list) COW 写放大归零(index 键制式实测一次 13 删 76 重写)。legacy 位置键可见
+        # 行(首次开启/回滚再开启)一次性转换后退役——代价等于一次归档重排,此后快路径。
+        n_evt += _import_events_hashed(db, save_id, commit_id, "fact", _facts,
+                                       "memory.facts", _story_time, cur_evt)
+        n_evt += _import_events_hashed(db, save_id, commit_id, "kevt", _kevts,
+                                       "world.known_events", _story_time, cur_evt)
+    else:
+        # legacy(位置键):去重保序(同一文本绝不占多个 fact:{i})。桶收缩/重排后高 index 的
+        # 旧 fact:{i} 会变孤儿,不退役就被 materialize 重复读出 → 「事实库重复条目」累积根因。
+        for i, summ in enumerate(_facts):
+            lk = f"fact:{i}"
+            if cur_evt.get(lk) == summ:
+                n_skip += 1
+                continue
+            live_repo.record_event(db, save_id, commit_id, lk, summary=summ,
+                                   story_time=_story_time, metadata={"source": "memory.facts"})
             n_evt += 1
+        for i, summ in enumerate(_kevts):
+            lk = f"kevt:{i}"
+            if cur_evt.get(lk) == summ:
+                n_skip += 1
+                continue
+            live_repo.record_event(db, save_id, commit_id, lk, summary=summ,
+                                   story_time=_story_time, metadata={"source": "world.known_events"})
+            n_evt += 1
+        # 退役孤儿 index(桶变短/去重后 index 超界的旧 fact:/kevt: 行)。哈希键行(flag 曾开后
+        # 关=回滚)也一并退役:legacy 位置键此刻已重建全量,不清会被 materialize 按文本去重
+        # 掩盖但行残留 → 回滚自愈,flag 语义才是真逃生阀。
+        for lk in list(cur_evt):
+            prefix, _, rest = lk.partition(":")
+            if prefix not in ("fact", "kevt"):
+                continue
+            if rest.startswith("h:"):
+                live_repo.retire_event(db, save_id, commit_id, lk)
+                n_evt += 1
+                continue
+            if not rest.isdigit():
+                continue
+            idx = int(rest)
+            if (prefix == "fact" and idx >= len(_facts)) or (prefix == "kevt" and idx >= len(_kevts)):
+                live_repo.retire_event(db, save_id, commit_id, lk)
+                n_evt += 1
 
     # 3) 玩家自身 → kb_entities(_player)
     player = dict(sd.get("player") or {})
@@ -142,13 +162,55 @@ def import_state(db, save_id: int, commit_id: int, state_data: dict) -> dict[str
 from kb.live_repo import logical_key_order as _logical_key_order
 
 
+def _event_hash_key(prefix: str, text: str) -> str:
+    """方案A 内容哈希键:文本即身份。sha1[:16] 对去重后的桶(百量级)碰撞概率可忽略。"""
+    import hashlib
+    return f"{prefix}:h:{hashlib.sha1(text.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _evt_sort_key(e: dict) -> tuple:
+    """事件还原排序:哈希键行按显式 seq(插入序),legacy 位置键行按数字键序。
+    混态只会在异常中断时短暂出现(转换与退役同事务),legacy(更旧)排前作兜底。"""
+    seq = e.get("seq")
+    if seq is not None:
+        return (1, "", 0, int(seq), e["logical_key"])
+    p, g, i, lk = _logical_key_order(e["logical_key"])
+    return (0, p, g, i, lk)
+
+
+def _import_events_hashed(db, save_id: int, commit_id: int, prefix: str, items: list[str],
+                          source: str, story_time: str, cur_evt: dict[str, str]) -> int:
+    """方案A 写路径:增量=只写新文本(seq=全表单调 max+1),删除=只退役被删行;
+    可见的 legacy 位置键行不在 want 集 → 随退役循环一次性清除(首次开启的自迁移)。"""
+    writes = 0
+    want: dict[str, str] = {}
+    for t in items:
+        want[_event_hash_key(prefix, t)] = t  # dict 保插入序 → 转换时 seq 分配循原列表序
+    vis = {lk: s for lk, s in cur_evt.items() if lk.startswith(prefix + ":")}
+    next_seq = int(db.execute(
+        "select coalesce(max(seq), 0) as m from kb_events where save_id = %s", (save_id,),
+    ).fetchone()["m"])
+    for lk, text in want.items():
+        if vis.get(lk) == text:
+            continue
+        next_seq += 1
+        live_repo.record_event(db, save_id, commit_id, lk, summary=text,
+                               story_time=story_time, metadata={"source": source}, seq=next_seq)
+        writes += 1
+    for lk in vis:
+        if lk not in want:
+            live_repo.retire_event(db, save_id, commit_id, lk)
+            writes += 1
+    return writes
+
+
 # ── 读:从 KB 完整投影回等价 state ─────────────────────────────────────────────
 def materialize(db, save_id: int, commit_id: int) -> dict[str, Any]:
     v = _vars(db, save_id, commit_id)
     state: dict[str, Any] = {k: val for k, val in v.items()}  # 顶层子树 vars 直接还原
 
     # 事件层 → 还原 memory.facts / world.known_events(按 source)
-    evts = live_repo._newest_visible(db, "kb_events", save_id, commit_id, ("logical_key", "summary", "metadata"))
+    evts = live_repo._newest_visible(db, "kb_events", save_id, commit_id, ("logical_key", "summary", "metadata", "seq"))
     # ⚠️ 按文本去重(保序):事实/事件用 index-keyed logical_key(fact:{i}/kevt:{i}),桶收缩/重排后
     # 高 index 的旧行未退役会残留 → 同一文本落在多个 logical_key 上,_newest_visible 各取一行 →
     # materialize 重复读(群反馈「事实库大量重复条目」,真库 save 268 实测 149 条仅 41 唯一)。这里按
@@ -157,7 +219,7 @@ def materialize(db, save_id: int, commit_id: int) -> dict[str, Any]:
     _seen_f: set[str] = set()
     _seen_k: set[str] = set()
     from state.json_ops import is_acceptance_meta
-    for e in sorted(evts, key=lambda x: _logical_key_order(x["logical_key"])):
+    for e in sorted(evts, key=_evt_sort_key):
         src = (e.get("metadata") or {}).get("source")
         summ = e["summary"]
         # 自愈清洗:历史污染进库的 acceptance 验收元信息条目,还原时直接剥掉

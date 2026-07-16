@@ -25,6 +25,7 @@ _FEATURES: dict[str, tuple[str, str]] = {
     "world_heartbeat": ("RPG_WORLD_HEARTBEAT", "0"),  # 世界心跳(玩家不在场时的世界侧小事,默认关,验后开)
     "channel_fallback": ("RPG_CHANNEL_FALLBACK", "0"),  # 跨渠道 fallback(主渠道重试耗尽切备用凭据渠道,默认关,验后开)
     "npc_agenda": ("RPG_NPC_AGENDA", "0"),  # NPC 议程(当下活跃 NPC 的意图/态度,默认关,验后开)
+    "kb_hash_keys": ("RPG_KB_HASH_KEYS", "0"),  # KB 事件内容哈希键+seq(方案A,默认关,验后开;关闭后已转换档下回合自愈回 legacy)
     "rath_experiment": ("RPG_RATH_EXPERIMENT", "0"),  # RATH·搖光观测台(离线世界实验,默认关,验后开)
 }
 

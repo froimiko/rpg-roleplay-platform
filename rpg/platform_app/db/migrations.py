@@ -2232,6 +2232,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "alter table rath_experiments add column if not exists paused_at timestamptz",
         "alter table rath_experiments add column if not exists last_briefed_at timestamptz",
     ]),
+    (97, "kb_events_seq_for_hash_keys", [
+        # KB 键型方案 A(用户拍板):fact:{i}/kevt:{i} 位置键 → 内容哈希键 + 显式 seq 排序列。
+        # seq = 插入期一次性分配的单调序号(非列表位置),中段删除不再重排幸存行 →
+        # 归档窗口期的 O(list) COW 写放大归零。旧行 seq 为 NULL(materialize 按 legacy
+        # 数字键序兜底)。写路径 flag 门控 RPG_KB_HASH_KEYS,读路径无条件双制式。纯增列。
+        "alter table kb_events add column if not exists seq integer",
+    ]),
 ]
 
 

@@ -19,7 +19,7 @@ from psycopg.types.json import Jsonb
 
 # 每张表的 logical column 集合(用于 read 投影 + upsert)
 _ENTITY_COLS = ("logical_key", "name", "type", "status", "summary", "attrs", "origin", "metadata")
-_EVENT_COLS = ("logical_key", "story_time", "summary", "participants", "location", "metadata")
+_EVENT_COLS = ("logical_key", "story_time", "summary", "participants", "location", "metadata", "seq")
 _REL_COLS = ("logical_key", "from_key", "to_key", "kind", "note", "metadata")
 _VAR_COLS = ("logical_key", "value")
 
@@ -98,15 +98,17 @@ def upsert_entity(db, save_id: int, commit_id: int, logical_key: str, *, name: s
 
 def record_event(db, save_id: int, commit_id: int, logical_key: str, *, summary: str,
                  story_time: str = "", participants: list | None = None,
-                 location: str = "", metadata: dict | None = None) -> dict:
+                 location: str = "", metadata: dict | None = None,
+                 seq: int | None = None) -> dict:
+    # seq:哈希键制式(方案A)的显式排序号,插入期一次性分配、终身不变;legacy 位置键传 None。
     return db.execute(
         """
-        insert into kb_events(save_id, born_commit, logical_key, story_time, summary, participants, location, metadata)
-        values (%s, %s, %s, %s, %s, %s, %s, %s)
+        insert into kb_events(save_id, born_commit, logical_key, story_time, summary, participants, location, metadata, seq)
+        values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         returning *
         """,
         (save_id, commit_id, logical_key, story_time, summary,
-         Jsonb(participants or []), location, Jsonb(metadata or {})),
+         Jsonb(participants or []), location, Jsonb(metadata or {}), seq),
     ).fetchone()
 
 

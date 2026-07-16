@@ -9,6 +9,11 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.70.0] - 2026-07-17 (@ 43b6563e6)
+
+### Changed
+- **KB 事件键型方案 A(用户拍板,flag `RPG_KB_HASH_KEYS`,migration 97)**:`fact:{i}/kevt:{i}` 位置键 → 内容哈希键(`fact:h:{sha1[:16]}`)+ 显式 `seq` 排序列(插入期一次性分配的单调序号,非列表位置)。中段删除(归档窗口)从「删 K 条重写删除点之后全部索引」变为「只退役 K 行、幸存行零重写」,index-keyed 写放大根治。读路径无条件双制式(哈希按 seq、legacy 按数字键序);写路径 flag 门控:开启后存量档首个回合一次性自迁移(代价=一次归档级重排),关闭后已转换档下回合自动写回 legacy 并退役哈希行(逃生阀自愈)。live-DB 全生命周期测试(新档/中删/追加/回滚/再开启收敛)。
+
 ## [1.69.4] - 2026-07-16 (@ 90ae1474d)
 
 ### Fixed
