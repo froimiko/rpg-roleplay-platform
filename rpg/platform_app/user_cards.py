@@ -22,7 +22,7 @@ from psycopg.types.json import Jsonb
 
 from platform_app.api._card_dto import card_to_dto
 
-from .db import connect, init_db
+from .db import connect, init_db, limit_value
 
 log = logging.getLogger(__name__)
 
@@ -560,7 +560,7 @@ def set_card_public(user_id: int, card_id: int, is_public: bool) -> dict[str, An
 def list_public_cards(q: str | None = None, limit: int = 30, offset: int = 0) -> dict[str, Any]:
     """在线角色卡库:只列 is_public 的 PC 卡 + 作者展示名 + 热度。secrets 不外露。"""
     init_db()
-    limit = max(1, min(int(limit), 60))
+    limit = limit_value(limit, default=30, maximum=60)
     offset = max(0, int(offset))
     where = ["c.is_public", "c.card_type = 'pc'"]
     params: list[Any] = []

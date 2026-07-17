@@ -365,6 +365,9 @@ export default function TavernPage() {
       // 列表刷新由 onDoneExtra 的 autotitle finally 负责,故跳过 hook 默认 reload。
       chatExtra: { attachments: sentAttachments, command: sentCommand },
       userAttachments: sentAttachments.length ? sentAttachments : undefined,
+      // 失败轮丢附件修复(件1):restoreFailedDraft 回填本轮已发送的附件,与 game-console 719 行同款
+      // 语义 —— 不覆盖用户已重新选择的附件(onSend 已在提交时 setAttachments([]))。
+      setAttachments, sentAttachments,
       doneAlwaysRefetch: true,
       skipDoneReload: true,
       // 提交前:重置本轮工具数组 + 撤「缺 key」引导卡 + 起秒表。

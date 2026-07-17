@@ -1,6 +1,9 @@
-/* MobileMe 共用组件 —— 从 pages/MobileMe.jsx 拆出,逐字节不变。
-   ConfirmSheet 为纯 inline-style 抽屉(scrim0.6/圆角20/无滑入),防误合清单点名项,
-   绝不与 mobile/Sheet.jsx 或桌面 .sheet 合并;详见 ConfirmSheet 上方 GUARD 注释。 */
+/* MobileMe 共用组件 —— 从 pages/MobileMe.jsx 拆出,逐字节不变(搬家时点)。
+   语义统一 Batch 6b GUARD 的保护范围仅限 ConfirmSheet 一项:它是纯 inline-style 抽屉
+   (滚入动画/圆角20px/scrim rgba(0.6)),与 mobile/Sheet.jsx 或桌面 .sheet 视觉/行为真实不同,
+   防误合清单点名,绝不合并;详见 ConfirmSheet 上方 GUARD 注释。**本文件其余组件不在此保护范围
+   内,可正常演进**——例如 Toggle(44×26 内联样式)为视觉分叉遗留(与 mobile/Toggle.jsx 的
+   46×28 pl-toggle 视觉真不同),统一需设计定夺后迁 ViewSettings 6 调用点(2026-07-17 审计)。 */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';

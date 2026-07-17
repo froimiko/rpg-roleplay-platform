@@ -13,14 +13,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
+from routes._deps_fastapi import _uid_or_zero as _uid
 
 router = APIRouter()
-
-
-def _uid(api_user: dict[str, Any] | None) -> int:
-    return int(api_user.get("id")) if api_user and api_user.get("id") else 0
 
 
 @router.get("/api/worldbook/overlay")
@@ -31,13 +29,13 @@ async def api_worldbook_overlay_list(api_user: dict[str, Any] = Depends(get_curr
 
     _pu, save_id = _resolve_persist_target(api_user)
     if not save_id:
-        return JSONResponse({"ok": True, "additions": [], "retirements": []})
+        return json_response({"ok": True, "additions": [], "retirements": []})
     uid = _uid(api_user)
     init_db()
     with connect() as db:
         own = db.execute("select id from game_saves where id=%s and user_id=%s", (save_id, uid)).fetchone()
         if not own:
-            return JSONResponse({"ok": False, "error": "无权访问该存档"}, status_code=403)
+            return json_response({"ok": False, "error": "无权访问该存档"}, status_code=403)
         rows = db.execute(
             "select id, kind, title, content, keys, priority, retired_entry_id, retired_reason, introduced_turn "
             "from save_worldbook_overlays where save_id=%s order by id asc",
@@ -56,7 +54,7 @@ async def api_worldbook_overlay_list(api_user: dict[str, Any] = Depends(get_curr
                 "id": r["id"], "retired_entry_id": r["retired_entry_id"],
                 "retired_reason": r["retired_reason"], "introduced_turn": r["introduced_turn"],
             })
-    return JSONResponse({"ok": True, "save_id": int(save_id), "additions": additions, "retirements": retirements})
+    return json_response({"ok": True, "save_id": int(save_id), "additions": additions, "retirements": retirements})
 
 
 @router.post("/api/worldbook/overlay")
@@ -67,12 +65,12 @@ async def api_worldbook_overlay_add(request: Request, api_user: dict[str, Any] =
 
     _pu, save_id = _resolve_persist_target(api_user)
     if not save_id:
-        return JSONResponse({"ok": False, "error": "无活跃存档"}, status_code=400)
+        return json_response({"ok": False, "error": "无活跃存档"}, status_code=400)
     body = await request.json()
     title = str((body or {}).get("title") or "").strip()
     content = str((body or {}).get("content") or "").strip()
     if not title or not content:
-        return JSONResponse({"ok": False, "error": "标题和正文不能为空"}, status_code=400)
+        return json_response({"ok": False, "error": "标题和正文不能为空"}, status_code=400)
     keys = (body or {}).get("keys") or []
     if isinstance(keys, str):
         keys = [k.strip() for k in keys.split(",") if k.strip()]
@@ -91,8 +89,8 @@ async def api_worldbook_overlay_add(request: Request, api_user: dict[str, Any] =
         user_id=_uid(api_user), save_id=int(save_id), state=state,
     )
     if not getattr(result, "ok", False):
-        return JSONResponse({"ok": False, "error": getattr(result, "error", None) or "新增失败"}, status_code=400)
-    return JSONResponse({"ok": True, "message": getattr(result, "result", "已新增")})
+        return json_response({"ok": False, "error": getattr(result, "error", None) or "新增失败"}, status_code=400)
+    return json_response({"ok": True, "message": getattr(result, "result", "已新增")})
 
 
 @router.post("/api/worldbook/overlay/remove")
@@ -104,7 +102,7 @@ async def api_worldbook_overlay_remove(request: Request, api_user: dict[str, Any
     try:
         oid = int((body or {}).get("id"))
     except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "id 无效"}, status_code=400)
+        return json_response({"ok": False, "error": "id 无效"}, status_code=400)
     uid = _uid(api_user)
     init_db()
     with connect() as db:
@@ -114,6 +112,6 @@ async def api_worldbook_overlay_remove(request: Request, api_user: dict[str, Any
             (oid, uid),
         ).fetchone()
         if not row:
-            return JSONResponse({"ok": False, "error": "条目不存在或无权删除"}, status_code=404)
+            return json_response({"ok": False, "error": "条目不存在或无权删除"}, status_code=404)
         db.execute("delete from save_worldbook_overlays where id=%s", (oid,))
-    return JSONResponse({"ok": True, "removed": oid})
+    return json_response({"ok": True, "removed": oid})

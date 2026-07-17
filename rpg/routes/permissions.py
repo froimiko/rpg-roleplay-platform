@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_admin, get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, ErrorResponse, StateResponse
@@ -49,10 +50,10 @@ async def api_permissions(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})
 
 
 @router.post("/api/permissions/pending-write", response_model=StateResponse, responses=COMMON_ERROR_RESPONSES)
@@ -86,7 +87,7 @@ async def api_pending_write(
     elif decision == "reject":
         tool_name = "reject_pending_write"
     else:
-        return JSONResponse({"ok": False, "error": "缺少 action/decision（approve|reject）"}, status_code=400)
+        return json_response({"ok": False, "error": "缺少 action/decision（approve|reject）"}, status_code=400)
     if not item_id and index is not None:
         # 旧契约 index → 在 pending_writes 里找 id 兜底
         pws = (state.data.get("permissions") or {}).get("pending_writes") or []
@@ -109,11 +110,11 @@ async def api_pending_write(
     else:
         result = d_result.result
     if isinstance(result, str) and result.startswith(("失败", "ERROR", "待审", "拒绝")):
-        return JSONResponse({"ok": False, "error": result}, status_code=400)
+        return json_response({"ok": False, "error": result}, status_code=400)
     state.data["memory"]["last_structured_updates"] = [result] + state.data["memory"].get("last_structured_updates", [])[:11]
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "result": result, "state": _payload(api_user)})
+    return json_response({"ok": True, "result": result, "state": _payload(api_user)})
 
 
 @router.post("/api/questions/clear", response_model=StateResponse, responses=COMMON_ERROR_RESPONSES)
@@ -151,7 +152,7 @@ async def api_question_clear(
         popped = d_result.ok  # type: ignore[assignment]
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "cleared": bool(popped), "state": _payload(api_user)})
+    return json_response({"ok": True, "cleared": bool(popped), "state": _payload(api_user)})
 
 
 @router.post("/api/debug/pending-question", response_model=StateResponse, responses={**COMMON_ERROR_RESPONSES, 404: {"model": ErrorResponse}})
@@ -163,7 +164,7 @@ async def api_debug_pending_question(
     from app import _ensure_loaded, _payload, _resolve_persist_target
     from core.config import debug_ui as _debug_ui
     if not _debug_ui():
-        return JSONResponse({"ok": False, "error": "debug disabled"}, status_code=404)
+        return json_response({"ok": False, "error": "debug disabled"}, status_code=404)
     body_dict = body.model_dump(exclude_none=True)
     state = _ensure_loaded(api_user)
     # 把老 text+| 分隔 options 拆成 question + options 列表
@@ -186,6 +187,6 @@ async def api_debug_pending_question(
         state=state,
     )
     if not d_result.ok:
-        return JSONResponse({"ok": False, "error": d_result.error}, status_code=400)
+        return json_response({"ok": False, "error": d_result.error}, status_code=400)
     state.save()
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})

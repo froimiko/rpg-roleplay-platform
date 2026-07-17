@@ -9,6 +9,7 @@ import { stripNarrativeOps } from '../../narrative-strip.js';
 import { SLASH_COMMANDS } from '../../game-composer.jsx';
 import { BottomSheet } from './BottomSheet.jsx';
 import { ToolCallBlock, ThinkingBlock, Paras } from './blocks.jsx';
+import { copyText } from '../../lib/clipboard.js';
 
 /* ─── 对话屏 ──────────────────────────────────────────────────────── */
 function ChatView({
@@ -56,7 +57,7 @@ function ChatView({
   const lastAssistantIdx = (() => { for (let i = total - 1; i >= 0; i--) { if (history[i]?.role === 'assistant') return i; } return -1; })();
 
   const copy = async (txt) => {
-    try { await navigator.clipboard.writeText(txt || ''); } catch (_) {}
+    await copyText(txt || '');
     // 用 MobileTavern 自有的可见 fireToast(经 onToast 传入),不再走无渲染器的 window.__apiToast。
     onToast?.(t('mobile.tavern.chat.copied'), 'ok');
   };

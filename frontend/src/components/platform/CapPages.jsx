@@ -6,6 +6,7 @@ import Modal from '../Modal.jsx';
 import {
   PromptModal, SettingsToggle,
 } from './shared.jsx';
+import { copyText } from '../../lib/clipboard.js';
 import CSAlert from '@cloudscape-design/components/alert';
 import CSBox from '@cloudscape-design/components/box';
 import CSButton from '@cloudscape-design/components/button';
@@ -502,12 +503,9 @@ function ApiList() {
                   <div className="pl-table-actions">
                     <button className="iconbtn" data-tip="复制路径" onClick={async () => {
                       // task 50：之前是 dead button
-                      try {
-                        await navigator.clipboard.writeText(r.p);
-                        window.__apiToast?.("已复制 " + r.p, { kind: "ok", duration: 1500 });
-                      } catch {
-                        window.__apiToast?.("复制失败", { kind: "danger", detail: "浏览器拒绝访问剪贴板" });
-                      }
+                      const ok = await copyText(r.p);
+                      if (ok) window.__apiToast?.("已复制 " + r.p, { kind: "ok", duration: 1500 });
+                      else window.__apiToast?.("复制失败", { kind: "danger", detail: "浏览器拒绝访问剪贴板" });
                     }}><Icon name="link" size={12} /></button>
                   </div>
                 </div>

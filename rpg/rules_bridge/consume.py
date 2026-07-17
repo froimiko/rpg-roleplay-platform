@@ -103,6 +103,10 @@ def consume_item_action(state, item_id: str, qty: int = 1,
     """
     if not item_id:
         return {"ok": False, "error": "缺少 item_id"}
+    try:
+        qty = int(qty or 1)
+    except (TypeError, ValueError):
+        qty = 1
     result = state.consume_inventory_item(item_id, qty)
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error") or "consume_item 失败"}

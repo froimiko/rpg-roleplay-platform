@@ -5,6 +5,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Composer } from '../game-composer.jsx';
 import { RpgMarkdown } from '../markdown-render.jsx';
+import { consumeSSE } from '../lib/sse-consume.js';
 
 // 编辑器 agent 模型选择落库目标:复用游戏/酒馆同一个 Composer 内置模型选择器,但写到 console_assistant
 // 专属偏好(不污染游戏 GM 模型)。后端 console_assistant 解析优先读此键(app.py)。
@@ -57,35 +58,6 @@ const WRITE_TOOL_MAP = {
   update_anchor: { kind: 'anchor', idArg: 'anchor_id' },
   upsert_canon_entity: { kind: 'canon', idArg: 'logical_key' },
 };
-
-function parseSSEChunk(raw) {
-  let event = 'message';
-  let data = '';
-  for (const line of raw.split('\n')) {
-    if (line.startsWith('event:')) event = line.slice(6).trim();
-    else if (line.startsWith('data:')) data += line.slice(5).replace(/^ /, '');
-  }
-  if (!data) return null;
-  try { return { event, data: JSON.parse(data) }; } catch (_) { return { event, data: {} }; }
-}
-
-async function consumeSSE(res, onEvent) {
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf('\n\n')) >= 0) {
-      const ev = parseSSEChunk(buf.slice(0, i));
-      buf = buf.slice(i + 2);
-      if (ev) onEvent(ev.event, ev.data);
-    }
-  }
-}
 
 // 落库前「改动预览」:章节正文给当前→改为对照(供作者落库前看清改了什么),结构化写给「将写入」。
 // 后端 console_assistant.write_preview 算好 before/after 经 confirmation_required.preview 下发。

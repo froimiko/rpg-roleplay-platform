@@ -22,7 +22,6 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from core.config import (
@@ -381,28 +380,34 @@ async def lifespan(app: FastAPI):
 # ── Exception handlers ───────────────────────────────────────────────────
 
 async def _value_error_handler(request: Request, exc: ValueError):
-    return JSONResponse({"ok": False, "error": str(exc) or "invalid value"}, status_code=400)
+    from platform_app.api._deps import json_response
+    return json_response({"ok": False, "error": str(exc) or "invalid value"}, status_code=400)
 
 
 async def _key_error_handler(request: Request, exc: KeyError):
-    return JSONResponse({"ok": False, "error": f"missing field: {exc}"}, status_code=400)
+    from platform_app.api._deps import json_response
+    return json_response({"ok": False, "error": f"missing field: {exc}"}, status_code=400)
 
 
 async def _type_error_handler(request: Request, exc: TypeError):
+    from platform_app.api._deps import json_response
     msg = str(exc)
-    return JSONResponse({"ok": False, "error": f"invalid input type: {msg[:200]}"}, status_code=400)
+    return json_response({"ok": False, "error": f"invalid input type: {msg[:200]}"}, status_code=400)
 
 
 async def _json_decode_handler(request: Request, exc: JSONDecodeError):
-    return JSONResponse({"ok": False, "error": "invalid JSON body"}, status_code=400)
+    from platform_app.api._deps import json_response
+    return json_response({"ok": False, "error": "invalid JSON body"}, status_code=400)
 
 
 async def _permission_handler(request: Request, exc: PermissionError):
-    return JSONResponse({"ok": False, "error": str(exc) or "forbidden"}, status_code=403)
+    from platform_app.api._deps import json_response
+    return json_response({"ok": False, "error": str(exc) or "forbidden"}, status_code=403)
 
 
 async def _file_not_found_handler(request: Request, exc: FileNotFoundError):
-    return JSONResponse({"ok": False, "error": str(exc) or "not found"}, status_code=404)
+    from platform_app.api._deps import json_response
+    return json_response({"ok": False, "error": str(exc) or "not found"}, status_code=404)
 
 
 async def _internal_error_handler(request: Request, exc: Exception):
@@ -410,9 +415,10 @@ async def _internal_error_handler(request: Request, exc: Exception):
 
     完整 traceback 写到服务端日志（含 request_id 便于追查），返回给前端只有通用错误码。
     """
+    from platform_app.api._deps import json_response
     request_id = getattr(request.state, "request_id", None) or uuid.uuid4().hex
     log.exception("unhandled exception in request %s: %s", request_id, type(exc).__name__)
-    return JSONResponse(
+    return json_response(
         {"ok": False, "error": "internal server error", "request_id": request_id, "code": "E_INTERNAL"},
         status_code=500,
         headers={"X-Request-ID": request_id, "Cache-Control": "no-store"},
@@ -562,7 +568,8 @@ async def api_contract_middleware(request: Request, call_next):
     if original_path.startswith("/api") and request.method in MUTATING_METHODS:
         origin = request.headers.get("origin")
         if not _origin_allowed(origin):
-            return JSONResponse(
+            from platform_app.api._deps import json_response
+            return json_response(
                 {"ok": False, "error": "Origin 不在允许列表", "request_id": request_id},
                 status_code=403,
                 headers={"X-API-Version": API_VERSION, "X-Request-ID": request_id, "Cache-Control": "no-store"},

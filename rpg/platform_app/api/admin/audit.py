@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import Depends
 
-from ...db import connect
+from ...db import connect, limit_value
 from .._deps import json_response
 from ._shared import router, _require_admin
 
@@ -16,7 +16,7 @@ async def admin_audit_log(
     admin=Depends(_require_admin),
 ):
     page = max(1, page)
-    limit = max(1, min(200, limit))
+    limit = limit_value(limit, default=50, maximum=200)
     offset = (page - 1) * limit
 
     with connect() as db:

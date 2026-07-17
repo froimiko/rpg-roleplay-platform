@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse, OkResponse
@@ -22,7 +23,7 @@ router = APIRouter()
 @router.get("/api/console_assistant/ping")
 async def api_console_assistant_ping() -> JSONResponse:
     """task 48: 给前端探测后端是否就绪,200 = 真后端可用 (前端切走 mock)。"""
-    return JSONResponse({"ok": True, "service": "console_assistant", "version": "1"})
+    return json_response({"ok": True, "service": "console_assistant", "version": "1"})
 
 
 @router.get("/api/console_assistant/conversations")
@@ -32,7 +33,7 @@ async def api_console_assistant_conversations(
     """task 111: 列当前用户所有对话。"""
     user_id = int((api_user or {}).get("id") or 0)
     if not user_id:
-        return JSONResponse({"items": []})
+        return json_response({"items": []})
     from console_assistant import list_conversations
     from console_assistant.conversations import list_conversations_pg
     items = list_conversations(user_id)
@@ -43,7 +44,7 @@ async def api_console_assistant_conversations(
             items.append(it)
             seen.add(it.get("id"))
     items.sort(key=lambda r: r.get("last_used", ""), reverse=True)
-    return JSONResponse({"items": items})
+    return json_response({"items": items})
 
 
 @router.get("/api/console_assistant/conversations/{conversation_id}/messages")
@@ -58,10 +59,10 @@ async def api_console_assistant_conversation_messages(
     跳过工具结果中间态(避免一堆裸 tool 文本)。Redis 兜底,跨 worker / 重启(6h 内)可还原。"""
     user_id = int((api_user or {}).get("id") or 0)
     if not user_id:
-        return JSONResponse({"ok": False, "error": "需要登录"}, status_code=401)
+        return json_response({"ok": False, "error": "需要登录"}, status_code=401)
     cid = str(conversation_id or "").strip()
     if not cid:
-        return JSONResponse({"ok": False, "error": "conversation_id 必填"}, status_code=400)
+        return json_response({"ok": False, "error": "conversation_id 必填"}, status_code=400)
     from console_assistant.conversations import _get_or_create_conversation
     _cid, conv = _get_or_create_conversation(user_id, cid)
     # 优先用 ui_turns(含每轮工具调用:名/参数/状态/结果)→ 刷新后工具历史不丢、可还原折叠块。
@@ -77,7 +78,7 @@ async def api_console_assistant_conversation_messages(
             if not text.strip() and not tools:
                 continue
             out.append({"role": role, "text": text, "tools": tools})
-        return JSONResponse({"ok": True, "conversation_id": _cid, "messages": out})
+        return json_response({"ok": True, "conversation_id": _cid, "messages": out})
     # 兜底(旧对话无 ui_turns):仅文本还原。
     out = []
     for m in (conv.get("messages") or []):
@@ -88,7 +89,7 @@ async def api_console_assistant_conversation_messages(
         if not content.strip():
             continue
         out.append({"role": role, "text": content, "tools": []})
-    return JSONResponse({"ok": True, "conversation_id": _cid, "messages": out})
+    return json_response({"ok": True, "conversation_id": _cid, "messages": out})
 
 
 @router.post("/api/console_assistant/new_conversation", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -98,10 +99,10 @@ async def api_console_assistant_new_conversation(
     """task 111: 开新对话, 返新 conversation_id。"""
     user_id = int((api_user or {}).get("id") or 0)
     if not user_id:
-        return JSONResponse({"ok": False, "error": "需要登录"}, status_code=401)
+        return json_response({"ok": False, "error": "需要登录"}, status_code=401)
     from console_assistant import new_conversation
     new_id = new_conversation(user_id)
-    return JSONResponse({"ok": True, "conversation_id": new_id})
+    return json_response({"ok": True, "conversation_id": new_id})
 
 
 @router.post("/api/console_assistant/delete_conversation", response_model=OkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -112,14 +113,14 @@ async def api_console_assistant_delete_conversation(
     """task 111: 删除某对话。"""
     user_id = int((api_user or {}).get("id") or 0)
     if not user_id:
-        return JSONResponse({"ok": False, "error": "需要登录"}, status_code=401)
+        return json_response({"ok": False, "error": "需要登录"}, status_code=401)
     body_dict = body.model_dump(exclude_none=True)
     cid = str(body_dict.get("conversation_id") or "").strip()
     if not cid:
-        return JSONResponse({"ok": False, "error": "conversation_id 必填"}, status_code=400)
+        return json_response({"ok": False, "error": "conversation_id 必填"}, status_code=400)
     from console_assistant import delete_conversation
     ok = delete_conversation(user_id, cid)
-    return JSONResponse({"ok": ok})
+    return json_response({"ok": ok})
 
 
 @router.post("/api/console_assistant/chat")
@@ -229,13 +230,13 @@ async def api_console_assistant_autocomplete(
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
+        return json_response({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
     user_id = int((api_user or {}).get("id") or 0)
     if not user_id:
-        return JSONResponse({"ok": False, "error": "需要登录"}, status_code=401)
+        return json_response({"ok": False, "error": "需要登录"}, status_code=401)
     before = str(body.get("before") or "")[-1500:]
     if not before.strip():
-        return JSONResponse({"ok": True, "text": ""})
+        return json_response({"ok": True, "text": ""})
 
     rules = ""
     script_id = body.get("script_id")
@@ -243,18 +244,18 @@ async def api_console_assistant_autocomplete(
         try:
             sid = int(script_id)
         except (TypeError, ValueError):
-            return JSONResponse({"ok": False, "error": "script_id 无效"}, status_code=400)
+            return json_response({"ok": False, "error": "script_id 无效"}, status_code=400)
         try:
             from platform_app.db import connect, init_db
             from platform_app.perms import script_owned
             init_db()
             with connect() as db:
                 if not script_owned(db, sid, user_id):
-                    return JSONResponse({"ok": False, "error": "无权操作该剧本:仅原作者可用 AI 续写。"}, status_code=403)
+                    return json_response({"ok": False, "error": "无权操作该剧本:仅原作者可用 AI 续写。"}, status_code=403)
                 row = db.execute("select writing_rules from scripts where id=%s", (sid,)).fetchone()
                 rules = str((row.get("writing_rules") if row else "") or "").strip()[:1000]
         except Exception:
-            return JSONResponse({"ok": False, "error": "剧本归属校验失败"}, status_code=200)
+            return json_response({"ok": False, "error": "剧本归属校验失败"}, status_code=200)
         script_id = sid
     else:
         script_id = None
@@ -267,15 +268,15 @@ async def api_console_assistant_autocomplete(
             api_id_override=_ov_api, model_override=_ov_model,
         )
     except Exception:
-        return JSONResponse({"ok": False, "error": "未配置可用模型"}, status_code=200)
+        return json_response({"ok": False, "error": "未配置可用模型"}, status_code=200)
     if not api_id or not model_real:
-        return JSONResponse({"ok": False, "error": "未配置可用模型"}, status_code=200)
+        return json_response({"ok": False, "error": "未配置可用模型"}, status_code=200)
 
     try:
         from agents.gm import GameMaster
         backend = GameMaster(api_id=str(api_id), model=str(model_real), user_id=user_id)._backend
     except Exception:
-        return JSONResponse({"ok": False, "error": "模型后端初始化失败"}, status_code=200)
+        return json_response({"ok": False, "error": "模型后端初始化失败"}, status_code=200)
 
     sys_prompt = (
         "你是小说续写补全引擎。任务:顺着作者光标处的正文,给出紧接其后的【一小段】续写"
@@ -301,7 +302,7 @@ async def api_console_assistant_autocomplete(
         logging.getLogger("console_assistant").info("autocomplete failed: %s", type(exc).__name__)
         from agents.provider_errors import classify_provider_error
         known = classify_provider_error(exc)
-        return JSONResponse({"ok": False, "error": (known[1] if known else "续写失败")}, status_code=200)
+        return json_response({"ok": False, "error": (known[1] if known else "续写失败")}, status_code=200)
 
     # 清洗:去首尾空白/引号/省略号前缀;去掉模型可能回声的上文尾巴。
     text = text.strip().strip('「」“”"\'').lstrip("….—- ").strip()
@@ -321,7 +322,7 @@ async def api_console_assistant_autocomplete(
     except Exception:
         pass
 
-    return JSONResponse({"ok": True, "text": text})
+    return json_response({"ok": True, "text": text})
 
 
 @router.post("/api/console_assistant/confirm")

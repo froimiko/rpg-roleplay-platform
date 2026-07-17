@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, Request
 
 from ...db import connect
 from ...dmca import increment_strike, queue_account_termination
+from .._card_dto import _iso
 from .._deps import _client_ip, json_response
 from ._shared import router, _require_admin, _write_audit
 
@@ -161,12 +162,6 @@ async def admin_dmca_strikes_list(
             limit 200
             """,
         ).fetchall()
-
-    def _iso(v):
-        try:
-            return v.isoformat()
-        except Exception:
-            return None
 
     users = [{
         "user_id": r["user_id"],

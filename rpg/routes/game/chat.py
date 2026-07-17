@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import Depends
 from fastapi.responses import JSONResponse, StreamingResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse, OkResponse
@@ -72,7 +73,7 @@ async def api_chat_estimate(
     ctx_pct = round(100 * input_tokens / ctx_max, 1) if ctx_max else 0
     will_overflow = (input_tokens + output_estimate > ctx_max) if ctx_max else False
 
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "api_id": api_id,
         "model": model_name,
@@ -201,7 +202,7 @@ async def api_context_breakdown(
     free_pct = round(100 * free_tokens / ctx_limit, 1) if ctx_limit else 0.0
     breakdown.append({"key": "free", "label": "剩余空间", "tokens": free_tokens, "pct": free_pct, "color": "#555e6a"})
 
-    return JSONResponse({
+    return json_response({
         "ok": True,
         # total = 所有类目之和(含历史/系统/工具),与 breakdown 一致;不再只取 layer bundle 的
         # estimated_tokens(那会漏掉历史/系统/工具,圆环与明细对不上)。
@@ -297,7 +298,7 @@ async def api_chat(
         _rt = _platform_runtime.read_runtime(user_id=api_user["id"])
         _active_sid = int((_rt or {}).get("save_id") or 0)
         if _active_sid and int(client_save_id) != _active_sid:
-            return JSONResponse(
+            return json_response(
                 status_code=409,
                 content={
                     "code": "save_id_mismatch",
@@ -625,4 +626,4 @@ async def api_stop(
         )
     except Exception:
         pass
-    return JSONResponse({"ok": True})
+    return json_response({"ok": True})

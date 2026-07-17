@@ -29,7 +29,7 @@ from psycopg.types.json import Jsonb
 from core.security import hash_token
 
 from . import user_credentials
-from .db import connect, expose, init_db
+from .db import connect, expose, init_db, limit_value
 from .knowledge import script_pack
 
 # ── 轻量进程内限流(滑动窗口)──────────────────────────────────────────────
@@ -311,7 +311,7 @@ def device_poll(device_code: str) -> dict[str, Any]:
 def ext_list_scripts(q: str | None, limit: int, offset: int) -> dict[str, Any]:
     """列公开剧本(供外部客户端浏览)。"""
     init_db()
-    limit = max(1, min(int(limit or 30), 100))
+    limit = limit_value(limit, default=30, maximum=100)
     offset = max(0, int(offset or 0))
     where = "s.is_public"
     params: list[Any] = []

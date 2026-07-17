@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse
@@ -35,7 +36,7 @@ async def api_rules_modules(
 ) -> JSONResponse:
     """列出可用的 5E-compatible 冒险模组。"""
     import modules as _rules_module_registry
-    return JSONResponse({"ok": True, "modules": _rules_module_registry.list_modules()})
+    return json_response({"ok": True, "modules": _rules_module_registry.list_modules()})
 
 
 @router.post("/api/rules/module/start", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -88,7 +89,7 @@ async def api_rules_module_start(
             opening = _opening_file.read_text(encoding="utf-8")
     except Exception:
         pass
-    return JSONResponse({"ok": True, "rules": _rules_payload(state),
+    return json_response({"ok": True, "rules": _rules_payload(state),
                          "opening": opening, "state": _payload(api_user)})
 
 
@@ -182,7 +183,7 @@ async def api_rules_module_launch(
 
     # 重新拉 state
     state = _ensure_loaded(api_user, ensure_gm=False)
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "save_id": save_id,
         "save_title": title,
@@ -199,7 +200,7 @@ async def api_rules_scene(
     """返回当前 scene / player_character / encounter / dice_log 快照。"""
     from app import _ensure_loaded, _rules_payload
     state = _ensure_loaded(api_user, ensure_gm=False)
-    return JSONResponse({"ok": True, "rules": _rules_payload(state)})
+    return json_response({"ok": True, "rules": _rules_payload(state)})
 
 
 @router.post("/api/rules/move", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -231,14 +232,14 @@ async def api_rules_move(
         state=state,
     )
     if not d_result.ok:
-        return JSONResponse({"ok": False, "error": d_result.error}, status_code=400)
+        return json_response({"ok": False, "error": d_result.error}, status_code=400)
     _clear_pending_questions_after_rule_action(state, f"move:{location_id}")
     # 从 state.scene 重新读 current_room 做 receipt
     room = (state.data.get("scene") or {}).get("current_room") or {}
     _append_rules_receipt(state, _room_receipt(room))
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "rules": _rules_payload(state), "room": room})
+    return json_response({"ok": True, "rules": _rules_payload(state), "room": room})
 
 
 @router.post("/api/rules/action", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -261,14 +262,14 @@ async def api_rules_action(
 
     out = _execute_rules_action(state, body_dict)
     if not out.get("ok"):
-        return JSONResponse(out, status_code=400)
+        return json_response(out, status_code=400)
 
     _clear_pending_questions_after_rule_action(state, f"rules:{body_dict.get('kind') or 'action'}")
     _append_rules_receipt(state, _action_receipt(body_dict, out))
     state.save()
     _persist_runtime_checkpoint(state, api_user)
     out["rules"] = _rules_payload(state)
-    return JSONResponse(out)
+    return json_response(out)
 
 
 @router.post("/api/rules/encounter/start", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -305,13 +306,13 @@ async def api_rules_encounter_start(
         state=state,
     )
     if not d_result.ok:
-        return JSONResponse({"ok": False, "error": d_result.error}, status_code=400)
+        return json_response({"ok": False, "error": d_result.error}, status_code=400)
     encounter = state.data.get("encounter") or {}
     _clear_pending_questions_after_rule_action(state, f"encounter:start:{encounter_id}")
     _append_rules_receipt(state, _encounter_receipt("先攻", {"encounter": encounter}))
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "rules": _rules_payload(state), "encounter": encounter})
+    return json_response({"ok": True, "rules": _rules_payload(state), "encounter": encounter})
 
 
 @router.post("/api/rules/encounter/next", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -338,13 +339,13 @@ async def api_rules_encounter_next(
         state=state,
     )
     if not d_result.ok:
-        return JSONResponse({"ok": False, "error": d_result.error}, status_code=400)
+        return json_response({"ok": False, "error": d_result.error}, status_code=400)
     encounter = state.data.get("encounter") or {}
     _clear_pending_questions_after_rule_action(state, "encounter:next")
     _append_rules_receipt(state, _encounter_receipt("下一回合", {"encounter": encounter}))
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "rules": _rules_payload(state), "encounter": encounter})
+    return json_response({"ok": True, "rules": _rules_payload(state), "encounter": encounter})
 
 
 @router.post("/api/rules/encounter/enemy", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -380,7 +381,7 @@ async def api_rules_encounter_enemy(
         state=state,
     )
     if not d_result.ok:
-        return JSONResponse({"ok": False, "error": d_result.error}, status_code=400)
+        return json_response({"ok": False, "error": d_result.error}, status_code=400)
     encounter = state.data.get("encounter") or {}
     _clear_pending_questions_after_rule_action(state, f"enemy:{attacker_id}")
     _append_rules_receipt(state, _encounter_receipt(
@@ -388,7 +389,7 @@ async def api_rules_encounter_enemy(
     ))
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "rules": _rules_payload(state),
+    return json_response({"ok": True, "rules": _rules_payload(state),
                          "result": {"summary": d_result.result},
                          "encounter": encounter})
 
@@ -404,4 +405,4 @@ async def api_rules_suggest(
     body_dict = body.model_dump(exclude_none=True)
     text = str(body_dict.get("text") or "")
     state = _ensure_loaded(api_user, ensure_gm=False)
-    return JSONResponse({"ok": True, "actions": _rb_suggest_rule_actions(text, state)})
+    return json_response({"ok": True, "actions": _rb_suggest_rule_actions(text, state)})

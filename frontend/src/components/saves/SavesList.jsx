@@ -11,6 +11,7 @@ import {
   Field as UiField, Select as UiSelect, TextInput as UiInput,
 } from '../../ui/kit.jsx';
 import { NewGameModal } from './NewGame.jsx';
+import { formatBytesTier } from '../../lib/format-bytes.js';
 import CSHeader from '@cloudscape-design/components/header';
 import CSTable from '@cloudscape-design/components/table';
 import CSContainer from '@cloudscape-design/components/container';
@@ -182,10 +183,8 @@ function ExportBundleModal({ open, save, onClose }) {
 
   const _fmtBytes = (bytes) => {
     if (bytes == null) return null;
-    const mb = bytes / (1024 * 1024);
-    if (mb >= 0.1) return t('saves.detail.export_size_mb', { mb: mb < 10 ? mb.toFixed(1) : Math.round(mb) });
-    const kb = bytes / 1024;
-    return t('saves.detail.export_size_kb', { kb: Math.round(kb) });
+    const { tier, n } = formatBytesTier(bytes);
+    return tier === 'mb' ? t('saves.detail.export_size_mb', { mb: n }) : t('saves.detail.export_size_kb', { kb: n });
   };
 
   const sizeLabel = (tierKey) => {

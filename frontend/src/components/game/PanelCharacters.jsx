@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../../game-icons.jsx';
 import AvatarImg from '../AvatarImg.jsx';
 import { InlineEditField } from './InlineEditField.jsx';
+import { copyText } from '../../lib/clipboard.js';
 
 // ── 三层人物系统 (Codex 评审落地) ─────────────────────────────────
 //
@@ -91,7 +92,7 @@ function CharacterCard({ name, info, subtitle, avatarPath, onEditStatus, onDelet
           onClick={() => {
             if (typeof window.__rpgInsertMention === "function") window.__rpgInsertMention(name);
             else if (navigator.clipboard) {
-              navigator.clipboard.writeText("@" + name);
+              copyText("@" + name);
               window.__apiToast?.(t('game.characters.mention_copied', { name }), { kind: "ok", duration: 1500 });
             }
           }}>

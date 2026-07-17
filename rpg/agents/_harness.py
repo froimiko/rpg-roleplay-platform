@@ -95,6 +95,7 @@ def call_agent_json(
         else:
             text, usage = _vertex_structured(
                 model, system_prompt, user_prompt, user_id, max_tokens,
+                no_think=no_think,
             )
     else:
         # OpenAI 兼容:openai / siliconflow / dashscope / qwen 等
@@ -331,8 +332,14 @@ def _vertex_structured(
     user_prompt: str,
     user_id: int | None,
     max_tokens: int,
+    *,
+    no_think: bool = False,
 ) -> tuple[str, dict]:
-    """Vertex call_structured 已设了 response_mime_type=application/json。"""
+    """Vertex call_structured 已设了 response_mime_type=application/json。
+
+    no_think:结构化微任务禁深思(与 openai 分支对称)。此前 no_think 只在 openai 通道消费,
+    vertex 无 tool_schema 走本函数,call_structured 硬编码 thinking_budget=high(默认 8192)→
+    「call_agent_json 必须 no_think」的强约束在 vertex 结构化路径整段失效(生产风险)。"""
     from agents.gm import _VertexBackend
     backend = _VertexBackend(model=model, user_id=user_id)
     # SA 缺失时 VertexBackend.client=None;不先拦就会在 client.models.* 抛 AttributeError
@@ -347,6 +354,7 @@ def _vertex_structured(
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
         max_tokens=max_tokens,
+        thinking_budget=0 if no_think else None,
     )
     usage = getattr(backend, "last_usage", None) or {}
     return text, dict(usage) if isinstance(usage, dict) else {}

@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import Depends
 
-from ...db import connect
+from ...db import connect, limit_value
 from ...perms import script_owned
 from .._deps import json_response, require_user
 from ._shared import router
@@ -28,7 +28,7 @@ async def api_script_search(script_id: int, q: str = "", regex: bool = False,
         pat = _re.compile(query if regex else _re.escape(query), _re.I)
     except _re.error as exc:
         return json_response({"ok": False, "error": f"正则无效: {exc}"}, status_code=400)
-    lim = max(1, min(int(limit or 80), 300))
+    lim = limit_value(limit, default=80, maximum=300)
     CAP = 3000
     where = "script_id=%s"
     params: list[Any] = [script_id]

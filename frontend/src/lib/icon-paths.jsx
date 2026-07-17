@@ -1,0 +1,65 @@
+/* icon-paths.jsx — 平台端(game-icons.jsx)与移动端(mobile/icons.jsx)共享的
+   图标 path/JSX 字典。24x24 viewBox,currentColor 描边。
+
+   收录范围:两端图标字典里 **同名且视觉等价**(逐字节或仅 JSX Fragment 包裹差异)
+   的条目,以 game-icons.jsx 版本为蓝本逐字节复制。两端各自保留:
+     1) 平台/移动端独有的图标(对方没有同名条目);
+     2) 同名但形状真实不同的 14 个 DIVERGED 条目(见两文件内 `// DIVERGED` 注释)。
+
+   审计日期 2026-07-17:57 个同名条目中 43 个视觉等价收录于此,14 个真不同形维持
+   两端本地定义。新增/修改共享图标只需改这一处,两端零改动自动同步 —— 别在
+   game-icons.jsx 或 mobile/icons.jsx 单侧直接添加与本文件重名的条目(会与
+   spread 顺序冲突,产生新的分叉)。奇偶守卫测试见
+   frontend/src/__tests__/icon-paths-parity.test.jsx。 */
+import React from 'react';
+
+export const SHARED_ICON_PATHS = {
+  menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
+  chevron_left: <path d="M14 6l-6 6 6 6" />,
+  chevron_right: <path d="M10 6l6 6-6 6" />,
+  chevron_down: <path d="M6 10l6 6 6-6" />,
+  chevron_up: <path d="M6 14l6-6 6 6" />,
+  close: <><path d="M6 6l12 12M18 6L6 18" /></>,
+  plus: <><path d="M12 5v14M5 12h14" /></>,
+  refresh: <><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5M3 21v-5h5" /></>,
+  logo: <>
+    <circle cx="6" cy="6" r="2.2" fill="currentColor" stroke="none" />
+    <circle cx="18" cy="6" r="2.2" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="18" r="2.2" fill="currentColor" stroke="none" />
+    <path d="M6.5 7.5 L11.5 17 M17.5 7.5 L12.5 17" strokeWidth="1.6" />
+  </>,
+  home: <><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" /></>,
+  book: <><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v18H6.5A1.5 1.5 0 0 1 5 19.5z" /><path d="M9 3v18" /></>,
+  play: <path d="M8 5v14l11-7z" />,
+  branch: <><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="12" r="2" /><path d="M6 7v10M6 12h2a4 4 0 0 0 4-4V7a4 4 0 0 1 4-4" /></>,
+  spark: <><path d="M6 4h10a2 2 0 0 1 2 2v15l-7-4-7 4V6a2 2 0 0 1 2-2z" /><path d="M11 8l1 2 2 .4-1.5 1.4.4 2L11 13l-1.9 1 .4-2L8 10.4 10 10z" /></>,
+  status: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  memory: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 4v16M16 4v16M4 8h16M4 16h16" /></>,
+  world: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
+  cards: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="11" r="2" /><path d="M5 17c1-2 2.5-3 4-3s3 1 4 3M14 9h5M14 12h4M14 15h3" /></>,
+  timeline: <><circle cx="6" cy="6" r="2" /><circle cx="18" cy="18" r="2" /><circle cx="12" cy="12" r="2" /><path d="M8 6h2M14 12h2M14 18h2" /></>,
+  send: <><path d="M5 12l14-7-4 14-3-6z" /></>,
+  stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
+  image: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="11" r="1.6" /><path d="M21 17l-5-6-4 5-2-2-4 5" /></>,
+  slash: <path d="M16 4 8 20" />,
+  sparkle: <><path d="M12 4v5M12 15v5M4 12h5M15 12h5" /></>,
+  file: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>,
+  skill: <><path d="M5 12l3-7 4 5 4-3 3 9" /><path d="M3 19h18" /></>,
+  check: <path d="M5 12l5 5 9-11" />,
+  info: <><circle cx="12" cy="12" r="9" /><path d="M12 8v.01M12 11v5" /></>,
+  warn: <><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17v.01" /></>,
+  pin: <><path d="M12 3v7M8 10h8l-2 4h-4z" /><path d="M12 14v7" /></>,
+  eye: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
+  arrow_right: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
+  arrow_up: <><path d="M12 5v14M6 11l6-6 6 6" /></>,
+  save: <><path d="M5 5h11l3 3v11H5z" /><path d="M8 5v5h7V5M8 19v-5h8v5" /></>,
+  history: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2M3 12a9 9 0 0 0 9 9" /></>,
+  trash: <><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>,
+  edit: <><path d="M5 19h4l11-11-4-4L5 15z" /></>,
+  fork: <><circle cx="6" cy="5" r="2" /><circle cx="18" cy="5" r="2" /><circle cx="12" cy="19" r="2" /><path d="M6 7v3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M12 12v5" /></>,
+  lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 1 1 8 0v3" /></>,
+  unlock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0" /></>,
+  flag: <><path d="M5 21V4M5 4l11 1-2 5 3 4-12 .5" /></>,
+  compass: <><circle cx="12" cy="12" r="9" /><path d="M15 9l-2 5-4 1 2-5z" /></>,
+  eye_off: <><path d="M3 3l18 18" /><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8M9 5.3A10 10 0 0 1 12 5c6 0 10 7 10 7a18 18 0 0 1-2.6 3.4M6.6 6.6A18 18 0 0 0 2 12s4 7 10 7c1.6 0 3-.4 4.3-1" /></>,
+};

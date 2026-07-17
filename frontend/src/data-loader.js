@@ -96,6 +96,11 @@ function fmtTime(iso) {
   if (!iso) return "—";
   try { return new Date(iso).toLocaleString("zh-CN", { hour12: false }); } catch (_) { return iso; }
 }
+// fmtTimeFallback — window.__fmt 未就绪时的兜底体,权威单一实现(收口自 components/admin/shared.jsx、
+// mobile/admin/shared.jsx、pages/feedback.jsx、mobile/caps/FeedbackSection.jsx 4 处逐字复制的同款 try/catch)。
+// 与 fmtTime 算法等价(此处即复用),各调用点自己保留 `if (window.__fmt?.time) return window.__fmt.time(x)`
+// 单例检查那一行不动,只把兜底体换成这个 import。
+export function fmtTimeFallback(iso) { return fmtTime(iso); }
 // YYYY-MM-DD(各页 fmtDate 共用)
 function fmtDate(iso) {
   if (!iso) return "—";

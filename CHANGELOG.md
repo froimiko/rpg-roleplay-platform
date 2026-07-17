@@ -9,6 +9,22 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.70.3] - 2026-07-17 (@ 0ba86c645)
+
+### Fixed
+- **平行路径不对称修复大扫除(五路审计,「修 A 漏 B」宿疾清缴)**:
+  - **GM 三后端思考族对齐**:Vertex 结构化微任务路径 `no_think` 失效根修(此前硬编码 8192 思考预算=思考黑洞,anchor_reconcile 等热点微任务长期靠空正文重试硬扛);截断信号 `finish_reason` 补齐 Anthropic/Vertex 采集(此前只有 openai,「回复被 max_tokens 切断」对另两家静默);Vertex 流式两路解除思考预算硬编码 0(思考深度设置在 Gemini 流式此前是死设置),thought parts 剥离为 reasoning 事件不污染正文;openai_compat 收敛到 `_tiered.py` 权威缝(消除逐字节等价的整套内联平行实现);Vertex call() 403 转换保留 status_code 可分类性。
+  - **权限旁路**:GM 输出 `【用户变量：x=y】` 标签族此前直调写入、完整绕过权限闸(read_only 也拦不住),改走 `_gm_write_via_gate` 与 JSON-op 路径同闸(新增 read_only 入 pending 回归测试)。
+  - **酒馆绑卡 character「双源病」**:persona 早已根修的写穿(FK+快照+活会话同步)对 character 角色漏网——只写 FK 列导致面板换角、GM 继续演旧角色;`apply_persona_card_to_chat` 扩展 role 参数统一写穿(单一实现,非复制),新增 character 切换回归测试。
+  - **回合操作面**:酒馆失败轮 `restoreFailedDraft` 补附件恢复(此前只回文本,附件失败即丢);移动 RPG fork/rollback 补 `r.ok===false` 校验(防假成功 toast)。
+  - **信封全站收口**:core/startup.py 7 个全站兜底异常 handler + Origin 中间件、routes/ 18 文件 203 处裸 JSONResponse 全部接权威 `json_response`(meta+控制字符清洗自此覆盖全站错误路径与自由文本出口);`scripts/imports.py` 漏网 1 处同修。
+  - 防御对齐:consume 补 qty 类型钳制;limit clamp 8 处接权威 `limit_value`(其中 frontend_routes/auth.py 为真 `limit=abc`→500 修复)。
+
+### Changed
+- **功能级双维护重复收口(用户拍板:维护负担本身就是成本)**:图标字典 43 个等价条目收口 `lib/icon-paths.jsx`(加图标不再抄两处;14 个同名不同形条目标注 DIVERGED 待设计定夺)+ 奇偶守卫测试锁死同步义务;zip 安全解压双份合一(CWE-409 防线单点化);consumeSSE 双份合一(顺带补 MdEditorAgent 中断支持);剪贴板 execCommand 兜底从 1 处普及到 9 处调用点(`lib/clipboard.js`);导出体积估算合一(顺带补移动端 i18n 缺口);fmtTime 兜底体×4 收口;isCredentialsError 漏网 2 处接入;`_cosine`/`_iso`/routes `_uid` 收口;routes `_uid_or_zero` 带防误抄 docstring。
+- **CLAUDE.md 新增「同面横扫(修 A 必查孪生)」铁律**:点名五大平行族及各自共享缝,刻意变体首选孪生奇偶守卫测试锁同步义务。
+- ⚠️ **行为披露**:Gemini 流式此前静默忽略思考深度设置(恒 0),对齐后按用户设置生效——未设置者默认档=high(每轮最多 ~8192 思考 token),与 OpenAI 侧现行为一致;想要旧行为可在模型弹层把思考深度设为 Off。
+
 ## [1.70.2] - 2026-07-17 (@ fdea8d321)
 
 ### Fixed

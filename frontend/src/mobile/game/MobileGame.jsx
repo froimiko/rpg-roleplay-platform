@@ -386,7 +386,10 @@ export function MobileGame(gc) {
       try {
         const sid = activeSave?.id;
         if (!sid) return;
-        await window.api.branches.continueFrom({ save_id: sid, message_index: idx });
+        const r = await window.api.branches.continueFrom({ save_id: sid, message_index: idx });
+        if (r && r.ok === false) {
+          throw new Error(r.error || r.detail || "branch create denied");
+        }
         gc.reloadState && gc.reloadState();
         window.__apiToast?.(t('mobile.game.toast.fork_ok'), { kind: 'ok', icon: 'fork' });
       } catch (e) { window.__apiToast?.(t('mobile.game.toast.fork_fail'), { kind: 'danger', detail: e?.message }); }
@@ -399,7 +402,10 @@ export function MobileGame(gc) {
       try {
         const sid = activeSave?.id;
         if (!sid) { window.__apiToast?.(t('mobile.game.toast.rollback_fail'), { kind: 'danger' }); return; }
-        await window.api.branches.rollbackToMessage(sid, idx);
+        const r = await window.api.branches.rollbackToMessage(sid, idx);
+        if (r && r.ok === false) {
+          throw new Error(r.error || r.detail || "delete denied");
+        }
         gc.reloadState && gc.reloadState();
         window.__apiToast?.(t('mobile.game.toast.rollback_ok'), { kind: 'ok', icon: 'history' });
       } catch (e) { window.__apiToast?.(t('mobile.game.toast.rollback_fail'), { kind: 'danger', detail: e?.message }); }

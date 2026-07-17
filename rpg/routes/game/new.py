@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import Depends
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, StateResponse
@@ -108,4 +109,4 @@ async def api_new(
         from app import _lru_set as _lru_set_inner
         _lru_set_inner(_state_by_user, uid, state)
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "backup": backup, "state": _sanitize_payload(_payload(api_user))})
+    return json_response({"ok": True, "backup": backup, "state": _sanitize_payload(_payload(api_user))})

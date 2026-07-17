@@ -27,6 +27,18 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
+def _normalize_stop_reason(stop_reason) -> str | None:
+    """Anthropic stop_reason 归一为截断信号 finish_reason。
+
+    max_tokens → "length"(与 openai finish_reason / vertex 对齐;app.py 的截断告警只认
+    == "length");其余(end_turn / tool_use / stop_sequence …)透传其名。空返回 None。
+    此前 anthropic 抓到 stop_reason 只发 stop 事件、不写 last_usage → 截断对 anthropic 恒静默。"""
+    if not stop_reason:
+        return None
+    s = str(stop_reason)
+    return "length" if s == "max_tokens" else s
+
+
 def _system_blocks(system: str, extra: str = "") -> list[dict[str, Any]]:
     """把 system 字符串包成带 cache_control 的 structured blocks。
 
@@ -163,6 +175,9 @@ class _AnthropicBackend:
                 "cache_creation_input_tokens": int(getattr(usage, "cache_creation_input_tokens", 0) or 0),
             }
             self.last_usage["total_tokens"] = self.last_usage["input_tokens"] + self.last_usage["output_tokens"]
+            _fr = _normalize_stop_reason(getattr(resp, "stop_reason", None))
+            if _fr:
+                self.last_usage["finish_reason"] = _fr
         return resp.content[0].text.strip()
 
     def call_structured(self, system: str, messages: list[dict], max_tokens: int) -> str:
@@ -186,6 +201,9 @@ class _AnthropicBackend:
                 self.last_usage["total_tokens"] = (
                     self.last_usage["input_tokens"] + self.last_usage["output_tokens"]
                 )
+                _fr = _normalize_stop_reason(getattr(resp, "stop_reason", None))
+                if _fr:
+                    self.last_usage["finish_reason"] = _fr
         except Exception:
             pass
         return resp.content[0].text.strip()
@@ -197,6 +215,11 @@ class _AnthropicBackend:
             max_tokens = max(max_tokens, int(_thinking["budget_tokens"]) + 1024)
         _extra = {"thinking": _thinking} if _thinking else {}
         _extra.update(self._sampling_extra(bool(_thinking)))  # 反馈#93:接入生成参数预设
+        # 思考流(thinking_delta):此处 thinking 生效(_thinking_param),但本方法契约是
+        # Iterator[str],由 master.py / helpers.py / chat_pipeline/gm.py 以字符串拼接消费
+        # (out-of-scope,不能改契约)。text_stream 只吐正文文本、天然不含思考 → 思考 token 被花掉
+        # 却无法作为 {"type":"reasoning"} 事件透传(需要 dict 事件通道,纯字符串流承载不了)。
+        # 关键安全属性(思考不污染叙事正文)已由 text_stream 保证;展示思考流待事件化流式改造。
         with self.client.messages.stream(
             model=self.model_name,
             max_tokens=max_tokens,
@@ -217,6 +240,9 @@ class _AnthropicBackend:
                 "cache_creation_input_tokens": int(getattr(usage, "cache_creation_input_tokens", 0) or 0),
                     }
                     self.last_usage["total_tokens"] = self.last_usage["input_tokens"] + self.last_usage["output_tokens"]
+                    _fr = _normalize_stop_reason(getattr(final, "stop_reason", None))
+                    if _fr:
+                        self.last_usage["finish_reason"] = _fr
             except Exception:
                 pass
 
@@ -240,6 +266,11 @@ class _AnthropicBackend:
         current_block: dict[str, Any] | None = None
         partial_json_buf = ""
         stop_reason: str | None = None
+        # 刻意暂缓:工具循环不启用 Extended Thinking(不传 thinking 参数)。原因是 thinking 开启后
+        # Anthropic 要求把每个含 thinking block 的 assistant 回合原样(连 signature)装回 messages,
+        # 否则后续工具轮 400;本 backend 的 assistant 回合是从流式事件重建 text/tool_use block 的
+        # (见 stream_with_mcp_loop),尚未保留 thinking block 的往返 → 贸然开启会破坏多轮工具调用。
+        # 这是设计题(需要 thinking block round-trip),留待专门改造,不在本批次动。
         with self.client.messages.stream(
             model=self.model_name,
             max_tokens=max_tokens,
@@ -302,6 +333,9 @@ class _AnthropicBackend:
                 "cache_creation_input_tokens": int(getattr(usage, "cache_creation_input_tokens", 0) or 0),
                     }
                     self.last_usage["total_tokens"] = self.last_usage["input_tokens"] + self.last_usage["output_tokens"]
+                    _fr = _normalize_stop_reason(stop_reason or getattr(final, "stop_reason", None))
+                    if _fr:
+                        self.last_usage["finish_reason"] = _fr
             except Exception:
                 pass
         yield {"type": "stop", "stop_reason": stop_reason or "end_turn"}

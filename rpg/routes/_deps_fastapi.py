@@ -31,3 +31,16 @@ def get_payload_fn(request: Request):
     """返回 _payload 函数 (闭包了当前 user)。"""
     from app import _payload
     return _payload
+
+
+def _uid_or_zero(api_user: dict[str, Any] | None) -> int:
+    """从 api_user 取用户 id;缺用户 / 缺 id 一律回退 0(绝不抛异常）。
+
+    这是 regex_scripts / worldbook_overlay 共用的「0 兜底」变体。**语义差异——别误抄**:
+    - persona_skills.py 的 _uid → int | None:缺失时返回 None(用 None 作哨兵,后续显式判 None),
+      与本函数的「0 兜底」不可互换(0 会被当成合法但越权的 uid=0)。
+    - tavern.py 的 _uid → int:直接 int(api_user["id"]),不做兜底,缺失即 KeyError/TypeError
+      (调用点已保证 api_user 非空且必带 id)。
+    三者行为在「用户缺失」这一分叉上互不等价,合并前务必确认调用点契约一致。
+    """
+    return int(api_user.get("id")) if api_user and api_user.get("id") else 0

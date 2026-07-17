@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request
 
-from ...db import connect
+from ...db import connect, limit_value
 from .._deps import _client_ip, json_response
 from ._shared import router, _require_admin, _write_audit
 
@@ -19,7 +19,7 @@ async def admin_list_users(
     admin=Depends(_require_admin),
 ):
     page = max(1, page)
-    limit = max(1, min(100, limit))
+    limit = limit_value(limit, default=20, maximum=100)
     offset = (page - 1) * limit
     search_pat = f"%{search}%" if search else ""
 

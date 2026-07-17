@@ -13,6 +13,7 @@ import CSHeader from '@cloudscape-design/components/header';
 import CSModal from '@cloudscape-design/components/modal';
 import CSSpaceBetween from '@cloudscape-design/components/space-between';
 import { ACHV_CAT_ORDER, TIER_RANK } from '../../lib/achievements-const.js';
+import { copyText } from '../../lib/clipboard.js';
 
 const __achvToasted = new Set();
 async function flushAchievementToasts(items) {
@@ -84,8 +85,9 @@ function AchvShareModal({ user, items, unlockedCount, total, onClose }) {
     .sort((a, b) => (TIER_RANK[b.tier] || 0) - (TIER_RANK[a.tier] || 0))
     .slice(0, 6);
   const copy = async () => {
-    try { await navigator.clipboard.writeText(wallUrl); window.toast(t('platform.achv.link_copied', '链接已复制'), { kind: "ok" }); }
-    catch (_) { window.toast(t('platform.achv.copy_failed', '复制失败，请手动复制'), { kind: "warn" }); }
+    const ok = await copyText(wallUrl);
+    if (ok) window.toast(t('platform.achv.link_copied', '链接已复制'), { kind: "ok" });
+    else window.toast(t('platform.achv.copy_failed', '复制失败，请手动复制'), { kind: "warn" });
   };
   return (
     <CSModal visible onDismiss={onClose} header={t('platform.achv.share_title', '分享成就')}

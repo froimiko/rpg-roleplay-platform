@@ -24,6 +24,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import './EditorKbPanel.css';
 
+import { isCredentialsError } from '../lib/creds.js';
 import { useScriptRebuild } from '../pages/script-modules-panel.jsx';
 import { RebuildJobBanner } from './RebuildJobBanner.jsx';
 import { ModuleMatrixOverview } from './ModuleMatrixOverview.jsx';
@@ -154,7 +155,7 @@ function AuditCardsButton({ scriptId }) {
       }
       if (r && r.ok !== false) {
         toast(t('md_editor.kb.audit_cards.dispatched', { defaultValue: 'AI 复核已派发,进度见右下角任务浮窗' }), { kind: 'ok', duration: 2600 });
-      } else if (r && r.code === 'credentials_required') {
+      } else if (isCredentialsError(r)) {
         toast(t('md_editor.kb.audit_cards.needs_credentials', { defaultValue: '缺少模型凭据,请先在设置里配置' }), { kind: 'warning', duration: 3000 });
       } else {
         toast((r && r.error) || t('md_editor.kb.audit_cards.fail', { defaultValue: '派发失败' }), { kind: 'danger' });

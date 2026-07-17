@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .db import connect, init_db
+from .db import connect, init_db, limit_value
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ def list_user_assets(
     kind 不为 None 时只返回该 kind。limit 上限 500 防爆。
     """
     init_db()
-    limit = min(max(1, limit), 500)
+    limit = limit_value(limit, default=200, maximum=500)
     offset = max(0, offset)
 
     with connect() as db:

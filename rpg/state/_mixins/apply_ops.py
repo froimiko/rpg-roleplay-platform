@@ -219,8 +219,14 @@ class ApplyOpsMixin:
                     updates.append("世界线推演：待用户确认")
             elif "用户变量" in key or key in {"变量", "设定变量", "玩家变量"}:
                 var_key, var_value = _parse_assignment(value)
-                if var_key and self.set_user_variable(var_key, var_value, source="gm"):
-                    updates.append(f"用户变量：{var_key}={var_value}")
+                if var_key:
+                    # 走统一权限闸门(硬黑名单 / read_only 全挡入 pending / default 白名单),
+                    # 与 JSON-op 等价路径 worldline.user_variables.X(kind=="user_variable")对齐,
+                    # 别再直调 set_user_variable 绕过 gate(read_only 也拦不住)。
+                    _gm_write_via_gate(
+                        f"worldline.user_variables.{var_key}", var_value,
+                        label_for_update=f"用户变量：{var_key}={var_value}",
+                    )
             elif "询问玩家" in key or "向玩家提问" in key or "澄清问题" in key:
                 if self.add_pending_question(value or key, source="gm"):
                     updates.append("等待玩家回答")

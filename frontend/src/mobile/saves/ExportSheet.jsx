@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
 import { API } from './helpers.js';
+import { formatBytesTier } from '../../lib/format-bytes.js';
 
 /* ── 导出弹窗 ────────────────────────────────────────────── */
 function ExportSheet({ open, save, onClose, onToast }) {
@@ -30,9 +31,9 @@ function ExportSheet({ open, save, onClose, onToast }) {
 
   const fmtBytes = (b) => {
     if (b == null) return estLoading ? t('mobile.saves.export.estimating') : t('common.unknown');
-    const mb = b / (1024 * 1024);
-    if (mb >= 0.1) return (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB';
-    return Math.round(b / 1024) + ' KB';
+    // 此前硬拼 ' MB'/' KB' 字符串(i18n 缺口)；改接桌面端同一批 i18n key(saves.detail.export_size_mb/kb)。
+    const { tier, n } = formatBytesTier(b);
+    return tier === 'mb' ? t('saves.detail.export_size_mb', { mb: n }) : t('saves.detail.export_size_kb', { kb: n });
   };
   const sizeOf = (k) => estimate?.tiers ? fmtBytes(estimate.tiers[k]) : (estLoading ? t('mobile.saves.export.estimating') : '—');
 

@@ -22,6 +22,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, StateResponse
@@ -53,7 +54,7 @@ async def api_relationship_set(
     character = (b.get("character") or "").strip()
     status = (b.get("status") or "").strip()
     if not character or not status:
-        return JSONResponse({"ok": False, "error": "character / status 不能为空"}, status_code=400)
+        return json_response({"ok": False, "error": "character / status 不能为空"}, status_code=400)
     state = _ensure_loaded(api_user)
     from tools_dsl.ui_dispatch_helper import dispatch_ui_tool
     result = dispatch_ui_tool(
@@ -64,10 +65,10 @@ async def api_relationship_set(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})
 
 
 @router.post("/api/relationships/delete", response_model=StateResponse,
@@ -86,7 +87,7 @@ async def api_relationship_delete(
     b = body.model_dump(exclude_none=True)
     character = (b.get("character") or "").strip()
     if not character:
-        return JSONResponse({"ok": False, "error": "character 不能为空"}, status_code=400)
+        return json_response({"ok": False, "error": "character 不能为空"}, status_code=400)
     state = _ensure_loaded(api_user)
     from tools_dsl.ui_dispatch_helper import dispatch_ui_tool
     result = dispatch_ui_tool(
@@ -97,10 +98,10 @@ async def api_relationship_delete(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})
 
 
 # ── 玩家人设卡编辑 ─────────────────────────────────────────────
@@ -125,9 +126,9 @@ async def api_player_profile_set(
     field = (b.get("field") or "").strip()
     value = (b.get("value") or "").strip()
     if field not in _PLAYER_PROFILE_FIELD_ALLOWLIST:
-        return JSONResponse({"ok": False, "error": f"field 非法(允许 {sorted(_PLAYER_PROFILE_FIELD_ALLOWLIST)})"}, status_code=400)
+        return json_response({"ok": False, "error": f"field 非法(允许 {sorted(_PLAYER_PROFILE_FIELD_ALLOWLIST)})"}, status_code=400)
     if not value:
-        return JSONResponse({"ok": False, "error": "value 不能为空"}, status_code=400)
+        return json_response({"ok": False, "error": "value 不能为空"}, status_code=400)
     state = _ensure_loaded(api_user)
     from tools_dsl.ui_dispatch_helper import dispatch_ui_tool
     result = dispatch_ui_tool(
@@ -138,10 +139,10 @@ async def api_player_profile_set(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})
 
 
 # ── world 状态编辑 ─────────────────────────────────────────────
@@ -188,12 +189,12 @@ async def api_world_set(
     key = (b.get("key") or "").strip()
     value = (b.get("value") or "").strip()
     if not key:
-        return JSONResponse({"ok": False, "error": "key 不能为空"}, status_code=400)
+        return json_response({"ok": False, "error": "key 不能为空"}, status_code=400)
     if not value:
-        return JSONResponse({"ok": False, "error": "value 不能为空"}, status_code=400)
+        return json_response({"ok": False, "error": "value 不能为空"}, status_code=400)
     tool_name, args = _world_dispatch(key, value)
     if not tool_name:
-        return JSONResponse(
+        return json_response(
             {"ok": False, "error": f"world.{key} 不允许通过此端点直接修改"},
             status_code=400,
         )
@@ -207,7 +208,7 @@ async def api_world_set(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})

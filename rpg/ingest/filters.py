@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from typing import Callable
 
+from core.vecmath import cosine as _cosine
+
 # ─── §4.b 作者非正文 ─────────────────────────────────────────────────────────
 # 标题强信号:卷末通知/感言/请假/上架/完本 等
 AUTHOR_NOTE_TITLE_PATTERNS = re.compile(
@@ -172,12 +174,3 @@ def annotate_weird_titles(
         # 低可信 → 生成内容描述符;下游提取/时间线用它而非原标题
         ch["content_descriptor"] = _content_descriptor(body) if conf < 0.6 else ""
     return chapters
-
-
-def _cosine(a, b) -> float:
-    num = sum(x * y for x, y in zip(a, b))
-    na = sum(x * x for x in a) ** 0.5
-    nb = sum(y * y for y in b) ** 0.5
-    if na == 0 or nb == 0:
-        return 0.0
-    return num / (na * nb)

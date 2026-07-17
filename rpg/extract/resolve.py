@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from psycopg.types.json import Jsonb
 
+from core.vecmath import cosine as _cosine
 from kb import canon_repo
 
 # 简繁/全角归一:LLM 对简体原文偶尔吐繁体(用户反馈#60:卡是繁体、同一人简繁两张)。
@@ -64,13 +65,6 @@ class CanonEntity:
 def _slug(name: str) -> str:
     s = re.sub(r"\s+", "_", _to_simplified(name).strip())
     return re.sub(r"[^\w一-鿿·.-]", "", s)[:80] or "entity"
-
-
-def _cosine(a, b) -> float:
-    num = sum(x * y for x, y in zip(a, b))
-    na = sum(x * x for x in a) ** 0.5
-    nb = sum(y * y for y in b) ** 0.5
-    return num / (na * nb) if na and nb else 0.0
 
 
 # ── gloss 聚合:择优+充实(治『战姬 11 字』——旧版 first-gloss-wins 跨千章从不充实) ─────

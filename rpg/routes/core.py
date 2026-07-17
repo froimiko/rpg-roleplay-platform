@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 
@@ -43,7 +44,7 @@ async def index():
     except Exception:
         pass
     from app import APP_TITLE
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "service": f"{APP_TITLE} RPG backend",
         "frontend": {
@@ -62,9 +63,9 @@ async def api_health() -> JSONResponse:
         from platform_app.db import connect
         with connect() as db:
             db.execute("SELECT 1")
-        return JSONResponse({"ok": True, "db": "ok", "app_version": app_version()})
+        return json_response({"ok": True, "db": "ok", "app_version": app_version()})
     except Exception as exc:
-        return JSONResponse(
+        return json_response(
             {"ok": False, "db": "error", "detail": str(exc)[:200], "app_version": app_version()},
             status_code=503)
 
@@ -74,7 +75,7 @@ async def api_state(
     api_user: dict[str, Any] | None = Depends(get_current_user),
 ) -> JSONResponse:
     from app import _payload
-    return JSONResponse(_payload(api_user))
+    return json_response(_payload(api_user))
 
 
 @router.get("/api/state_events")

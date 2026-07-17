@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_admin_strict, get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, ErrorResponse, GenericOkResponse
@@ -27,7 +28,7 @@ async def api_tools(
 ) -> JSONResponse:
     from app import _redact_tools, tool_payload
     is_admin = bool(api_user and api_user.get("role") == "admin")
-    return JSONResponse({"ok": True, "tools": _redact_tools(tool_payload(), is_admin)})
+    return json_response({"ok": True, "tools": _redact_tools(tool_payload(), is_admin)})
 
 
 @router.post("/api/mcp/server", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -39,9 +40,9 @@ async def api_mcp_server(
     try:
         body_dict = body.model_dump()
         catalog = upsert_mcp_server(body_dict)
-        return JSONResponse({"ok": True, "mcp": catalog, "tools": tool_payload()})
+        return json_response({"ok": True, "mcp": catalog, "tools": tool_payload()})
     except (PermissionError, ValueError) as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
 @router.post("/api/mcp/server/enabled", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -53,9 +54,9 @@ async def api_mcp_server_enabled(
     body_dict = body.model_dump(exclude_none=True)
     try:
         catalog = set_mcp_server_enabled(body_dict.get("id", ""), bool(body_dict.get("enabled", True)))
-        return JSONResponse({"ok": True, "mcp": catalog, "tools": tool_payload()})
+        return json_response({"ok": True, "mcp": catalog, "tools": tool_payload()})
     except (PermissionError, ValueError) as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
 @router.post("/api/mcp/server/delete", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -67,9 +68,9 @@ async def api_mcp_server_delete(
     body_dict = body.model_dump(exclude_none=True)
     try:
         catalog = delete_mcp_server(body_dict.get("id", ""))
-        return JSONResponse({"ok": True, "mcp": catalog, "tools": tool_payload()})
+        return json_response({"ok": True, "mcp": catalog, "tools": tool_payload()})
     except PermissionError as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
 @router.post("/api/mcp/server/validate", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -80,9 +81,9 @@ async def api_mcp_server_validate(
     from app import validate_mcp_server
     body_dict = body.model_dump(exclude_none=True)
     try:
-        return JSONResponse({"ok": True, "result": validate_mcp_server(body_dict.get("id", ""))})
+        return json_response({"ok": True, "result": validate_mcp_server(body_dict.get("id", ""))})
     except ValueError as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
 @router.post("/api/mcp/server/start", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -92,7 +93,7 @@ async def api_mcp_server_start(
 ) -> JSONResponse:
     body_dict = body.model_dump(exclude_none=True)
     import mcp_broker
-    return JSONResponse(mcp_broker.start_server(body_dict.get("id", "")))
+    return json_response(mcp_broker.start_server(body_dict.get("id", "")))
 
 
 @router.post("/api/mcp/server/stop", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -102,7 +103,7 @@ async def api_mcp_server_stop(
 ) -> JSONResponse:
     body_dict = body.model_dump(exclude_none=True)
     import mcp_broker
-    return JSONResponse(mcp_broker.stop_server(body_dict.get("id", "")))
+    return json_response(mcp_broker.stop_server(body_dict.get("id", "")))
 
 
 @router.get("/api/mcp/runtime")
@@ -132,7 +133,7 @@ async def api_mcp_runtime(
         payload["audit_log"] = audit
     except Exception:
         payload["audit_log"] = []
-    return JSONResponse(payload)
+    return json_response(payload)
 
 
 @router.post("/api/mcp/tool/call", response_model=GenericOkResponse, responses={**COMMON_ERROR_RESPONSES, 403: {"model": ErrorResponse}})
@@ -149,9 +150,9 @@ async def api_mcp_tool_call(
     body_dict = body.model_dump(exclude_none=True)
     timeout = int(body_dict.get("timeout", 30))
     if timeout < 1 or timeout > 120:
-        return JSONResponse({"ok": False, "error": "timeout 必须在 1-120 秒之间"}, status_code=400)
+        return json_response({"ok": False, "error": "timeout 必须在 1-120 秒之间"}, status_code=400)
     import mcp_broker
-    return JSONResponse(mcp_broker.call_tool(
+    return json_response(mcp_broker.call_tool(
         body_dict.get("server_id", ""),
         body_dict.get("tool", ""),
         body_dict.get("arguments", {}) or {},
@@ -170,7 +171,7 @@ async def api_mcp_tools(
     前端"加号菜单"也按 admin 角色控制可见性。
     """
     import mcp_broker
-    return JSONResponse({"ok": True, "tools": mcp_broker.discover_all_tools()})
+    return json_response({"ok": True, "tools": mcp_broker.discover_all_tools()})
 
 
 @router.get("/api/admin/tool-usage")
@@ -226,7 +227,7 @@ async def api_admin_tool_usage(
     seen = {r["tool"] for r in rows}
     dark = sorted(all_tools - seen)
 
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "window_hours": window_hours,
         "by_tool": [
@@ -284,7 +285,7 @@ async def api_admin_tool_debug(
         ok = isinstance(schema_raw, dict)
         vertex_ok.append({"full_name": full, "name_truncated": len(f"{safe_sid}__{safe_tname}") > 64,
                           "has_schema_dict": ok})
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "mcp_tools_count": len(mcp_tools),
         "mcp_tools_sample": [t.get("name") for t in mcp_tools[:5]],

@@ -10,6 +10,7 @@ import CSBadge from '@cloudscape-design/components/badge';
 import CSButton from '@cloudscape-design/components/button';
 import CSButtonDropdown from '@cloudscape-design/components/button-dropdown';
 import { clampLines, npcToUserCardBody } from './helpers.js';
+import { copyText } from '../../lib/clipboard.js';
 
 function CardGrid({ cards, onEdit, kind, filter, empty, onDeleted, onDuplicate, onPromoteToUser }) {
   const { t } = useTranslation();
@@ -32,12 +33,9 @@ function CardGrid({ cards, onEdit, kind, filter, empty, onDeleted, onDuplicate, 
     }
   };
   const copyId = async (c) => {
-    try {
-      await navigator.clipboard.writeText(String(c.id));
-      window.__apiToast?.(t('cards.toast.id_copied'), { kind: "ok", duration: 1500 });
-    } catch {
-      window.__apiToast?.(t('cards.toast.copy_fail'), { kind: "danger" });
-    }
+    const ok = await copyText(String(c.id));
+    if (ok) window.__apiToast?.(t('cards.toast.id_copied'), { kind: "ok", duration: 1500 });
+    else window.__apiToast?.(t('cards.toast.copy_fail'), { kind: "danger" });
   };
 
   // NPC 卡 → user_card 一键迁移。body 走共用 npcToUserCardBody(剧本编辑器同款),避免 shape 漂移。

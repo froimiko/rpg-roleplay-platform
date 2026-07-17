@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import Depends
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse, StateResponse
@@ -39,9 +40,9 @@ async def api_save(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _sanitize_payload(_payload(api_user))})
+    return json_response({"ok": True, "state": _sanitize_payload(_payload(api_user))})
 
 
 @router.post("/api/message/edit", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -55,17 +56,17 @@ async def api_message_edit(
     message_index: history 数组索引(0-based),与 /api/state 返回的 history 顺序一致。
     """
     if not api_user:
-        return JSONResponse({"ok": False, "error": "auth required"}, status_code=401)
+        return json_response({"ok": False, "error": "auth required"}, status_code=401)
     save_id = body.get("save_id")
     msg_index = body.get("message_index")
     new_content = body.get("content")
     if save_id is None or msg_index is None or new_content is None:
-        return JSONResponse({"ok": False, "error": "save_id, message_index, content required"}, status_code=400)
+        return json_response({"ok": False, "error": "save_id, message_index, content required"}, status_code=400)
     try:
         msg_index = int(msg_index)
         save_id = int(save_id)
     except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "invalid save_id or message_index"}, status_code=400)
+        return json_response({"ok": False, "error": "invalid save_id or message_index"}, status_code=400)
 
     from platform_app.db import connect
     from platform_app.perms import owns_save
@@ -74,7 +75,7 @@ async def api_message_edit(
             # [安全] 存档归属校验:原 PR 直接用请求体 save_id 改 messages,无归属校验 = IDOR
             # (任何登录用户可改他人存档的消息)。与全平台 save 端点统一走 perms.owns_save。
             if not owns_save(db, int(save_id), int(api_user["id"])):
-                return JSONResponse({"ok": False, "error": "无权访问该存档"}, status_code=403)
+                return json_response({"ok": False, "error": "无权访问该存档"}, status_code=403)
             # 与 acceptance 选择同款持久化:写穿【活跃 commit 快照(kb_native materialize 权威源)+ 工作树
             # 快照 + snapshot_hash bump(跨 worker 失效)+ messages 表】。旧实现只改 messages + state.save()
             # blob,不改 commit 快照 → kb_native 存档编辑后刷新/换 worker 就回退(与 acceptance 同源 bug)。
@@ -82,11 +83,11 @@ async def api_message_edit(
             ok, _orig = _amend_history_message(db, int(save_id), msg_index, str(new_content))
             db.commit()
         if not ok:
-            return JSONResponse({"ok": False, "error": f"message_index {msg_index} 越界或无有效消息"}, status_code=400)
+            return json_response({"ok": False, "error": f"message_index {msg_index} 越界或无有效消息"}, status_code=400)
     except Exception as e:
         _log.exception("[message/edit] failed")
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    return JSONResponse({"ok": True})
+        return json_response({"ok": False, "error": str(e)}, status_code=500)
+    return json_response({"ok": True})
 
 
 def _amend_history_message(db, save_id: int, message_index: int, new_content: str,
@@ -244,16 +245,16 @@ async def api_acceptance_choice(
     - save_id 一律用 log 行里的服务端值,不信任请求体。
     """
     if not api_user:
-        return JSONResponse({"ok": False, "error": "auth required"}, status_code=401)
+        return json_response({"ok": False, "error": "auth required"}, status_code=401)
     alt_id = body.get("alt_id")
     choice = (body.get("choice") or "").strip().lower()
     msg_index = body.get("message_index")
     if alt_id is None or choice not in ("original", "rewrite"):
-        return JSONResponse({"ok": False, "error": "alt_id 与 choice(original|rewrite) 必填"}, status_code=400)
+        return json_response({"ok": False, "error": "alt_id 与 choice(original|rewrite) 必填"}, status_code=400)
     try:
         alt_id = int(alt_id)
     except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "invalid alt_id"}, status_code=400)
+        return json_response({"ok": False, "error": "invalid alt_id"}, status_code=400)
 
     from platform_app.db import connect
     from platform_app.perms import owns_save
@@ -266,10 +267,10 @@ async def api_acceptance_choice(
                 (alt_id,),
             ).fetchone()
             if not row:
-                return JSONResponse({"ok": False, "error": f"acceptance 候选 {alt_id} 不存在"}, status_code=404)
+                return json_response({"ok": False, "error": f"acceptance 候选 {alt_id} 不存在"}, status_code=404)
             # 归属校验:候选必须属于当前用户(IDOR 防护)。
             if int(row["user_id"] or 0) != uid:
-                return JSONResponse({"ok": False, "error": "无权操作该候选"}, status_code=403)
+                return json_response({"ok": False, "error": "无权操作该候选"}, status_code=403)
             save_id = int(row["save_id"] or 0)
             original_text = str(row["original_text"] or "")
             rewrite_text = str(row["rewrite_text"] or "")
@@ -296,5 +297,5 @@ async def api_acceptance_choice(
                     db.commit()
     except Exception as e:
         _log.exception("[acceptance/choice] failed")
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    return JSONResponse({"ok": True, "choice": choice, "swapped": swapped})
+        return json_response({"ok": False, "error": str(e)}, status_code=500)
+    return json_response({"ok": True, "choice": choice, "swapped": swapped})

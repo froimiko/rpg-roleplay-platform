@@ -43,6 +43,44 @@ def _resolve_thinking_budget(user_id: int | None, model_id: str | None) -> int:
     return _resolve_budget(user_id, "vertex_ai", model_id or "")
 
 
+def _finish_reason_normalized(resp) -> str | None:
+    """从响应 / 流式 chunk 的 candidates[0].finish_reason 取截断信号。
+
+    MAX_TOKENS 归一为 "length"(与 openai finish_reason / anthropic stop_reason 对齐;
+    app.py 的截断告警只认 == "length");其余(STOP / SAFETY / RECITATION …)透传其名。
+    取不到 / 无候选返回 None。流式末 chunk 通常同时带 usage_metadata 与 finish_reason。"""
+    try:
+        cands = getattr(resp, "candidates", None) or []
+        if not cands:
+            return None
+        fr = getattr(cands[0], "finish_reason", None)
+        if not fr:
+            return None
+        name = getattr(fr, "name", None) or str(fr)
+        name = str(name).rsplit(".", 1)[-1].upper()  # enum → 裸名(去 "FinishReason." 前缀)
+        return "length" if name == "MAX_TOKENS" else name
+    except Exception:
+        return None
+
+
+def _iter_part_texts(chunk):
+    """遍历流式 chunk 的 candidates[0].content.parts,产出 (is_thought, text)。
+
+    thought=True 是思考流(reasoning),必须与正文(narrative)分离:纯文本流丢弃,
+    事件流单独走 reasoning 事件。与 stream_with_mcp_loop 的 parts 读取同源。"""
+    cands = getattr(chunk, "candidates", None) or []
+    if not cands:
+        return
+    content = getattr(cands[0], "content", None)
+    if not content:
+        return
+    for part in (getattr(content, "parts", None) or []):
+        ptext = getattr(part, "text", None)
+        if not ptext:
+            continue
+        yield bool(getattr(part, "thought", False)), ptext
+
+
 # ── 显式上下文缓存(Vertex cachedContent)────────────────────────────────────
 # 实测:Gemini 隐式缓存对本平台 0 命中(cached_content_token_count 恒 0)。显式缓存把
 # system(+tools)这段**稳定大前缀**建成 CachedContent,后续调用以 cached_content 引用 →
@@ -220,13 +258,18 @@ class _VertexBackend:
                 # task: 403 → 人类可读错误,让前端能引导用户去 GCP Console 修
                 msg = str(exc)
                 if "403" in msg or "PERMISSION_DENIED" in msg or "forbidden" in msg.lower():
-                    raise RuntimeError(
+                    _friendly = RuntimeError(
                         "Vertex AI 调用被拒(403)。请在 Google Cloud Console 检查你的 Service Account:\n"
                         "  1. 该 SA 在此 project 下有「Vertex AI User」角色 (roles/aiplatform.user)\n"
                         "  2. 该 project 已启用 Vertex AI API:\n"
                         "     https://console.cloud.google.com/apis/library/aiplatform.googleapis.com\n"
                         "  3. project 已开 billing(免费试用 / 付费账号都需要绑定 billing)"
-                    ) from exc
+                    )
+                    # 附 status_code=403 让 classify_provider_error(_http_status)归类为 auth。
+                    # 裸 RuntimeError 无状态码,友好中文文案又不含英文 "forbidden"/"http error 403" 标记
+                    # → 分类落空,403 被误当未知错误走「请重试」泛化兜底(BYOK 用户按提示连撞)。
+                    _friendly.status_code = 403  # type: ignore[attr-defined]
+                    raise _friendly from exc
                 raise
         else:
             raise last_exc  # type: ignore[misc]
@@ -249,18 +292,31 @@ class _VertexBackend:
             "reasoning_tokens": thoughts,
             "total_tokens": total,
         }
+        # 截断信号:openai 侧一直采 finish_reason,vertex 之前完全不采 → 上游 GM 输出被
+        # max_output_tokens 截断时 app.py 的截断告警对 Gemini 恒静默。归一为 length 补齐。
+        fr = _finish_reason_normalized(resp)
+        if fr:
+            self.last_usage["finish_reason"] = fr
 
-    def call_structured(self, system: str, messages: list[dict], max_tokens: int) -> str:
+    def call_structured(self, system: str, messages: list[dict], max_tokens: int,
+                        thinking_budget: int | None = None) -> str:
         self._ensure_available()
         from google.genai import types
 
         contents = self._to_contents(messages, types)
+        # thinking_budget=None → 沿用用户 effort 偏好(现行为,task 141);显式 0 → 结构化微任务禁
+        # 深思。对齐 _harness.call_agent_json 的 no_think 强约束:思考模型对判定类 prompt 会无界思考
+        # 吃光预算(268 实锤族),vertex 无 tool_schema 走本函数,此前 no_think 在 vertex 结构化路径失效。
+        _budget = (
+            thinking_budget if thinking_budget is not None
+            else _resolve_thinking_budget(self.user_id, self.model_name)
+        )
         config_kwargs = {
             "system_instruction": system,
             "max_output_tokens": max_tokens,
             "temperature": 0.1,
-            "thinking_config": types.ThinkingConfig(  # task 141
-                thinking_budget=_resolve_thinking_budget(self.user_id, self.model_name),
+            "thinking_config": types.ThinkingConfig(
+                thinking_budget=_budget,
             ),
         }
         try:
@@ -287,7 +343,11 @@ class _VertexBackend:
             system_instruction=system,
             max_output_tokens=max(max_tokens, 2048),
             temperature=0.9,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            # 按用户 effort(ModelPopover 思考深度)。原硬编码 0 是死设置:call() 已按用户
+            # budget 生效,唯独流式(实际游玩热路径)恒 0 → UI「思考深度」对 Gemini 流式无效。
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=_resolve_thinking_budget(self.user_id, self.model_name),
+            ),
         )
         for chunk in self.client.models.generate_content_stream(
             model=self.model_name,
@@ -296,9 +356,13 @@ class _VertexBackend:
         ):
             if getattr(chunk, "usage_metadata", None):
                 self._capture_usage(chunk)
-            text = getattr(chunk, "text", None)
-            if text:
-                yield text
+            # 纯文本流(Iterator[str])无法承载 reasoning 事件,故思考部分(part.thought=True)在此
+            # 丢弃(与 openai_compat 纯 stream() 丢 reasoning_content 一致),绝不当正文 yield 污染叙事。
+            # 需要展示思考流的是 stream_with_mcp_loop(下方以 {"type":"reasoning"} 事件单独 yield)。
+            for _is_thought, _text in _iter_part_texts(chunk):
+                if _is_thought:
+                    continue
+                yield _text
 
     # task 70：Vertex 支持 native function_declarations
     supports_native_tools = True
@@ -409,12 +473,15 @@ class _VertexBackend:
             current_text_parts: list[Any] = []
             current_text_str = ""
 
+            # thinking_budget 按用户 effort(ModelPopover);原两条流式分支硬编码 0 = 死设置。
+            # thinking_config 是每请求生成参数,与显式缓存(缓存的是 system+tools)互不冲突。
+            _budget = _resolve_thinking_budget(self.user_id, self.model_name)
             if _cache_name:
                 config = types.GenerateContentConfig(
                     cached_content=_cache_name,
                     max_output_tokens=max(max_tokens, 2048),
                     temperature=0.9,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    thinking_config=types.ThinkingConfig(thinking_budget=_budget),
                 )
             else:
                 config = types.GenerateContentConfig(
@@ -422,7 +489,7 @@ class _VertexBackend:
                     max_output_tokens=max(max_tokens, 2048),
                     temperature=0.9,
                     tools=tools_param,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    thinking_config=types.ThinkingConfig(thinking_budget=_budget),
                 )
             for chunk in self.client.models.generate_content_stream(  # type: ignore[assignment]
                 model=self.model_name, contents=contents, config=config,
@@ -439,9 +506,14 @@ class _VertexBackend:
                 for part in (getattr(content, "parts", None) or []):
                     ptext = getattr(part, "text", None)
                     if ptext:
-                        current_text_str += ptext
-                        current_text_parts.append(types.Part.from_text(text=ptext))
-                        yield {"type": "text", "text": ptext}
+                        if getattr(part, "thought", False):
+                            # 思考流:单独走 reasoning 事件,绝不混进正文、不回灌 contents(model 回合)。
+                            # 对齐 openai_compat 的 reasoning 事件形态;消费侧 chat_pipeline/gm.py 已就绪。
+                            yield {"type": "reasoning", "text": ptext}
+                        else:
+                            current_text_str += ptext
+                            current_text_parts.append(types.Part.from_text(text=ptext))
+                            yield {"type": "text", "text": ptext}
                     fc = getattr(part, "function_call", None)
                     if fc:
                         full_name = getattr(fc, "name", "") or ""

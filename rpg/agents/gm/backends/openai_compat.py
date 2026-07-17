@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import re
 import time
 from collections.abc import Iterator
 from typing import Any, Dict, Set
@@ -386,6 +385,7 @@ class _OpenAICompatBackend:
         sep = "__"
         from core.config import tiered_tools_enabled as _tiered_enabled
         from core.config import tool_window_size as _tool_window
+        from agents.gm.backends import _tiered
         # 窗口外工具进 load_tools 目录按需加载(见 _tiered.py)。默认 16(原硬编码 64 → 91 个
         # 工具里 64 个仍每轮全发 ≈ 6.7k token,阶梯化形同虚设;收到 16 后每轮工具 token 大降)。
         _WINDOW = _tool_window()
@@ -396,9 +396,7 @@ class _OpenAICompatBackend:
             tname = str(t.get("name", ""))
             if not sid or not tname:
                 return None
-            safe_sid = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
-            safe_tname = re.sub(r"[^A-Za-z0-9_-]", "_", tname)
-            full_name = f"{safe_sid}{sep}{safe_tname}"[:64]
+            full_name = _tiered.tool_full_name(t)  # 名字编码收敛到 _tiered(三 backend 单一真源)
             schema_raw = t.get("schema") or {"type": "object", "properties": {}}
             if not isinstance(schema_raw, dict):
                 schema_raw = {"type": "object", "properties": {}}
@@ -413,48 +411,26 @@ class _OpenAICompatBackend:
                 },
             }
 
-        # 窗口内工具直接进 tools(行为同旧逻辑:前 _WINDOW 个,已按 _rank 排序,酒馆自管理排最前)。
+        # 阶梯化切窗口 / 建目录收敛到 _tiered(与 anthropic/vertex 单一真源,消双维护)。窗口内完整
+        # schema 直发;窗口外登记进目录由 load_tools 按需加载(append-only 不破前缀缓存);
+        # RPG_TIERED_TOOLS=0 → 窗口外直接丢弃(旧 [:64] 硬截断)。unified 工具产物本地各自 _mk_openai_tool。
+        window_tools, overflow_index, catalog_lines = _tiered.split_window(
+            mcp_tools, _WINDOW, _tiered_enabled())
+        loaded_overflow: set[str] = set()
         openai_tools = []
-        for t in mcp_tools[:_WINDOW]:
+        for t in window_tools:
             m = _mk_openai_tool(t)
             if m:
                 openai_tools.append(m)
-
-        # 阶梯化:窗口外工具不直接塞 schema,登记进「目录」由 load_tools 按需加载。append-only
-        # (只往 openai_tools 末尾加、不重排/删)→ 不破坏 provider 的前缀缓存。
-        # RPG_TIERED_TOOLS=0 → 退回旧行为(窗口外工具直接丢弃,即原 [:64] 硬截断)。
-        _overflow_index: dict[str, dict[str, Any]] = {}  # openai function name → unified tool
-        if _tiered_enabled():
-            _cat_lines = []
-            for t in mcp_tools[_WINDOW:]:
-                m = _mk_openai_tool(t)
-                if not m:
-                    continue
-                fn = m["function"]["name"]
-                _overflow_index[fn] = t
-                _d = (str(t.get("description") or "").splitlines() or [""])[0][:64]
-                _cat_lines.append(f"- {fn}: {_d}")
-            if _overflow_index:
-                openai_tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": "tiered" + sep + "load_tools",
-                        "description": (
-                            "本对话还有以下工具未加载。需要用到时,先用本工具按 name 加载(加载后下一步才能调用)。"
-                            "可加载工具:\n" + "\n".join(_cat_lines)
-                        ),
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "names": {
-                                    "type": "array", "items": {"type": "string"},
-                                    "description": "要加载的工具完整 name(取自上面目录)",
-                                },
-                            },
-                            "required": ["names"],
-                        },
-                    },
-                })
+        if catalog_lines:
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": _tiered.LOAD_TOOLS_FULL_NAME,
+                    "description": _tiered.load_tools_description(catalog_lines),
+                    "parameters": _tiered.LOAD_TOOLS_PARAMS,
+                },
+            })
 
         if not openai_tools:
             for chunk in self.stream(system, messages, max_tokens=max_tokens):
@@ -566,31 +542,19 @@ class _OpenAICompatBackend:
                         args = {}
                 except Exception:
                     args = {}
-                # 阶梯化:load_tools 不路由 dispatcher,直接把目录里的工具 schema append 进
-                # openai_tools(只增不重排),返回 ack 让模型下一轮直接调用它们。
-                if server_id == "tiered" and tool_name == "load_tools":
-                    want = args.get("names") or []
-                    if isinstance(want, str):
-                        want = [want]
-                    have = {ot["function"]["name"] for ot in openai_tools}
-                    loaded, missing = [], []
-                    for nm in want:
-                        nm = str(nm)
-                        t = _overflow_index.get(nm)
-                        if not t:
-                            missing.append(nm)
-                            continue
-                        if nm not in have:
-                            m = _mk_openai_tool(t)
-                            if m:
-                                openai_tools.append(m)
-                                have.add(nm)
-                        loaded.append(nm)
-                    ack = ("已加载: " + ", ".join(loaded) + "。下一步可直接调用它们。") if loaded else "没有匹配到可加载的工具。"
-                    if missing:
-                        ack += " 未找到: " + ", ".join(missing) + "。"
+                # 阶梯化:load_tools 不路由 dispatcher,把目录里的工具 schema append 进 openai_tools
+                # (只增不重排,append-only 不破前缀缓存),返回 ack 让模型下一轮直接调用它们。解析逻辑
+                # 收敛到 _tiered.resolve_load(与 anthropic/vertex 单一真源)。ok=bool(newly):有新工具被
+                # 加载即真(空 / 全未找到 → 假);仅「重复请求已加载工具」这一极罕见 edge 下与旧 bool(loaded)
+                # 的 True 有别,ack 明细一致、无 UX 影响。
+                if _tiered.is_load_tools(server_id, tool_name):
+                    newly, ack = _tiered.resolve_load(args, overflow_index, loaded_overflow)
+                    for t in newly:
+                        m = _mk_openai_tool(t)
+                        if m:
+                            openai_tools.append(m)
                     yield {"type": "tool_call", "server_id": "tiered", "tool": "load_tools", "arguments": args}
-                    yield {"type": "tool_result", "ok": bool(loaded), "result": ack, "error": None}
+                    yield {"type": "tool_result", "ok": bool(newly), "result": ack, "error": None}
                     oai_messages.append({
                         "role": "tool",
                         "tool_call_id": buf["id"] or f"call_{idx}",

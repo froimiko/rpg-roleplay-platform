@@ -5,6 +5,7 @@
 import { StateField, StateEffect, Prec } from '@codemirror/state';
 import { EditorView, Decoration, keymap, showPanel } from '@codemirror/view';
 import { setPanelVisible } from './md-panel.js';
+import { consumeSSE } from './sse-consume.js';
 
 // ── 待定区状态(高亮 + 范围 + 改写时的原文,用于放弃还原)──────────────────
 const setPending = StateEffect.define();   // {from,to,original,busy} | null
@@ -78,30 +79,6 @@ export function aiContinueExtension() {
   return [pendingField, showPanel.of(pendingPanel), pendingKeymap];
 }
 
-// ── SSE 读取 ───────────────────────────────────────────────────────────
-async function consumeSSE(res, onEvent, signal) {
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = '';
-  for (;;) {
-    if (signal?.aborted) { try { reader.cancel(); } catch (_) {} break; }
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf('\n\n')) >= 0) {
-      const raw = buf.slice(0, i); buf = buf.slice(i + 2);
-      let ev = 'message', data = '';
-      for (const line of raw.split('\n')) {
-        if (line.startsWith('event:')) ev = line.slice(6).trim();
-        else if (line.startsWith('data:')) data += line.slice(5).replace(/^ /, '');
-      }
-      if (data) { let j = {}; try { j = JSON.parse(data); } catch (_) {} onEvent(ev, j); }
-    }
-  }
-}
-
 const BEFORE_CAP = 4000, AFTER_CAP = 1500;
 
 // ── 主入口:对一个 EditorView 跑一次续写/改写 ────────────────────────────
@@ -164,7 +141,7 @@ export async function runContinue(view, opts = {}) {
     await consumeSSE(res, (ev, data) => {
       if (ev === 'token') insertToken(data.text || '');
       else if (ev === 'error') errMsg = data.message || '生成失败';
-    }, ctrl.signal);
+    }, { signal: ctrl.signal });
 
     const p = pendingState(view);
     if (!p) { opts.onState?.('cancel'); return; }

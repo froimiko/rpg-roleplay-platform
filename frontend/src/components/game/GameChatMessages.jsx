@@ -11,6 +11,7 @@ import { RpgMarkdown } from '../../markdown-render.jsx';
 import AvatarImg from '../AvatarImg.jsx';
 import { stripNarrativeOps } from '../../narrative-strip.js';
 import { lsGetJSON, lsSetJSON } from '../../lib/storage.js';
+import { copyText } from '../../lib/clipboard.js';
 
 // ----------------------------- CHAT --------------------------------------
 function MsgActions({ text, ts, msgIndex, totalMsgs, commitId, saveId, role, meta, memoryText }) {
@@ -30,25 +31,7 @@ function MsgActions({ text, ts, msgIndex, totalMsgs, commitId, saveId, role, met
   const hasMemory = !!(memoryText && memoryText.trim());
   const doCopy = async (includeMemory) => {
     const txt = includeMemory && hasMemory ? memoryText.trim() + "\n\n---\n\n" + (text || "") : (text || "");
-    let ok = false;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(txt);
-        ok = true;
-      }
-    } catch (e) {}
-    if (!ok) {
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = txt;
-        ta.style.position = "fixed";
-        ta.style.top = "-1000px";
-        document.body.appendChild(ta);
-        ta.select();
-        ok = document.execCommand("copy");
-        document.body.removeChild(ta);
-      } catch (e) {}
-    }
+    const ok = await copyText(txt);
     setCopied(true);
     if (window.toast) {
       if (ok) window.toast(t('game.app.msg.copied'), { kind: "ok", detail: txt.slice(0, 40) + (txt.length > 40 ? "…" : ""), duration: 1600 });

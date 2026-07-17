@@ -10,7 +10,7 @@ import secrets
 
 from fastapi import Depends, HTTPException, Request
 
-from ...db import connect
+from ...db import connect, limit_value
 from .._deps import _client_ip, json_response
 from ._shared import router, _require_admin
 
@@ -51,7 +51,7 @@ async def api_list_allowlist(
     admin=Depends(_require_admin),
 ):
     """列出白名单条目（管理员用）。"""
-    limit = max(1, min(500, limit))
+    limit = limit_value(limit, default=100, maximum=500)
     with connect() as db:
         if batch:
             rows = db.execute(

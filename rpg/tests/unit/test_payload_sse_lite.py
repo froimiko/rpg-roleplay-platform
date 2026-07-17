@@ -67,8 +67,9 @@ class GameRouteUsesLiteOnSse(unittest.TestCase):
     def test_json_bootstrap_endpoints_keep_full_catalog(self):
         # /api/new 与 /api/state 的 JSON 响应仍用整份 _payload(前端选择器要目录)。
         # 后续修复给这两处包了 _sanitize_payload(裸控制字符兜底),不变量不受影响。
-        self.assertIn('JSONResponse({"ok": True, "backup": backup, "state": _sanitize_payload(_payload(api_user))})', GAME_PY)
-        self.assertIn('JSONResponse({"ok": True, "state": _sanitize_payload(_payload(api_user))})', GAME_PY)
+        # 信封已收口权威 json_response(2026-07-17 全站信封统一),守卫锚点跟随;不变量不变。
+        self.assertIn('json_response({"ok": True, "backup": backup, "state": _sanitize_payload(_payload(api_user))})', GAME_PY)
+        self.assertIn('json_response({"ok": True, "state": _sanitize_payload(_payload(api_user))})', GAME_PY)
 
     def test_lite_imported(self):
         self.assertIn("_payload_sse", GAME_PY)

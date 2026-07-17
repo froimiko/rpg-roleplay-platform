@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_admin, get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, ErrorResponse, GenericOkResponse
@@ -119,7 +120,7 @@ async def api_models(
     # selected 必须 = 当前真正生效的模型(per-save session_model > 用户 gm 偏好 > 全局),与
     # _get_gm/_payload 同口径。否则游戏内切模型(写 per-save session_model)后,picker 重拉 /api/models
     # 仍读到用户 gm 默认 → 高亮回退「列表第一个」(线上反馈:选任何模型都跳回 llama 3.1)。缺则回退全局。
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "models": _inject_health(enriched),
         "selected": _resolve_effective_model_view(api_user, catalog) or selected_model(catalog),
@@ -186,7 +187,7 @@ async def api_models_health_refresh_all(
                 pass
 
     threading.Thread(target=_sweep, daemon=True).start()
-    return JSONResponse({"ok": True, "scheduled": len(targets)})
+    return json_response({"ok": True, "scheduled": len(targets)})
 
 
 @router.get("/api/models/health")
@@ -196,7 +197,7 @@ async def api_models_health(
     """读全部 health cache 的快照,前端可定期 poll 这个轻量 endpoint
     替代 reload /api/models 整树。"""
     import model_probe
-    return JSONResponse({"ok": True, "health": model_probe.all_health()})
+    return json_response({"ok": True, "health": model_probe.all_health()})
 
 
 @router.post("/api/models/select", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -239,7 +240,7 @@ async def api_models_select(
         _uid_for_check = int(api_user["id"]) if api_user and api_user.get("id") else None
         _block_reason = vertex_selection_blocked(_uid_for_check)
         if _block_reason:
-            return JSONResponse(
+            return json_response(
                 {"ok": False, "error": _block_reason, "needs_model_config": True},
                 status_code=400,
             )
@@ -263,7 +264,7 @@ async def api_models_select(
         # selected 必须回报【用户刚选的】per-save 模型,而非 selected_model()(=全局 catalog 默认,
         # 常是 gemini/llama)。否则前端拿 select 响应的 selected = 全局默认 → 选完即跳默认
         # (线上反馈:选任何模型都回退列表第一个)。与 per-user 路径(下方)返回口径一致。
-        return JSONResponse({
+        return json_response({
             "ok": True,
             "scope": "save",
             "save_id": save_id,
@@ -289,7 +290,7 @@ async def api_models_select(
         catalog = select_model(api_id, model_id)
         with _state_lock:
             _gm_by_user.clear()
-        return JSONResponse({"ok": True, "scope": "global", "models": catalog, "selected": selected_model(catalog), "state": _payload(api_user)})
+        return json_response({"ok": True, "scope": "global", "models": catalog, "selected": selected_model(catalog), "state": _payload(api_user)})
 
     # per-user 路径:写 user_preferences.preferences['gm.api_id'/'gm.model_real_name']
     # 只清当前用户 GM 缓存。任何登录用户都能用。
@@ -331,7 +332,7 @@ async def api_models_select(
         _gm_by_user.pop(uid, None)
     # selected 必须反映「用户刚选的模型」,而非 selected_model()(=全局 app_config 默认,常是 gemini)。
     # 否则前端拿到 select 响应的 selected 会是全局默认 → 选完即跳默认(用户报「修十次没好」)。
-    return JSONResponse({"ok": True, "scope": "user", "api_id": api_id, "model_id": model_id,
+    return json_response({"ok": True, "scope": "user", "api_id": api_id, "model_id": model_id,
                          "selected": {"api_id": api_id, "model_id": model_id, "real_name": model_id}})
 
 
@@ -343,7 +344,7 @@ async def api_models_upsert_api(
     from app import selected_model, upsert_api
     body_dict = body.model_dump()
     catalog = upsert_api(body_dict)
-    return JSONResponse({"ok": True, "models": catalog, "selected": selected_model(catalog)})
+    return json_response({"ok": True, "models": catalog, "selected": selected_model(catalog)})
 
 
 @router.post("/api/models/model", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -357,7 +358,7 @@ async def api_models_upsert_model(
         k: v for k, v in body_dict.items() if k != "api_id" and k != "model"
     }
     catalog = upsert_model(body_dict.get("api_id", ""), model_payload)
-    return JSONResponse({"ok": True, "models": catalog, "selected": selected_model(catalog)})
+    return json_response({"ok": True, "models": catalog, "selected": selected_model(catalog)})
 
 
 @router.post("/api/models/model/delete", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
@@ -368,7 +369,7 @@ async def api_models_delete_model(
     from app import delete_model, selected_model
     body_dict = body.model_dump(exclude_none=True)
     catalog = delete_model(body_dict.get("api_id", ""), body_dict.get("model_id") or body_dict.get("real_name", ""))
-    return JSONResponse({"ok": True, "models": catalog, "selected": selected_model(catalog)})
+    return json_response({"ok": True, "models": catalog, "selected": selected_model(catalog)})
 
 
 @router.get("/api/models/remote")
@@ -384,7 +385,7 @@ async def api_models_remote(
         return blocked
     force = request.query_params.get("refresh") == "1"
     import model_probe
-    return JSONResponse(model_probe.list_remote_models(
+    return json_response(model_probe.list_remote_models(
         api_id, force_refresh=force,
         user_id=api_user["id"] if api_user else None,
     ))
@@ -414,7 +415,7 @@ async def api_models_remote_sync(
 
     user_id = int(api_user["id"]) if api_user and api_user.get("id") else None
     if not user_id:
-        return JSONResponse({"ok": False, "error": "需要登录"}, status_code=401)
+        return json_response({"ok": False, "error": "需要登录"}, status_code=401)
 
     try:
         body = await request.json()
@@ -422,7 +423,7 @@ async def api_models_remote_sync(
         body = {}
     api_id = normalize_api_id((body or {}).get("api_id", ""))
     if not api_id:
-        return JSONResponse({"ok": False, "error": "api_id 不能为空"}, status_code=400)
+        return json_response({"ok": False, "error": "api_id 不能为空"}, status_code=400)
     blocked = _check_probe_permission(api_user, api_id)
     if blocked:
         return blocked
@@ -453,11 +454,11 @@ async def api_models_remote_sync(
             from platform_app.user_credentials import _validate_base_url
             _validate_base_url(base_url)
         except ValueError as exc:
-            return JSONResponse({"ok": False, "error": str(exc), "models": []}, status_code=400)
+            return json_response({"ok": False, "error": str(exc), "models": []}, status_code=400)
     # 全局没这个 provider(自建中转站)→ 必须有 base_url 才能调,且按 openai_compat 路由
     kind = meta_api.get("kind") or ("openai_compat" if base_url else api_id)
     if not api and not base_url:
-        return JSONResponse(
+        return json_response(
             {"ok": False, "error": f"未知 provider「{api_id}」需先在凭证里填写 base_url", "models": []},
             status_code=400,
         )
@@ -477,7 +478,7 @@ async def api_models_remote_sync(
         api_override=api_meta,
     )
     if not remote.get("ok"):
-        return JSONResponse({**remote, "api_id": api_id, "synced": 0})
+        return json_response({**remote, "api_id": api_id, "synced": 0})
 
     import model_probe as _mp
     synced_models: list[dict[str, Any]] = []
@@ -501,7 +502,7 @@ async def api_models_remote_sync(
     # 写每用户 overlay(绝不写全局)
     user_models.replace_synced_models(user_id, api_id, synced_models)
     saved = load_catalog_for_user(user_id)
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "api_id": api_id,
         "synced": len(synced_models),
@@ -523,7 +524,7 @@ async def api_models_diff(
     if blocked:
         return blocked
     import model_probe
-    return JSONResponse(model_probe.diff_catalog(api_id, user_id=api_user["id"] if api_user else None))
+    return json_response(model_probe.diff_catalog(api_id, user_id=api_user["id"] if api_user else None))
 
 
 @router.post("/api/models/probe", response_model=GenericOkResponse, responses={**COMMON_ERROR_RESPONSES, 403: {"model": ErrorResponse}})
@@ -543,12 +544,12 @@ async def api_models_probe(
         from platform_app import user_credentials as _ucreds
         cred = _ucreds.get_credential(api_user["id"], api_id)
         if not cred:
-            return JSONResponse(
+            return json_response(
                 {"ok": False, "error": "需要先在「个人主页 → API 凭证」中配置该 provider 的 key 才能测试"},
                 status_code=403,
             )
     import model_probe
-    return JSONResponse(model_probe.probe_availability(
+    return json_response(model_probe.probe_availability(
         api_id,
         body_dict.get("model"),
         timeout_sec=int(body_dict.get("timeout", 15)),
@@ -573,14 +574,14 @@ async def api_models_pricing(
     catalog = load_model_catalog()
     api = find_api(catalog, api_id)
     if not api:
-        return JSONResponse({"ok": False, "error": f"api_id 不存在: {api_id}"})
+        return json_response({"ok": False, "error": f"api_id 不存在: {api_id}"})
     model = find_model(api, model_id)
     real_name = (model or {}).get("real_name") if model else model_id
     # 先用 api_id 查（按 provider 分组的定价表），找不到再用 kind 兜底
     pricing = model_probe.get_pricing(api_id, real_name, (model or {}).get("pricing"))
     if not pricing:
         pricing = model_probe.get_pricing(api.get("kind") or "", real_name)
-    return JSONResponse({"ok": True, "api_id": api_id, "model": real_name, "pricing": pricing})
+    return json_response({"ok": True, "api_id": api_id, "model": real_name, "pricing": pricing})
 
 
 @router.get("/api/models/report")
@@ -596,7 +597,7 @@ async def api_models_report(
         return blocked
     probe = request.query_params.get("probe") == "1"
     import model_probe
-    return JSONResponse(model_probe.full_report(
+    return json_response(model_probe.full_report(
         api_id, probe_model=probe,
         user_id=api_user["id"] if api_user else None,
     ))
@@ -619,11 +620,11 @@ async def api_models_capabilities(
     catalog = load_model_catalog()
     api = find_api(catalog, api_id)
     if not api:
-        return JSONResponse({"ok": False, "error": f"api_id 不存在: {api_id}"})
+        return json_response({"ok": False, "error": f"api_id 不存在: {api_id}"})
     model = find_model(api, model_id)
     real_name = (model or {}).get("real_name") if model else model_id
     caps = model_probe.get_capabilities(api_id, real_name, (model or {}).get("capabilities"))
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "api_id": api_id,
         "model": real_name,
@@ -638,4 +639,4 @@ async def api_models_capability_labels(
 ) -> JSONResponse:
     """返回所有已知能力的标签词典（前端筛选器/徽标用）"""
     import model_probe
-    return JSONResponse({"ok": True, "labels": model_probe.CAPABILITY_LABELS})
+    return json_response({"ok": True, "labels": model_probe.CAPABILITY_LABELS})

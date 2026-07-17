@@ -8,6 +8,7 @@ import { undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
 import { toMd } from '../../lib/md-serialize.js';
 import { runContinue } from '../../lib/md-continue.js';
+import { copyText } from '../../lib/clipboard.js';
 import { showChapterDiff, hasChapterDiff } from '../../lib/md-diff.js';
 import MdEditorAgent from '../MdEditorAgent.jsx';
 import EditorKbPanel, { useKbHealthBadge } from '../EditorKbPanel.jsx';
@@ -132,8 +133,8 @@ export default function MdEditorPage() {
   const doRedo = useCallback(() => withView((v) => redo(v)), [withView]);
   const doSelectAll = useCallback(() => withView((v) => selectAll(v)), [withView]);
   const doFind = useCallback(() => withView((v) => openSearchPanel(v)), [withView]);
-  const doCopy = useCallback(() => withView(async (v) => { const s = v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to); if (!s) return; try { await navigator.clipboard.writeText(s); } catch (_) { toast(t('md_editor.toast.copy_failed_kbd', { kbd: '⌘C' }), { kind: 'warn' }); } }), [withView, t]);
-  const doCut = useCallback(() => withView(async (v) => { const sel = v.state.selection.main; const s = v.state.sliceDoc(sel.from, sel.to); if (!s) return; try { await navigator.clipboard.writeText(s); v.dispatch({ changes: { from: sel.from, to: sel.to } }); } catch (_) { toast(t('md_editor.toast.cut_failed_kbd', { kbd: '⌘X' }), { kind: 'warn' }); } }), [withView, t]);
+  const doCopy = useCallback(() => withView(async (v) => { const s = v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to); if (!s) return; const ok = await copyText(s); if (!ok) toast(t('md_editor.toast.copy_failed_kbd', { kbd: '⌘C' }), { kind: 'warn' }); }), [withView, t]);
+  const doCut = useCallback(() => withView(async (v) => { const sel = v.state.selection.main; const s = v.state.sliceDoc(sel.from, sel.to); if (!s) return; const ok = await copyText(s); if (!ok) { toast(t('md_editor.toast.cut_failed_kbd', { kbd: '⌘X' }), { kind: 'warn' }); return; } v.dispatch({ changes: { from: sel.from, to: sel.to } }); }), [withView, t]);
   const doPaste = useCallback(() => withView(async (v) => { try { const txt = await navigator.clipboard.readText(); if (!txt) return; const sel = v.state.selection.main; v.dispatch({ changes: { from: sel.from, to: sel.to, insert: txt }, selection: { anchor: sel.from + txt.length } }); } catch (_) { toast(t('md_editor.toast.paste_failed_kbd', { kbd: '⌘V' }), { kind: 'warn' }); } }), [withView, t]);
   const doGotoLine = useCallback(() => withView((v) => { const raw = window.prompt(t('md_editor.prompt.goto_line')); const n = Number(raw); if (!n || n < 1) return; const line = v.state.doc.line(Math.min(Math.floor(n), v.state.doc.lines)); v.dispatch({ selection: { anchor: line.from }, scrollIntoView: true }); }), [withView, t]);
 

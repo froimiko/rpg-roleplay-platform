@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 
@@ -40,7 +41,7 @@ async def api_saves_timeline(
         current_chapter = 1
     current_chapter = max(1, int(current_chapter))
 
-    return JSONResponse({
+    return json_response({
         "ok": True,
         "script_anchors": script_anchors,
         "save_phases": save_phases,

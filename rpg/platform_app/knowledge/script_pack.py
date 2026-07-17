@@ -38,14 +38,19 @@ MAX_MEMBER_BYTES = 200 * 1024 * 1024  # 单成员解压上限
 MAX_JSONL_ROWS = 500_000  # 单个 JSONL 行数上限,防 materialize 打爆内存
 
 
-def _safe_member_read(zf: zipfile.ZipFile, name: str) -> bytes:
-    """有界解压单个成员:ZipInfo 预检 + 实读上限,双重防谎报 header 的炸弹。"""
+def _safe_member_read(zf: zipfile.ZipFile, name: str, max_bytes: int | None = None) -> bytes:
+    """有界解压单个成员:ZipInfo 预检 + 实读上限,双重防谎报 header 的炸弹。
+
+    max_bytes 缺省时沿用模块级 MAX_MEMBER_BYTES;调用方(如 imports.py 的 batch-import)
+    可传参自定义上限,复用同一份 CWE-409 防线。
+    """
+    limit = MAX_MEMBER_BYTES if max_bytes is None else max_bytes
     info = zf.getinfo(name)
-    if info.file_size > MAX_MEMBER_BYTES:
+    if info.file_size > limit:
         raise ValueError(f"成员解压后过大: {name}")
     with zf.open(name) as fh:
-        data = fh.read(MAX_MEMBER_BYTES + 1)
-    if len(data) > MAX_MEMBER_BYTES:
+        data = fh.read(limit + 1)
+    if len(data) > limit:
         raise ValueError(f"成员解压超限: {name}")
     return data
 

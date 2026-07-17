@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, StateResponse
@@ -40,7 +41,7 @@ async def api_worldline_variable(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
     # 同步写入 DB(保证前端管理面板可见)
@@ -49,7 +50,7 @@ async def api_worldline_variable(
             platform_knowledge.set_worldline_variable(persist_user_id, active_save_id, key, value, source="user")
         except Exception:
             pass
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})
 
 
 @router.post("/api/worldline/variable/remove", response_model=StateResponse, responses=COMMON_ERROR_RESPONSES)
@@ -78,7 +79,7 @@ async def api_worldline_variable_remove(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
     if persist_user_id and active_save_id:
@@ -86,4 +87,4 @@ async def api_worldline_variable_remove(
             platform_knowledge.remove_worldline_variable(persist_user_id, active_save_id, key)
         except Exception:
             pass
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})

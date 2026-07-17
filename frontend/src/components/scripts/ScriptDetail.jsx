@@ -21,6 +21,7 @@ import { VersionHistoryDrawer } from './VersionHistoryDrawer.jsx';
 import { SharingModeSelector } from './SharingModeSelector.jsx';
 import { CoverFrame } from './CoverFrame.jsx';
 import { KbExtractPanel } from './KbExtractPanel.jsx';
+import { isCredentialsError } from '../../lib/creds.js';
 import CSHeader from '@cloudscape-design/components/header';
 import CSContainer from '@cloudscape-design/components/container';
 import CSSpaceBetween from '@cloudscape-design/components/space-between';
@@ -132,7 +133,7 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
     try {
       const r = await window.api.cards.auditCards(s.id, auditSel.api_id, auditSel.model);
       if (r && r.ok === false) {
-        if (r.needs_credentials) {
+        if (isCredentialsError(r)) {
           window.__apiToast?.(t('scripts.audit.need_key', { defaultValue: '该模型还没配 API Key' }),
             { kind: 'warn', detail: t('scripts.audit.need_key_hint', { defaultValue: '去「设置 → API 与模型」配置后重试,或在上面换一个已配置的模型。' }) });
         } else {

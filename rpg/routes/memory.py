@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from platform_app.api._deps import json_response
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, StateResponse
@@ -47,10 +48,10 @@ async def api_memory_mode(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})
 
 
 @router.post("/api/memory/add", response_model=StateResponse, responses=COMMON_ERROR_RESPONSES)
@@ -76,7 +77,7 @@ async def api_memory_add(
         ms = get_memory_settings(int(api_user.get("id", 0)))
         current_pinned = state.data.get("memory", {}).get("pinned", [])
         if len(current_pinned) >= ms.pinned_max:
-            return JSONResponse(
+            return json_response(
                 {
                     "ok": False,
                     "error": f"固定记忆已达上限 {ms.pinned_max} 条，请先删除旧条目再添加",
@@ -101,10 +102,10 @@ async def api_memory_add(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})
 
 
 @router.post("/api/memory/update", response_model=StateResponse, responses=COMMON_ERROR_RESPONSES)
@@ -120,23 +121,23 @@ async def api_memory_update(
     index = body_dict.get("index")
     text = (body_dict.get("text") or "").strip()
     if index is None or not isinstance(index, int) or index < 0:
-        return JSONResponse({"ok": False, "error": "index 必须是非负整数"}, status_code=400)
+        return json_response({"ok": False, "error": "index 必须是非负整数"}, status_code=400)
     if not text:
-        return JSONResponse({"ok": False, "error": "内容不能为空"}, status_code=400)
+        return json_response({"ok": False, "error": "内容不能为空"}, status_code=400)
     if bucket not in {"notes", "pinned", "facts", "resources", "abilities"}:
-        return JSONResponse({"ok": False, "error": "该记忆桶不支持编辑"}, status_code=400)
+        return json_response({"ok": False, "error": "该记忆桶不支持编辑"}, status_code=400)
     state = _ensure_loaded(api_user)
     items = state.data.setdefault("memory", {}).setdefault(bucket, [])
     if index >= len(items):
-        return JSONResponse({"ok": False, "error": "条目不存在(可能已被修改,请刷新)"}, status_code=400)
+        return json_response({"ok": False, "error": "条目不存在(可能已被修改,请刷新)"}, status_code=400)
     if not isinstance(items[index], str):
-        return JSONResponse({"ok": False, "error": "该条目不是可编辑的文本"}, status_code=400)
+        return json_response({"ok": False, "error": "该条目不是可编辑的文本"}, status_code=400)
     # 同步 legacy bucket + 结构化 items(否则 GM 上下文只读 items、看到旧文本)。
     if not state.edit_memory(bucket, index, text):
-        return JSONResponse({"ok": False, "error": "编辑失败"}, status_code=400)
+        return json_response({"ok": False, "error": "编辑失败"}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})
 
 
 @router.post("/api/memory/remove", response_model=StateResponse, responses=COMMON_ERROR_RESPONSES)
@@ -154,7 +155,7 @@ async def api_memory_remove(
     body_dict = body.model_dump(exclude_none=True)
     index = body_dict.get("index")
     if index is None or (isinstance(index, int) and index < 0):
-        return JSONResponse({"ok": False, "error": "index 必须是非负整数"}, status_code=400)
+        return json_response({"ok": False, "error": "index 必须是非负整数"}, status_code=400)
     state = _ensure_loaded(api_user)
     from tools_dsl.ui_dispatch_helper import dispatch_ui_tool
     result = dispatch_ui_tool(
@@ -168,7 +169,7 @@ async def api_memory_remove(
         state=state,
     )
     if not result.ok:
-        return JSONResponse({"ok": False, "error": result.error}, status_code=400)
+        return json_response({"ok": False, "error": result.error}, status_code=400)
     state.save()
     _persist_runtime_checkpoint(state, api_user)
-    return JSONResponse({"ok": True, "state": _payload(api_user)})
+    return json_response({"ok": True, "state": _payload(api_user)})

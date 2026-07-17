@@ -5,6 +5,7 @@ import { Icon } from '../icons.jsx';
 import { MField, EmptyState } from './shared.jsx';
 import { sha256hex } from '../../lib/crypto-safe.js';
 import { feedbackDecisionLabel } from '../../lib/feedback.js';
+import { fmtTimeFallback } from '../../data-loader.js';
 
 const CONSENT_TEXT = '我已阅读 AUP §2.J,理解不得包含成人主题节选,同意(此操作记录我的同意)';
 const AUP_LINK = 'https://play.stellatrix.icu/legal/aup#2J';
@@ -22,8 +23,7 @@ function statusColor(d) {
 // 统一到 window.__fmt.time(data-loader.js;zh-CN 24h 制),保留本地别名免改调用点。
 function fmtTime(ts) {
   if (window.__fmt && window.__fmt.time) return window.__fmt.time(ts);
-  if (!ts) return '—';
-  try { return new Date(ts).toLocaleString('zh-CN', { hour12: false }); } catch (_) { return ts; }
+  return fmtTimeFallback(ts);
 }
 
 function FeedbackSection({ toast }) {

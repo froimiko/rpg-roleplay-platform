@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
 import { fmtDate, ACHV_CAT_ORDER, TIER_COLOR } from './helpers.js';
 import { PageHead } from './shared.jsx';
+import { copyText } from '../../lib/clipboard.js';
 
 /* ═══════════════════════════════════════════════════════════════════
    VIEW: 成就墙 Wall
@@ -55,12 +56,9 @@ function ViewWall({ nav, user }) {
   const onCopyWallLink = async () => {
     const u = user?.username || '';
     const url = `${location.origin}/wall?u=${encodeURIComponent(u)}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      nav.toast(t('mobile.me.wall.link_copied'), 'ok', 'copy');
-    } catch (_) {
-      nav.toast(url, 'ok', 'info');
-    }
+    const ok = await copyText(url);
+    if (ok) nav.toast(t('mobile.me.wall.link_copied'), 'ok', 'copy');
+    else nav.toast(url, 'ok', 'info');
   };
 
   return (

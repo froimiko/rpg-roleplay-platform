@@ -161,6 +161,9 @@ export function applyTavernState(data, setters) {
  *   @param {function} [cfg.reloadList]
  *   @param {object}   [cfg.chatExtra] 额外 chat body 字段(pages:attachments/command)
  *   @param {Array}    [cfg.userAttachments] 用户气泡附件(pages)
+ *   @param {function} [cfg.setAttachments] 附件输入框 setState —— 传了才在失败轮回填(与 game-console
+ *     restoreFailedDraft 719 行同款语义:不覆盖用户已重新选择的附件);移动酒馆无附件 UI,不传即无行为变化。
+ *   @param {Array}    [cfg.sentAttachments] 本轮发出的附件(失败轮回填用;配合 setAttachments 使用)
  *   @param {function} [cfg.onStart]   提交前钩子(pages:startTicker + setNeedsCreds(false))
  *   @param {function} [cfg.onIdleExtra] idle 超时附加(pages:stopTicker)
  *   @param {function} [cfg.onStreamEndExtra] 任何「本轮结束」附加(stopTicker;onError/onAbort/on_done/on_error/onClose 都调)
@@ -182,7 +185,7 @@ export function startTavernRun(cfg) {
     rc, saveId, model, playerText, applyState,
     setHistory, setRunning, setText, setHasError, setLastPlayerText,
     toast, reloadList,
-    chatExtra, userAttachments,
+    chatExtra, userAttachments, setAttachments, sentAttachments,
     onStart, onIdleExtra, onStreamEndExtra,
     onToolCall, onToolResult, onUsage, onDoneAlways, onDoneExtra, onErrorEvent,
   } = cfg;
@@ -234,6 +237,9 @@ export function startTavernRun(cfg) {
     rc.lastRunFailedUnpersisted = true;
     // MobileTavern 不回填输入框(setText 传 null),tavern-app/pages 回填。
     if (setText) setText((cur) => (String(cur || '').trim() ? cur : playerText));
+    // pages(附件 UI 宿主):失败轮回填本轮已发送的附件,不覆盖用户已重新选择的附件
+    // (与 game-console restoreFailedDraft 719 行同款语义)。移动酒馆无附件 UI,不传 cfg.setAttachments 即 no-op。
+    if (setAttachments) setAttachments((cur) => (Array.isArray(cur) && cur.length ? cur : sentAttachments));
     setHistory((h) => {
       const last = h[h.length - 1];
       if (last && last.role === 'user' && last.content === playerText) return h.slice(0, -1);

@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from .. import auth as _auth
 from ..api import SESSION_COOKIE, json_response, require_user
-from ..db import connect, init_db
+from ..db import connect, init_db, limit_value
 from ..security import hash_password, verify_password
 from ._shared import _bad, router
 
@@ -60,7 +60,7 @@ async def api_login_history(request: Request):
     user = require_user(request)
     init_db()
     fmt = (request.query_params.get("format") or "").lower()
-    limit = max(1, min(int(request.query_params.get("limit") or 50), 500))
+    limit = limit_value(request.query_params.get("limit"), default=50, maximum=500)
     with connect() as db:
         db.execute(
             """

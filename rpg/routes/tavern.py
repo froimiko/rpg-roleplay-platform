@@ -407,13 +407,15 @@ async def api_tavern_bind_card(
             ).fetchone()
             if not _card_row:
                 return _bad("无权使用该角色卡", 403)
-        if role == "persona" and _card_row is not None:
-            # 双源病根修:GM 读 state.data['player'],只写 FK 列=面板变了 GM 不变(半切换)。
-            # 共享写穿层一次写全 FK+game_saves 快照+工作树快照(+snapshot_hash 失效)。
+        if _card_row is not None:
+            # 双源病根修(persona 已修、character 曾漏网):persona GM 读 state.data['player'],
+            # character GM 读 state.data['tavern']['character'](context_providers/tavern.py)。
+            # 只写 FK 列=面板变了 GM 继续演旧卡(半切换,重开存档才恢复)。共享写穿层按 role
+            # 一次写全 FK+game_saves 快照+工作树快照(+snapshot_hash 失效)。
             from platform_app.tavern_persona import apply_persona_card_to_chat
-            _fields = apply_persona_card_to_chat(db, user_id, chat_id, dict(_card_row))
+            _fields = apply_persona_card_to_chat(db, user_id, chat_id, dict(_card_row), role=role)
         else:
-            # col 取自白名单(role 已校验),无注入风险。
+            # 解绑(card_id=null):仅清 FK 列。col 取自白名单(role 已校验),无注入风险。
             db.execute(
                 f"update game_saves set {col} = %s, updated_at = now() "
                 "where id = %s and user_id = %s and save_kind = 'tavern'",
@@ -421,14 +423,24 @@ async def api_tavern_bind_card(
             )
             _fields = None
     # F#94 同款:本对话若是当前活跃档,内存 state 同步 + persist,当前在飞/下一回合立即生效。
+    # persona 写 state.data['player'];character 写 state.data['tavern']['character'](GM 读的位)。
     if _fields is not None:
         try:
             import app as _ui
             _pu, _active = _ui._resolve_persist_target(api_user)
             if _active and int(_active) == int(chat_id):
                 _state = _ui._ensure_loaded(api_user)
-                _state.data.setdefault("player", {}).update(_fields)
-                _state.data.setdefault("tavern", {})["persona_card_id"] = cid
+                _tav = _state.data.setdefault("tavern", {})
+                if role == "persona":
+                    _state.data.setdefault("player", {}).update(_fields)
+                    _tav["persona_card_id"] = cid
+                else:
+                    _char = _tav.get("character")
+                    if isinstance(_char, dict):
+                        _char.update(_fields)
+                    else:
+                        _tav["character"] = dict(_fields)
+                    _tav["character_card_id"] = cid
                 _state.save()
                 _ui._persist_runtime_checkpoint(_state, api_user)
         except Exception as _exc:
