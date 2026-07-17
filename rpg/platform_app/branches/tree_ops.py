@@ -9,6 +9,26 @@ from platform_app.branches.seed import seed_tree
 from platform_app.db import connect, cursor_id, expose, init_db, limit_value
 
 
+def _opening_offset_from_history(history: Any) -> int:
+    """前端 chat history 的 msg_index 是**活跃 commit hydrated history 的数组下标**。
+
+    history[0] 是 GM 开场(role=='assistant',如角色卡 first_mes / 单条开场白)时,其后
+    [玩家,GM] 交替整体后移一位 → 返回 1;无开场(空起手 / 无 first_mes,history[0] 直接是
+    玩家输入)→ 返回 0。判定只看 history[0].role,与前端下标语义严格对齐。
+
+    delete 路径(deletion.rollback_to_message)与 fork 路径(resolve_commit_id_by_message)
+    两条 index→turn 映射**共用**它,防再次相位漂移(旧代码把 opening_offset 恒写死为 1 →
+    无开场档整体反相、玩家消息落偶数位 → 误退一轮、上上轮被删)。"""
+    first = None
+    try:
+        if history:
+            first = history[0]
+    except (IndexError, TypeError, KeyError):
+        first = None
+    role = first.get("role") if isinstance(first, dict) else None
+    return 1 if role == "assistant" else 0
+
+
 def tree(user_id: int, save_id: int, limit: int | str | None = None, cursor: str | None = None) -> dict[str, Any]:
     init_db()
     page_limit = limit_value(limit, default=1000, maximum=5000)
@@ -123,17 +143,19 @@ def resolve_commit_id_by_message(user_id: int, save_id: int, message_index: int)
         if not owned:
             return None
         # 前端 history index → round commit。
-        # 结构:前端 history[0] 是 GM 开场白(不落 messages 表),其后严格 [玩家,GM] 交替。
-        # 故 history 索引 K 落在第 (K//2) 个 round 边界:
-        #   K 偶(开场白 / GM 消息) → turn = K//2 的 round commit:保留到本轮(从此之后开新分支)
-        #   K 奇(玩家消息)        → turn = K//2(=(K-1)//2):截到本轮之前(玩家想重输入这轮)
+        # history index = **活跃 commit hydrated history 的数组下标**(前端就渲染这份 blob)。
+        # 开场感知(根修 2026-07-17,与 deletion.rollback_to_message 同判定 _opening_offset_from_history):
+        #   history[0] 是否 GM 开场决定 [玩家,GM] 交替的相位。
+        #   · 有开场(opening_offset=1):idx1=玩家 turn1, idx2=GM turn1, idx3=玩家 turn2 …
+        #   · 无开场(opening_offset=0):idx0=玩家 turn1, idx1=GM turn1, idx2=玩家 turn2 …
+        #   turn_index = max(0, (K - opening_offset)//2)。旧实现硬用 K//2(= opening_offset 恒 1)→
+        #   无开场档偏 1 位(与 delete 路径同根 off-by-one)。
         # 旧实现用 message_row_by_index 读 messages 表(不含开场白)→ 比 history 少 1 位 →
         # 从最后一条玩家消息 fork 被解析成"下一条 GM / 本轮"→ 命中满历史 commit →
         # /api/state 返回的历史跟原来一样长 → 用户看着"只回填了输入框、历史没截断"(就是报的 bug)。
         # 全库 branch_commits 只有 root/round 两种 kind(无 player/gm),按 turn_index 取该 round commit 即可。
         if msg_index < 0:
             return None
-        turn_index = msg_index // 2
         # 多分支修复:前端展示的是**当前活跃分支**的历史,故 message_index 对应的是活跃分支内
         # 某 turn 的 commit。原实现 `turn_index=%s order by id desc` 是全 save 选,玩家检出
         # 历史节点开过新分支后,同一 turn 在多条分支都有 commit,会命中 id 最大(常是另一条
@@ -145,6 +167,18 @@ def resolve_commit_id_by_message(user_id: int, save_id: int, message_index: int)
             (save_id,),
         ).fetchone()
         active_cid = int((active or {}).get("cid") or 0)
+        # opening_offset 取活跃 commit 的 history[0].role:活跃 commit 恒在 history_elide 保护集
+        # (protected_commit_ids)→ state_snapshot->'history'->0 必为全量正文、可靠。
+        opening_offset = 0
+        if active_cid:
+            _r0 = db.execute(
+                "select state_snapshot->'history'->0 as h0 from branch_commits where id = %s and save_id = %s",
+                (active_cid, save_id),
+            ).fetchone()
+            opening_offset = _opening_offset_from_history(
+                [_r0["h0"]] if (_r0 and _r0.get("h0") is not None) else []
+            )
+        turn_index = max(0, (msg_index - opening_offset) // 2)
         if active_cid:
             row = db.execute(
                 """

@@ -203,6 +203,11 @@ export function startTavernRun(cfg) {
   if (rc.inactivityTimer) { clearTimeout(rc.inactivityTimer); rc.inactivityTimer = null; }
   const runId = (rc.runId || 0) + 1;
   rc.runId = runId; rc.stopped = false;
+  // 新一轮开跑即清「失败轮未落库」标记(onRetry 在调 startRun 之前消费它;本轮再失败会重新置位)。
+  // 与 game-console startRunReal 同款:该标记是「重试 off-by-one」防线的信号源(失败轮 restoreFailedDraft
+  // 移除本轮气泡后,裸重试从历史回捞会捞到上一个好回合 → rollback 误吃好回合)。仅 pages/tavern 的
+  // onRetry 读它;tavern-app / MobileTavern 不读,置位对它们无副作用。
+  rc.lastRunFailedUnpersisted = false;
   const isCurrentRun = () => rc.runId === runId;
 
   // 本轮时间戳:默认 nowHHMM()(= tavern-app/pages 的 __fmt.nowHHMM 回退);
@@ -223,6 +228,10 @@ export function startTavernRun(cfg) {
 
   const restoreFailedDraft = () => {
     if (!isCurrentRun() || openedAssistant) return;
+    // 失败轮未落库标记:pages/tavern 的「重试」据此跳过 rollback(与 game-console restoreFailedDraft 同款)。
+    // 不标的话,本轮气泡被下面移除后,裸重试从历史回捞到的最后一条玩家输入是【上一个好回合】,
+    // rollback 会把它滚进 trash = 每次失败重试多吃一个好回合。
+    rc.lastRunFailedUnpersisted = true;
     // MobileTavern 不回填输入框(setText 传 null),tavern-app/pages 回填。
     if (setText) setText((cur) => (String(cur || '').trim() ? cur : playerText));
     setHistory((h) => {

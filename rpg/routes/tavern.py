@@ -20,9 +20,9 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 
+from platform_app.api._deps import json_response
 from routes._deps_fastapi import get_current_user
 
 router = APIRouter()
@@ -31,8 +31,9 @@ _MAX_IMPORT_PAYLOAD_BYTES = 16 * 1024 * 1024
 
 
 def _json(content: Any, status_code: int = 200) -> JSONResponse:
-    """统一 JSON 响应:jsonable_encoder 处理 datetime → iso。"""
-    return JSONResponse(jsonable_encoder(content), status_code=status_code)
+    """统一 JSON 响应:委托权威 json_response(jsonable_encoder 处理 datetime → iso,
+    附加平台统一的 meta.{api_version,stable},并做控制字符清洗)。"""
+    return json_response(content, status_code=status_code)
 
 
 def _bad(msg: str, code: int = 400) -> JSONResponse:

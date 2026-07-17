@@ -18,7 +18,12 @@ from platform_app.branches.refs import (
     _upsert_ref,
     _write_checkout,
 )
-from platform_app.branches.tree_ops import collect_ids, round_start_node, tree
+from platform_app.branches.tree_ops import (
+    _opening_offset_from_history,
+    collect_ids,
+    round_start_node,
+    tree,
+)
 from platform_app.db import connect, expose, init_db
 
 
@@ -130,21 +135,35 @@ def rollback_to_message(
         current_commit_id = save.get("active_commit_id") or save.get("active_branch_node_id")
 
         # 「删除消息 N 及之后」→ 软回滚到 frontend history 约定下应保留的 round commit。
-        # 前端 history index 约定:history[0]=GM 开场白(不落 messages 表),其后 [玩家,GM] 交替。
+        # 前端 history index = **活跃 commit hydrated history 的数组下标**(前端就渲染这份 blob)。
         # **绝不**用 message_row_by_index(读 flat messages 表:含开场空 user 行 + 非分支隔离 → 与 blob
         # history 错位 ≥1 位),那正是群反馈「删除会多回退一个回合」的根因(fork 早改 N//2、delete 漏同步)。
         #
-        # 奇偶要分开(回归修复 v1.32.4):被删消息要【连它一起删】,故保留点 = 它【所在回合的前一个边界】。
-        #  · N 奇 = 玩家输入(turn (N+1)//2 的输入)→ 保留到 turn N//2(=该回合之前),删该回合输入及之后。
-        #    对奇数 N,N//2 == (N-1)//2,与 fork 一致。
-        #  · N 偶 = GM 回复(turn N//2 的回复)→ 若只退到 N//2 会把这条 GM 回复一起【保留】(它就在该 round
-        #    commit 里)= 用户点「删除此 GM 回复」却没删掉(v1.30.1 引入的回归)。故偶数再退一格 N//2-1,
-        #    把这条 GM 回复所在的整回合删掉。开场(N=0)等边界 clamp ≥0(保留开场,删其后)。
-        target_turn = msg_index // 2
-        if msg_index % 2 == 0:
-            target_turn = max(0, target_turn - 1)
+        # 开场感知统一公式(根修 2026-07-17):history[0] 是否 GM 开场决定 [玩家,GM] 交替的相位。
+        #  · 有开场(history[0].role=='assistant',如角色卡 first_mes / 单条 GM 开场白):
+        #    idx0=开场, idx1=玩家 turn1, idx2=GM turn1, idx3=玩家 turn2 … → opening_offset=1。
+        #  · 无开场(空起手 / 角色卡无 first_mes,history[0] 直接是玩家输入):
+        #    idx0=玩家 turn1, idx1=GM turn1, idx2=玩家 turn2 … → opening_offset=0。
+        # 保留点 target_turn = max(0, (N - opening_offset)//2),删除点 = target_turn + 1(连被点
+        # 消息所在整回合一起删)。旧代码硬用「N//2 再对偶数退一格」= 把 opening_offset 恒写死为 1 →
+        # 无开场档整体反相、玩家消息落偶数位 → 误退一轮、上上轮被删(群反馈「删除多回退一个回合」
+        # 在无开场档复现)。数学等价:有开场时对玩家(奇)/GM(偶)/开场(0)三类输入与旧代码逐位
+        # 相同;无开场时恰好多保一轮。
+        # opening_offset 取活跃 commit 的 history[0].role:活跃 commit 恒在 history_elide 保护集
+        # (protected_commit_ids)→ state_snapshot->'history'->0 必为全量正文、可靠。
+        opening_offset = 0
+        _active_for_offset = int(current_commit_id or 0)
+        if _active_for_offset:
+            _r0 = db.execute(
+                "select state_snapshot->'history'->0 as h0 from branch_commits where id = %s and save_id = %s",
+                (_active_for_offset, save_id),
+            ).fetchone()
+            opening_offset = _opening_offset_from_history(
+                [_r0["h0"]] if (_r0 and _r0.get("h0") is not None) else []
+            )
+        target_turn = max(0, (msg_index - opening_offset) // 2)
         deleted_turn = target_turn + 1
-        target_message_role = "user" if msg_index % 2 == 1 else "assistant"
+        target_message_role = "user" if (msg_index - opening_offset) % 2 == 0 else "assistant"
 
         # 沿**活跃 commit 血缘**定位 turn=target_turn 的 commit(多分支隔离,内联 resolve_commit_id_by_message
         # 同款递归查询——不可直接调用它:会在本 advisory 锁内嵌套开连接致连接池死锁,见 5f0319a73)。

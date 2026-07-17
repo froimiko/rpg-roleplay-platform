@@ -9,6 +9,15 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.70.2] - 2026-07-17 (@ fdea8d321)
+
+### Fixed
+- **酒馆「重新生成上一轮吃掉上上轮」根修(群反馈)**:`rollback_to_message` 用消息下标奇偶硬推「偶数=GM」,该契约仅在 history[0] 为单条 GM 开场时成立;无开场档(空起手/角色卡无 `first_mes`)整体反相 → 玩家消息落偶数位误触「多退一格」→ 回滚点早算一整轮、上上轮被删(带开场白的卡不复现,故仅部分用户中招)。根修=开场感知统一公式 `max(0, (idx - opening_offset) // 2)`,偏移取活跃 commit `history[0].role`(活跃 commit 恒在 elide 保护集,blob 可靠);fork 定位 `resolve_commit_id_by_message` 同根同偏移同批修,两条 index→turn 映射共用 `_opening_offset_from_history` 防再次相位漂移。**有开场档与旧行为逐位等价**(不破 v1.32.4 旧修)。新增真库回归 6 例(有/无开场×重生上一轮/当前轮/首轮/raw-index)。
+- **酒馆 onRetry 补失败轮双护栏**(对齐 game-console 既有护栏):`lastRunFailedUnpersisted` 信号接入共享 run hook + 内容比对,防「生成失败未落库的轮」让 retry 定位到上一好轮。
+
+### Changed
+- **酒馆路由响应信封收口 `json_response`**:`routes/tavern.py` 47 处 `_json`/`_bad` 改委托权威版,补齐 `meta:{api_version,stable}` 与控制字符清洗(`\n`/`\t` 保留,聊天正文无损;三端消费方均按字段取值,零形状风险),酒馆端点与全站 API 契约自此一致。
+
 ## [1.70.1] - 2026-07-17 (@ 4db7320e6)
 
 ### Changed

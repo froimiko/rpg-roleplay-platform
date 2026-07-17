@@ -577,27 +577,42 @@ export default function TavernPage() {
   const onRetry = useCallback(async (messageIndex) => {
     if (running) { window.__apiToast?.(t('tavern_page.toast.still_generating'), { kind: 'warn', duration: 2000 }); return; }
     const h = Array.isArray(history) ? history : [];
-    // 从 messageIndex 往前找本轮玩家输入;未指定则从末尾找
-    let pIdx = Number.isFinite(Number(messageIndex)) ? Number(messageIndex) : h.length - 1;
+    // 逐条「重新生成」带 message_index(目标恒是已落库的某轮);错误横幅 / 缺 key 卡的裸「重试」不带 →
+    // 重跑「上一条输入」。定位方式与失败轮防线的适用范围因此不同(见下)。
+    const hasExplicitIndex = Number.isFinite(Number(messageIndex));
+    let pIdx = hasExplicitIndex ? Number(messageIndex) : h.length - 1;
     pIdx = Math.min(pIdx, h.length - 1);
     while (pIdx >= 0 && h[pIdx]?.role !== 'user') pIdx--;
-    if (pIdx < 0) { window.__apiToast?.(t('tavern_page.toast.no_retry_input'), { kind: 'warn', duration: 2000 }); return; }
-    const playerText = String(h[pIdx]?.content || '').trim();
+    const _located = pIdx >= 0 ? String(h[pIdx]?.content || '').trim() : '';
+    // 重发文本:逐条重生成用该消息正文;裸重试优先 lastPlayerText —— 失败轮 restoreFailedDraft 已把
+    // 本轮气泡移除,从历史回捞会捞到【上一个好回合】,故用 lastPlayerText 才是真正要重发的本轮输入。
+    const _lp = (lastPlayerText && lastPlayerText.trim()) || '';
+    const playerText = hasExplicitIndex ? _located : (_lp || _located);
     if (!playerText) { window.__apiToast?.(t('tavern_page.toast.no_retry_input'), { kind: 'warn', duration: 2000 }); return; }
     if (activeId == null) { window.__apiToast?.(t('tavern_page.toast.no_retry_input'), { kind: 'warn', duration: 2000 }); return; }
+    // 【off-by-one 防线】(群反馈 行者无疆,与 game-console onRetry 同款两道守卫):失败轮未落库时
+    // restoreFailedDraft 已移除本轮玩家气泡,历史里最后一条玩家输入是【上一个好回合】→ rollback 会
+    // 成功地把好回合滚进 trash(每次失败重试多吃一轮)。两重判据:①失败标记 lastRunFailedUnpersisted
+    // ②定位到的历史输入 _pContent 与将要重发的文本不一致 → 都跳过 rollback,直接重发(不删好回合)。
+    // 逐条重生成带确定 index、目标恒已落库 → 不受此防线约束,照常 rollback。
+    const _failedUnpersisted = runRef.current.lastRunFailedUnpersisted === true;
+    const _pContent = _located;
+    const _canRollback = pIdx >= 0 && (hasExplicitIndex || (!_failedUnpersisted && _pContent === playerText));
     try {
       setHasError(false);
-      const r = await window.api.branches.rollbackToMessage(activeId, pIdx);
-      if (r && r.ok === false) throw new Error(r.error || r.detail);
-      // 重新拉取 state(历史截到本轮之前)
-      const data = await window.api.game.state();
-      applyState(data);
+      if (_canRollback) {
+        const r = await window.api.branches.rollbackToMessage(activeId, pIdx);
+        if (r && r.ok === false) throw new Error(r.error || r.detail);
+        // 重新拉取 state(历史截到本轮之前)
+        const data = await window.api.game.state();
+        applyState(data);
+      }
       window.__apiToast?.(t('tavern_page.toast.regenerating'), { kind: 'ok', duration: 1800 });
       startRun(playerText);
     } catch (e) {
       window.__apiToast?.(t('tavern_page.toast.retry_failed'), { kind: 'danger', detail: e?.message, duration: 3000 });
     }
-  }, [running, history, activeId, applyState, startRun, t]);
+  }, [running, history, activeId, applyState, startRun, lastPlayerText, runRef, t]);
 
   // 监听 MsgActions 派发的 rpg-regenerate 事件(消息气泡「重新生成」按钮)
   useEffect(() => {
