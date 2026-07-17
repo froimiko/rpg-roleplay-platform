@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
 import { Sheet } from '../Sheet.jsx';
-import { MField } from './shared.jsx';
+import { MField, EmptyState } from './shared.jsx';
 
 /* ──────────────────────────────────────────────────────────────────
    APIS — BYOK 凭证管理
@@ -105,11 +105,7 @@ function ApisSection({ toast }) {
         {loading && providers.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px 0' }}>{t('common.loading')}</div>
         ) : providers.length === 0 ? (
-          <div className="pl-empty">
-            <div className="ic"><Icon name="braces" size={22} /></div>
-            <h3>{t('mobile.caps.apis.empty_title')}</h3>
-            <p>{t('mobile.caps.apis.empty_desc')}</p>
-          </div>
+          <EmptyState icon="braces" titleKey="mobile.caps.apis.empty_title" descKey="mobile.caps.apis.empty_desc" />
         ) : (
           <div className="pl-group">
             {providers.map((prov, idx) => {

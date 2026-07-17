@@ -4,6 +4,7 @@
 // 复用后端 POST /api/console_assistant/continue(SSE: token/done/error)。
 import { StateField, StateEffect, Prec } from '@codemirror/state';
 import { EditorView, Decoration, keymap, showPanel } from '@codemirror/view';
+import { setPanelVisible } from './md-panel.js';
 
 // ── 待定区状态(高亮 + 范围 + 改写时的原文,用于放弃还原)──────────────────
 const setPending = StateEffect.define();   // {from,to,original,busy} | null
@@ -50,28 +51,6 @@ export function rejectPending(view) {
   });
   view.focus();
   return true;
-}
-
-// 面板显隐做 120ms 淡入淡出而非硬切 display;dom._hideTimer 记录进行中的隐藏定时器,
-// 显示时若隐藏还未完成(定时器仍在)要先清理,避免旧 timer 之后把刚显示的面板又摸黑藏起来。
-function setPanelVisible(dom, visible) {
-  if (visible) {
-    const wasHiding = !!dom._hideTimer;
-    if (dom._hideTimer) { clearTimeout(dom._hideTimer); dom._hideTimer = null; }
-    if (dom.style.display !== 'flex' || wasHiding) {
-      dom.style.transition = 'opacity 120ms ease';
-      dom.style.opacity = '0';
-      dom.style.display = 'flex';
-      requestAnimationFrame(() => { dom.style.opacity = '1'; });
-    }
-  } else if (!dom._hideTimer && dom.style.display !== 'none') {
-    dom.style.transition = 'opacity 120ms ease';
-    dom.style.opacity = '0';
-    dom._hideTimer = setTimeout(() => {
-      dom.style.display = 'none';
-      dom._hideTimer = null;
-    }, 120);
-  }
 }
 
 // ── 顶部提示条(待定时显示 Tab 接受 / Esc 放弃)──────────────────────────

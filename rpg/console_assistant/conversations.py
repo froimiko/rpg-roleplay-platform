@@ -4,6 +4,8 @@ from __future__ import annotations
 import json as _json
 import time
 from datetime import datetime
+
+from core.clock import now_iso
 from typing import Any
 
 from console_assistant import _state
@@ -138,7 +140,7 @@ _GC_INTERVAL = 60.0
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return now_iso()
 
 
 def _new_conversation_id() -> str:

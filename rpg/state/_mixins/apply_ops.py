@@ -14,8 +14,8 @@ update_time / set_user_variable / confirm_time_jump / mark_user_locked 等),
 from __future__ import annotations
 
 import re
-from datetime import datetime
 
+from core.clock import now_iso
 from state.extractors import (
     _extract_explicit_time_updates,
 )
@@ -290,7 +290,7 @@ class ApplyOpsMixin:
             try:
                 audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
                 audit.append({
-                    "ts": datetime.now().isoformat(timespec="seconds"),
+                    "ts": now_iso(),
                     "kind": "parse_error",
                     "raw_spec": str(op_dump)[:160],
                     "source": "gm:json",
@@ -450,7 +450,7 @@ class ApplyOpsMixin:
             try:
                 audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
                 audit.append({
-                    "ts": datetime.now().isoformat(timespec="seconds"),
+                    "ts": now_iso(),
                     "kind": "parse_error",
                     "raw_spec": str(spec)[:160],
                     "source": source,
@@ -463,6 +463,28 @@ class ApplyOpsMixin:
                 pass
             return f"状态写入忽略（解析失败）：{spec[:60]}"
         return self.apply_state_write_typed(path, value, source=source, append=append, overwrite=overwrite, force=force)
+
+    def _deny_write(self, path, value, source, blocked, reason_tag, hint=None) -> str:
+        """三处硬闸(硬黑名单/rules_managed/module_managed)拒绝写入的共用 audit 落库 + 返回文案。
+        逐字节保留各分支原有的 audit 字段与返回文案(仅参数化 blocked/hint/reason_tag 差异点)。"""
+        try:
+            audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
+            entry = {
+                "ts": now_iso(),
+                "source": source,
+                "path": path,
+                "value": str(value)[:120],
+                "blocked": blocked,
+            }
+            if hint is not None:
+                entry["hint"] = hint
+            entry["turn"] = self.data.get("turn", 0)
+            audit.append(entry)
+            if len(audit) > 200:
+                self.data["permissions"]["audit_log"] = audit[-200:]
+        except Exception:
+            pass
+        return f"状态写入拒绝（{reason_tag}）：{path}"
 
     def apply_state_write_typed(self, path: str, value, source: str = "gm",
                                 append: bool = False, overwrite: bool = False, force: bool = False) -> str:
@@ -547,59 +569,21 @@ class ApplyOpsMixin:
         # /set permissions.mode=full_access （force=True）直接落地，玩家可一句话
         # 关闭整套权限审批 + 篡改 audit_log + 改 history。
         if _write_path_hard_forbidden(path):
-            try:
-                audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
-                audit.append({
-                    "ts": datetime.now().isoformat(timespec="seconds"),
-                    "source": source,
-                    "path": path,
-                    "value": str(value)[:120],
-                    "blocked": "hard_forbidden",
-                    "turn": self.data.get("turn", 0),
-                })
-                if len(audit) > 200:
-                    self.data["permissions"]["audit_log"] = audit[-200:]
-            except Exception:
-                pass
-            return f"状态写入拒绝（硬黑名单）：{path}"
+            return self._deny_write(path, value, source, "hard_forbidden", "硬黑名单")
         # 5E-compatible：受规则引擎管理的硬数值（HP/AC/initiative/dice_log）只能由
         # RulesEngine 修改。LLM/GM 自由写入或用户 /set 都拒绝并记入 audit。
         if _write_path_rules_managed(path) and not str(source or "").startswith("rules_engine"):
-            try:
-                audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
-                audit.append({
-                    "ts": datetime.now().isoformat(timespec="seconds"),
-                    "source": source,
-                    "path": path,
-                    "value": str(value)[:120],
-                    "blocked": "rules_managed",
-                    "hint": "受规则引擎管理的硬数值（HP/AC/initiative/dice_log）只能由 RulesEngine 写入",
-                    "turn": self.data.get("turn", 0),
-                })
-                if len(audit) > 200:
-                    self.data["permissions"]["audit_log"] = audit[-200:]
-            except Exception:
-                pass
-            return f"状态写入拒绝（rules_managed）：{path}"
+            return self._deny_write(
+                path, value, source, "rules_managed", "rules_managed",
+                hint="受规则引擎管理的硬数值（HP/AC/initiative/dice_log）只能由 RulesEngine 写入",
+            )
         # 规则模组运行时，玩家所在房间由 RulesEngine / rules_bridge 的移动结果维护。
         # GM 只能叙事，不能把自然语言里的“当前位置”反写成另一套状态。
         if _write_path_module_managed(path) and _module_scene_active(self.data) and str(source or "").startswith("gm"):
-            try:
-                audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
-                audit.append({
-                    "ts": datetime.now().isoformat(timespec="seconds"),
-                    "source": source,
-                    "path": path,
-                    "value": str(value)[:120],
-                    "blocked": "module_managed",
-                    "hint": "规则模组运行时当前位置由 RulesEngine 房间状态维护，GM 不得写入",
-                    "turn": self.data.get("turn", 0),
-                })
-                if len(audit) > 200:
-                    self.data["permissions"]["audit_log"] = audit[-200:]
-            except Exception:
-                pass
-            return f"状态写入拒绝（module_managed）：{path}"
+            return self._deny_write(
+                path, value, source, "module_managed", "module_managed",
+                hint="规则模组运行时当前位置由 RulesEngine 房间状态维护，GM 不得写入",
+            )
         permissions = self.data.setdefault("permissions", {})
         mode = _normalize_permission_mode(permissions.get("mode", "full_access"))
         allowed = _write_path_allowed(path, mode)
@@ -756,7 +740,7 @@ class ApplyOpsMixin:
         try:
             audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
             audit.append({
-                "ts": datetime.now().isoformat(timespec="seconds"),
+                "ts": now_iso(),
                 "source": "rules_engine",
                 "ops": len(ops or []),
                 "reason": reason,

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.clock import now_iso
 from core.logging import get_logger
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
 from tools_dsl.command_tools import COMMAND_TOOLS
@@ -172,7 +173,7 @@ def _tool_set_known_event(state: Any, args: dict) -> str:
 def _tool_stop_current_chat(state: Any, args: dict) -> str:
     """工具调用层抛出 stop 标志,具体停止逻辑由 chat handler 监听 state.permissions.stop_signal。"""
     permissions = state.data.setdefault("permissions", {})
-    permissions["stop_signal"] = {"requested": True, "ts": __import__("datetime").datetime.now().isoformat(timespec="seconds")}
+    permissions["stop_signal"] = {"requested": True, "ts": now_iso()}
     return "已请求停止当前 chat (由 chat handler 在下次循环检测)"
 
 

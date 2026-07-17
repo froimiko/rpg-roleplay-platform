@@ -12,7 +12,8 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime
+
+from core.clock import now_iso
 
 # DEFAULT_STATE 在 state.core,但循环 import 风险 — 用延迟 import (函数体内)
 
@@ -117,7 +118,7 @@ class RulesGameplayMixin:
         try:
             audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
             audit.append({
-                "ts": datetime.now().isoformat(timespec="seconds"),
+                "ts": now_iso(),
                 "source": "rules_engine",
                 "kind": "inventory",
                 "action": action,

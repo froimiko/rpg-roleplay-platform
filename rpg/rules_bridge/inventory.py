@@ -11,8 +11,8 @@ State Gate 落 canonical player_character.inventory，再派生 memory.resources
 from __future__ import annotations
 
 import re
-from datetime import datetime
 
+from core.clock import now_iso
 import modules as module_registry
 
 # 拾取动词。刻意与 consume 的"拿出/拿来/点亮"等错开，避免同义冲突。
@@ -72,7 +72,7 @@ def grant_item_action(state, item_id: str, name: str | None = None,
         "dc": None,
         "success": True,
         "reason": reason or f"获得 {result.get('item_name')} ×{granted}",
-        "ts": datetime.now().isoformat(timespec="seconds"),
+        "ts": now_iso(),
         "extra": {
             "item_id": result.get("item_id"),
             "qty_before": result.get("qty_before"),

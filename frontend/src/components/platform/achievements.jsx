@@ -12,6 +12,7 @@ import CSContainer from '@cloudscape-design/components/container';
 import CSHeader from '@cloudscape-design/components/header';
 import CSModal from '@cloudscape-design/components/modal';
 import CSSpaceBetween from '@cloudscape-design/components/space-between';
+import { ACHV_CAT_ORDER, TIER_RANK } from '../../lib/achievements-const.js';
 
 const __achvToasted = new Set();
 async function flushAchievementToasts(items) {
@@ -24,8 +25,6 @@ async function flushAchievementToasts(items) {
   try { await window.api.account.achievementsSeen(); } catch (_) {}
 }
 // ── 成就墙(个人主页 + 公开墙共用) ─────────────────────────────────
-const ACHV_CAT_ORDER = ["启程", "叙事", "探索", "收藏", "坚持", "隐藏"];
-const TIER_RANK = { gold: 3, silver: 2, bronze: 1 };
 function fmtAchvDate(iso) {
   if (!iso) return "";
   try { return new Date(iso).toISOString().slice(0, 10); } catch { return ""; }

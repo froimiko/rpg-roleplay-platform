@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
-import { Toggle, StatusPill } from './shared.jsx';
+import { Toggle, StatusPill, EmptyState } from './shared.jsx';
 
 /* ──────────────────────────────────────────────────────────────────
    PLUGINS
@@ -44,11 +44,7 @@ function PluginsSection({ toast }) {
     </div>
   );
   if (items.length === 0) return (
-    <div className="pl-empty">
-      <div className="ic"><Icon name="plug" size={22} /></div>
-      <h3>{t('mobile.caps.plugins.empty_title')}</h3>
-      <p>{t('mobile.caps.plugins.empty_desc')}</p>
-    </div>
+    <EmptyState icon="plug" titleKey="mobile.caps.plugins.empty_title" descKey="mobile.caps.plugins.empty_desc" />
   );
 
   return (

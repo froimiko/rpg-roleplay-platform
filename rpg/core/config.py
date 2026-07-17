@@ -105,7 +105,10 @@ def setup_token() -> str | None:
 #   server → 多用户服务器:强制鉴权、db 存储、危险工具默认关闭。
 # 兼容旧别名(desktop/self_hosted 归 local;production/prod/cloud 归 server)。
 # 关键安全语义:除已知 local 别名外,一切(含未设/未知值)都判定为 server(fail-closed)。
-_LOCAL_ALIASES = {"local", "desktop", "self_hosted", "self-hosted"}
+# 本地/自托管部署模式权威集合(单一真源)。散落各处的
+# {"local","desktop","self_hosted","self-hosted"} 字面量统一引用它。
+LOCAL_MODES = frozenset({"local", "desktop", "self_hosted", "self-hosted"})
+_LOCAL_ALIASES = LOCAL_MODES
 
 
 def is_local_mode() -> bool:
@@ -116,6 +119,20 @@ def is_local_mode() -> bool:
 def is_server_mode() -> bool:
     """is_local_mode 的反面;服务器/多用户家族。"""
     return not is_local_mode()
+
+def deployment_mode_normalized() -> str:
+    """归一化后的部署模式:strip + lower,空值兜底 "local"。
+
+    散落在 app.py / core.startup 的 _deployment_mode() 统一委托本函数。
+    """
+    return deployment_mode().strip().lower() or "local"
+
+
+def is_local_deployment_mode(mode: str | None = None) -> bool:
+    """给定模式是否属于本地/自托管集合;mode 为 None 时自查当前部署模式。"""
+    if mode is None:
+        mode = deployment_mode_normalized()
+    return mode in LOCAL_MODES
 
 
 def effective_auth_required() -> bool:

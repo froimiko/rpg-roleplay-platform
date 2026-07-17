@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
+import { fmtToolValue as fmt, computeToolSummary } from '../../lib/tool-call-summary.js';
 
 /* ─── 移动端 Toast ─────────────────────────────────────────────────── */
 function MobileToast({ msg, kind }) {
@@ -20,19 +21,14 @@ function ToolCallBlock({ ops }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   if (!Array.isArray(ops) || ops.length === 0) return null;
-  const n = ops.length;
-  const firstName = (ops[0] && ops[0].tool) || t('mobile.tavern.tool.default_name');
-  const summary = n === 1
-    ? t('mobile.tavern.tool.call_one', { name: firstName })
-    : t('mobile.tavern.tool.call_many', { count: n, name: firstName });
-  function fmt(v) {
-    if (v == null) return '';
-    if (typeof v === 'string') return v;
-    try { return JSON.stringify(v, null, 2); } catch (_) { return String(v); }
-  }
+  const summary = computeToolSummary(ops, t, {
+    fallback: 'mobile.tavern.tool.default_name',
+    one: 'mobile.tavern.tool.call_one',
+    many: 'mobile.tavern.tool.call_many',
+  });
   return (
     <div className="tv-m-tools">
-      <button className="tv-m-tools-toggle" onClick={() => setOpen(v => !v)}>
+      <button className="tv-m-tools-toggle" onClick={() => setOpen(v => !v)} aria-expanded={open}>
         <span style={{ color: 'var(--muted-2)' }}>⚙</span>
         <Icon name={open ? 'chevron_down' : 'chevron_right'} size={11} />
         <span className="tv-m-tools-summary">{summary}</span>

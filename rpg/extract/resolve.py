@@ -857,6 +857,51 @@ def _reclassify_canon_type(name: str, current_type: str) -> str:
     return cur or current_type
 
 
+# 场景污染词 — summary 包含这些 = 章节内角色行为描述,不是永久设定
+# 例:"和服 · 茜茜和薇欧拉穿着..." 这种把"角色穿了什么"抽成"和服的设定" = 污染
+_CONTAMINATION_WORDS = (
+    "穿着", "穿了", "穿过", "披着", "披上", "戴着", "戴上",
+    "拿着", "拿起", "举着", "握着", "手持", "提着",
+    "正在", "此时", "刚才", "刚刚", "瞬间", "突然",
+    "腿上", "身上", "脸上", "手上", "胸前",
+)
+
+def _is_contaminated(summary: str) -> bool:
+    return any(w in summary for w in _CONTAMINATION_WORDS)
+
+def _enrich(name: str, fallback_brief: str, canon_by_name) -> str:
+    c = canon_by_name.get(name)
+    sm = (c or {}).get("summary") or ""
+    sm = sm.strip()
+    # summary 非空 + 没污染 → 直接用
+    if sm and not _is_contaminated(sm):
+        return sm[:600]
+    # summary 污染了 → log + fallback,**不用这个 summary**
+    # fallback:用 importance + aliases 拼 stub
+    if c:
+        parts = [fallback_brief]
+        aliases = c.get("aliases") or []
+        if aliases:
+            parts.append("别名: " + "、".join(str(x) for x in aliases[:5]))
+        first = c.get("first_revealed_chapter")
+        if first:
+            parts.append(f"首次出场: 第 {first} 章")
+        imp = c.get("importance")
+        if imp:
+            parts.append(f"出场频次: {imp}")
+        return " · ".join(parts)
+    return fallback_brief
+
+# importance 阈值:概念 / 地点 < 5 次出场不入 worldbook(单次出场的章节细节剔出)
+# character 不走 worldbook 路径(走 character_cards),所以不在这里管
+MIN_IMPORTANCE_FOR_WORLDBOOK = 5
+def _passes_importance(name: str, canon_by_name, min_imp: int = MIN_IMPORTANCE_FOR_WORLDBOOK) -> bool:
+    c = canon_by_name.get(name)
+    if not c:
+        return True  # canon 没数据时不阻拦(走 fallback stub)
+    return int(c.get("importance") or 0) >= min_imp
+
+
 def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
     """生成 worldbook_entries — 每个 faction/power_concept/location 独立一条。
 
@@ -906,50 +951,6 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
     except Exception:
         pass
 
-    # 场景污染词 — summary 包含这些 = 章节内角色行为描述,不是永久设定
-    # 例:"和服 · 茜茜和薇欧拉穿着..." 这种把"角色穿了什么"抽成"和服的设定" = 污染
-    _CONTAMINATION_WORDS = (
-        "穿着", "穿了", "穿过", "披着", "披上", "戴着", "戴上",
-        "拿着", "拿起", "举着", "握着", "手持", "提着",
-        "正在", "此时", "刚才", "刚刚", "瞬间", "突然",
-        "腿上", "身上", "脸上", "手上", "胸前",
-    )
-
-    def _is_contaminated(summary: str) -> bool:
-        return any(w in summary for w in _CONTAMINATION_WORDS)
-
-    def _enrich(name: str, fallback_brief: str) -> str:
-        c = canon_by_name.get(name)
-        sm = (c or {}).get("summary") or ""
-        sm = sm.strip()
-        # summary 非空 + 没污染 → 直接用
-        if sm and not _is_contaminated(sm):
-            return sm[:600]
-        # summary 污染了 → log + fallback,**不用这个 summary**
-        # fallback:用 importance + aliases 拼 stub
-        if c:
-            parts = [fallback_brief]
-            aliases = c.get("aliases") or []
-            if aliases:
-                parts.append("别名: " + "、".join(str(x) for x in aliases[:5]))
-            first = c.get("first_revealed_chapter")
-            if first:
-                parts.append(f"首次出场: 第 {first} 章")
-            imp = c.get("importance")
-            if imp:
-                parts.append(f"出场频次: {imp}")
-            return " · ".join(parts)
-        return fallback_brief
-
-    # importance 阈值:概念 / 地点 < 5 次出场不入 worldbook(单次出场的章节细节剔出)
-    # character 不走 worldbook 路径(走 character_cards),所以不在这里管
-    MIN_IMPORTANCE_FOR_WORLDBOOK = 5
-    def _passes_importance(name: str, min_imp: int = MIN_IMPORTANCE_FOR_WORLDBOOK) -> bool:
-        c = canon_by_name.get(name)
-        if not c:
-            return True  # canon 没数据时不阻拦(走 fallback stub)
-        return int(c.get("importance") or 0) >= min_imp
-
     entries: list[tuple[str, str, int]] = []  # (title, content, priority)
     if getattr(seed, "era", ""):
         entries.append((
@@ -981,7 +982,7 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
         new_type = _reclassify_canon_type(c.get("name", ""), orig_type)
         if new_type not in ("faction", "organization", "location", "concept"):
             continue
-        if not _passes_importance(c.get("name", "")):
+        if not _passes_importance(c.get("name", ""), canon_by_name):
             continue
         # concept 额外要求 summary 干净(避免"和服=茜茜穿着..."进库)
         if new_type == "concept":
@@ -1008,14 +1009,14 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
         if title in seen_titles:
             continue
         seen_titles.add(title)
-        content = _enrich(fac, f"势力名称: {fac}")
+        content = _enrich(fac, f"势力名称: {fac}", canon_by_name)
         entries.append((title, content, 82))
     for power in seed_powers:
         title = f"力量·{power}"
         if title in seen_titles:
             continue
         seen_titles.add(title)
-        content = _enrich(power, f"力量体系条目: {power}")
+        content = _enrich(power, f"力量体系条目: {power}", canon_by_name)
         entries.append((title, content, 75))
 
     # 按 subtype 分组渲染 — 每组先一条索引(列出本 subtype 所有成员)+ 单条 detail
@@ -1053,7 +1054,7 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
                 break
             seen_titles.add(title)
             detail_counts[eff_type] = detail_counts.get(eff_type, 0) + 1
-            base = _enrich(nm, f"{prefix}: {nm}")
+            base = _enrich(nm, f"{prefix}: {nm}", canon_by_name)
             # 拼层级标签
             parent_lk = (c.get("parent_logical_key") or "").strip()
             parent_label = ""
@@ -1087,3 +1088,4 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
         )
         written += 1
     return written
+

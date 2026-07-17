@@ -198,7 +198,8 @@ async def submit_feedback(request: Request, user=Depends(require_user)):
         _mode = (_dmode() or "").strip().lower()
     except Exception:
         _mode = ""
-    if _mode in {"local", "desktop", "self_hosted", "self-hosted"}:
+    from core.config import LOCAL_MODES
+    if _mode in LOCAL_MODES:
         return await _forward_feedback_to_central(body, ua)
 
     free_text: str = body.get("free_text", "") or ""

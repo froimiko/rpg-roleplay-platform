@@ -14,9 +14,7 @@ from context_engine.formatters import (
 )
 from context_engine.helpers import (
     _neutralize_state_write_tags,
-    _normalize_permission_mode,
     _pending_jump_warning_text,
-    _permission_label,
 )
 from context_engine.layers import (
     _active_hypotheses_layer,
@@ -85,8 +83,6 @@ __all__ = [
     # helpers
     "_neutralize_state_write_tags",
     "_pending_jump_warning_text",
-    "_normalize_permission_mode",
-    "_permission_label",
     # constants & utils
     "MAX_LAYER_CHARS",
     "_layer",

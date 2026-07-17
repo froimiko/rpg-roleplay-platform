@@ -43,8 +43,9 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Literal
+
+from core.clock import now_iso
 
 # ────────────────────────────────────────────────────────────
 # 数据结构
@@ -116,7 +117,7 @@ class ToolCallEnvelope:
     trace_id: str = ""
     depth: int = 0
     call_id: str = field(default_factory=lambda: secrets.token_urlsafe(8))
-    ts: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    ts: str = field(default_factory=lambda: now_iso())
 
 
 @dataclass

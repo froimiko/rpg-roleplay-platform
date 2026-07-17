@@ -5,6 +5,7 @@ import { useState as useStateC, useRef as useRefC } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../game-icons.jsx';
 import AgentModelPicker from '../AgentModelPicker.jsx';
+import { useDismissOnOutsideOrEscape } from '../../hooks/useDismissOnOutsideOrEscape.js';
 
 // task 39 收尾：MODEL_OPTIONS（GPT-4o · RPG / Claude Opus 4.1 / Gemini 3 Flash ...）
 // 是早期 mock fallback；只要它存在，任何 fallback 路径都可能让用户误以为"模型列表是 mock"。
@@ -42,20 +43,7 @@ function ModelPopover({ current, onPick, align = "left", gameState, onClose, tri
   const menuRef = useRefC(null);
   // 当前选中态(api_id::model_real_name) — 由 AgentModelPicker onChange 回填,供 EffortSection 用。
   const [selectedKey, setSelectedKey] = useStateC("");
-  React.useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
-    const onOutside = (e) => {
-      const inMenu = menuRef.current && menuRef.current.contains(e.target);
-      const inTrigger = triggerRef && triggerRef.current && triggerRef.current.contains(e.target);
-      if (!inMenu && !inTrigger) onClose && onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    document.addEventListener("mousedown", onOutside, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("mousedown", onOutside, true);
-    };
-  }, [onClose, triggerRef]);
+  useDismissOnOutsideOrEscape(menuRef, triggerRef, onClose);
   // task 141 / Bug fix: max-height 自适应 trigger 上方可用空间,popover 不冲出 viewport 顶。
   React.useLayoutEffect(() => {
     if (!menuRef.current || !triggerRef?.current) return;
@@ -223,20 +211,7 @@ function PermissionPopover({ current, onPick, onClose, triggerRef, optionIds = n
     window.addEventListener("resize", calcPermHeight);
     return () => window.removeEventListener("resize", calcPermHeight);
   }, [calcPermHeight]);
-  React.useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
-    const onOutside = (e) => {
-      const inMenu = menuRef.current && menuRef.current.contains(e.target);
-      const inTrigger = triggerRef && triggerRef.current && triggerRef.current.contains(e.target);
-      if (!inMenu && !inTrigger) onClose && onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    document.addEventListener("mousedown", onOutside, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("mousedown", onOutside, true);
-    };
-  }, [onClose, triggerRef]);
+  useDismissOnOutsideOrEscape(menuRef, triggerRef, onClose);
 
   return (
     <div ref={menuRef} className="gc-menu gc-pop-menu">

@@ -1,4 +1,5 @@
 import React, { useCallback, useRef } from 'react';
+import { Toggle } from '../Toggle.jsx';  // 权威单一实现(语义统一);caps/shared.jsx 同源 re-export。settings 侧 11 处调用均不传 disabled,行为逐字一致
 
 // K/M 缩写统一到 window.__fmt.compact(data-loader.js;语义统一 #30),保留本地别名免改调用点。
 function fmtCtx(n) {
@@ -10,17 +11,6 @@ function fmtCtx(n) {
 }
 
 /* ── 可复用小件 ─────────────────────────────────────────────────── */
-function Toggle({ on, onChange }) {
-  return (
-    <button
-      className={'pl-toggle' + (on ? ' on' : '')}
-      onClick={() => onChange(!on)}
-      role="switch"
-      aria-checked={on}
-    />
-  );
-}
-
 function SetGroup({ title, children, action }) {
   return (
     <div className="pl-sec">

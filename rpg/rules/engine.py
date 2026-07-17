@@ -4,8 +4,7 @@ rules.engine — RulesEngine 统一入口。
 """
 from __future__ import annotations
 
-from datetime import datetime
-
+from core.clock import now_iso
 from .base import RuleResult
 from .dice import RollResult
 from .dice import roll as _roll
@@ -231,7 +230,7 @@ class RulesEngine:
             "disadvantage": roll_data.get("disadvantage", False),
             "damage": result.damage,
             "reason": reason or result.extra.get("reason", ""),
-            "ts": datetime.now().isoformat(timespec="seconds"),
+            "ts": now_iso(),
         }
         # 抬升 extra 的关键标识字段,方便审计 / 测试 / 前端展示
         for key in ("skill", "ability", "weapon"):

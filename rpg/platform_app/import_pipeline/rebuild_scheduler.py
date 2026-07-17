@@ -47,34 +47,15 @@ def estimate_module_rebuild(
             raise ValueError("无权访问该剧本")
 
         chapter_count = int(script.get("chapter_count") or 0)
-        chunks_total = _scalar(db, "select count(*) as c from document_chunks where script_id = %s")
-        chunks_done = _scalar(
-            db,
-            "select count(*) as c from document_chunks "
-            "where script_id = %s and embedding_vec is not null",
-        )
-        canon_total = _scalar(db, "select count(*) as c from kb_canon_entities where script_id = %s")
-        canon_done = _scalar(
-            db,
-            "select count(*) as c from kb_canon_entities "
-            "where script_id = %s and embedding is not null",
-        )
-        cards_total = _scalar(
-            db,
-            "select count(*) as c from character_cards "
-            "where script_id = %s and card_type='npc'",
-        )
-        cards_done = _scalar(
-            db,
-            "select count(*) as c from character_cards "
-            "where script_id = %s and card_type='npc' and embedding_vec is not null",
-        )
-        wb_total = _scalar(db, "select count(*) as c from worldbook_entries where script_id = %s")
-        wb_done = _scalar(
-            db,
-            "select count(*) as c from worldbook_entries "
-            "where script_id = %s and embedding_vec is not null",
-        )
+        _counts = _gather_module_counts(db, script_id)
+    chunks_total = _counts["chunks_total"]
+    chunks_done = _counts["chunks_done"]
+    canon_total = _counts["canon_total"]
+    canon_done = _counts["canon_done"]
+    cards_total = _counts["cards_total"]
+    cards_done = _counts["cards_done"]
+    wb_total = _counts["wb_total"]
+    wb_done = _counts["wb_done"]
 
     prereqs: list[dict[str, Any]] = []
     affects: list[str] = []
@@ -204,105 +185,17 @@ def estimate_module_rebuild(
             #   worldbook-llm = 按 canon 规模的若干次抽取调用。
             est_in = est_out = 0
             if module == "canon":
-                # canon 全量重抽走 arc 算法。真实用量用 **arc 感知**的 extract.budget.estimate
-                # (与 wizard /llm-extract/estimate 同一权威源,~1.16M 与实测 838k@63% 对得上),
-                # 而不是按「整本全文都喂 LLM」估的 chars/2(高估~2x);且原 `length(text)` 列名是
-                # 错的(实际列名 content),会直接抛错让估算 500。统一口径,消除三套估算打架。
-                try:
-                    from extract.budget import estimate as _budget_estimate
-                    with connect() as db:
-                        _b = _budget_estimate(
-                            db, script_id, algorithm="arc",
-                            model=(llm_model or "deepseek-v4-flash"),
-                        )
-                    est_in = int(_b.get("est_input_tokens") or 0)
-                    est_out = int(_b.get("est_output_tokens") or 0)
-                except Exception:
-                    est_in = est_out = 0
+                est_in, est_out = _estimate_tokens_canon(script_id, llm_model)
             elif module == "cards":                 # 必是 source=='llm'(否则 needs_llm=False)
-                # 丰富重建走 run_llm_extraction(arc),与 canon 同口径估;chapter_max 限区间。
-                try:
-                    from extract.budget import estimate as _budget_estimate
-                    _cmax_raw = body.get("chapter_max")
-                    try:
-                        _cmax = int(_cmax_raw) if _cmax_raw not in (None, "") else None
-                    except (TypeError, ValueError):
-                        _cmax = None
-                    with connect() as db:
-                        _b = _budget_estimate(
-                            db, script_id, algorithm="arc",
-                            model=(llm_model or "deepseek-v4-flash"),
-                        )
-                    est_in = int(_b.get("est_input_tokens") or 0)
-                    est_out = int(_b.get("est_output_tokens") or 0)
-                    # chapter_max 区间钳:按 chapter_max/全书章数 线性折减(粗估,UI 标≈)。
-                    if _cmax and chapter_count and _cmax < chapter_count:
-                        ratio = max(0.0, min(1.0, _cmax / float(chapter_count)))
-                        est_in = int(est_in * ratio)
-                        est_out = int(est_out * ratio)
-                except Exception:
-                    est_in = est_out = 0
+                est_in, est_out = _estimate_tokens_cards(script_id, llm_model, body, chapter_count)
             elif module == "worldbook":             # 必是 source=='llm'(否则 needs_llm=False)
-                _base = max(canon_total, 20)
-                est_in = _base * 1500
-                est_out = _base * 300
+                est_in, est_out = _estimate_tokens_worldbook(canon_total)
             elif module == "facts_refine":
-                # 逐章调 LLM 精炼 summary/in_world_time(extract.facts_refine.refine_script)。
-                # 涉及章节数 = [ch_from, ch_to] 区间(默认整本),按 ~1.5k tokens/章估算
-                # (与 estimate_module_rebuild 既有粗估口径一致,不接 arc budget——精炼是逐章
-                # 独立小调用,非 arc 弧段合并调用)。
-                _ch_from_raw = body.get("ch_from")
-                _ch_to_raw = body.get("ch_to")
-                try:
-                    _ch_from = int(_ch_from_raw) if _ch_from_raw not in (None, "") else 1
-                except (TypeError, ValueError):
-                    _ch_from = 1
-                try:
-                    _ch_to = int(_ch_to_raw) if _ch_to_raw not in (None, "") else chapter_count
-                except (TypeError, ValueError):
-                    _ch_to = chapter_count
-                _ch_to = min(_ch_to, chapter_count) if chapter_count else _ch_to
-                _n_chapters = max(0, _ch_to - _ch_from + 1) if (_ch_to and _ch_from) else 0
-                est_in = _n_chapters * 1500
-                est_out = _n_chapters * 100  # 摘要产出短(≤200字),output 远小于 input
+                est_in, est_out = _estimate_tokens_facts_refine(body, chapter_count)
             elif module == "worldbook_enrich":
-                # 命中 pattern 的世界书条目数(与 enrich_script_worldbook 同一 `title ~ pattern`
-                # 查询口径,不调 LLM,只查一次 DB)× ~2k tokens/条目。
-                _pattern = str(body.get("pattern") or "力量|概念|势力|体系")
-                try:
-                    with connect() as db:
-                        _wb_hit_row = db.execute(
-                            "select count(*) as c from worldbook_entries "
-                            "where script_id = %s and title ~ %s",
-                            (script_id, _pattern),
-                        ).fetchone()
-                    _n_entries = int(_wb_hit_row["c"]) if _wb_hit_row else 0
-                except Exception:
-                    _n_entries = 0
-                est_in = _n_entries * 2000
-                est_out = _n_entries * 400
+                est_in, est_out = _estimate_tokens_worldbook_enrich(script_id, body)
             elif module == "world_key":              # 必是 use_llm=True(否则 needs_llm=False)
-                # 第二层 LLM 窄确认按段(segment)发起调用,一段边界一次调用。段数用零 IO 的
-                # classify_segments 纯函数算(不落库、不调 LLM),口径与 backfill_worldlines
-                # 实际跑时产生的段数一致。
-                try:
-                    from extract.world_key_backfill import classify_segments as _classify_segments
-                    with connect() as db:
-                        _ck_rows = db.execute(
-                            "select chapter_index, title, volume_title from script_chapters "
-                            "where script_id = %s", (script_id,),
-                        ).fetchall()
-                    _chapters_for_seg = [
-                        {"chapter_index": r["chapter_index"], "title": r.get("title") or "",
-                         "volume_title": r.get("volume_title") or ""}
-                        for r in (_ck_rows or [])
-                    ]
-                    _segments = _classify_segments(_chapters_for_seg)
-                    _n_segments = max(0, len(_segments) - 1)  # 首段无边界可确认,N 段有 N-1 条边界
-                except Exception:
-                    _n_segments = 0
-                est_in = _n_segments * 1000
-                est_out = _n_segments * 150
+                est_in, est_out = _estimate_tokens_world_key(script_id)
             if est_in or est_out:
                 tokens_est = est_in + est_out
                 try:
@@ -400,3 +293,165 @@ def schedule_module_rebuild(
     )
     th.start()
     return {"ok": True, "job_id": job_id, "reused": False, "module": module, "kind": kind}
+
+
+def _gather_module_counts(db, script_id) -> dict:
+    def _scalar(db, sql: str) -> int:
+        row = db.execute(sql, (script_id,)).fetchone()
+        return int(row["c"]) if row else 0
+    chunks_total = _scalar(db, "select count(*) as c from document_chunks where script_id = %s")
+    chunks_done = _scalar(
+        db,
+        "select count(*) as c from document_chunks "
+        "where script_id = %s and embedding_vec is not null",
+    )
+    canon_total = _scalar(db, "select count(*) as c from kb_canon_entities where script_id = %s")
+    canon_done = _scalar(
+        db,
+        "select count(*) as c from kb_canon_entities "
+        "where script_id = %s and embedding is not null",
+    )
+    cards_total = _scalar(
+        db,
+        "select count(*) as c from character_cards "
+        "where script_id = %s and card_type='npc'",
+    )
+    cards_done = _scalar(
+        db,
+        "select count(*) as c from character_cards "
+        "where script_id = %s and card_type='npc' and embedding_vec is not null",
+    )
+    wb_total = _scalar(db, "select count(*) as c from worldbook_entries where script_id = %s")
+    wb_done = _scalar(
+        db,
+        "select count(*) as c from worldbook_entries "
+        "where script_id = %s and embedding_vec is not null",
+    )
+    return {
+        "chunks_total": chunks_total,
+        "chunks_done": chunks_done,
+        "canon_total": canon_total,
+        "canon_done": canon_done,
+        "cards_total": cards_total,
+        "cards_done": cards_done,
+        "wb_total": wb_total,
+        "wb_done": wb_done,
+    }
+
+
+def _estimate_tokens_canon(script_id, llm_model) -> tuple[int, int]:
+    # canon 全量重抽走 arc 算法。真实用量用 **arc 感知**的 extract.budget.estimate
+    # (与 wizard /llm-extract/estimate 同一权威源,~1.16M 与实测 838k@63% 对得上),
+    # 而不是按「整本全文都喂 LLM」估的 chars/2(高估~2x);且原 `length(text)` 列名是
+    # 错的(实际列名 content),会直接抛错让估算 500。统一口径,消除三套估算打架。
+    try:
+        from extract.budget import estimate as _budget_estimate
+        with connect() as db:
+            _b = _budget_estimate(
+                db, script_id, algorithm="arc",
+                model=(llm_model or "deepseek-v4-flash"),
+            )
+        est_in = int(_b.get("est_input_tokens") or 0)
+        est_out = int(_b.get("est_output_tokens") or 0)
+    except Exception:
+        est_in = est_out = 0
+    return est_in, est_out
+
+
+def _estimate_tokens_cards(script_id, llm_model, body, chapter_count) -> tuple[int, int]:
+    # 丰富重建走 run_llm_extraction(arc),与 canon 同口径估;chapter_max 限区间。
+    try:
+        from extract.budget import estimate as _budget_estimate
+        _cmax_raw = body.get("chapter_max")
+        try:
+            _cmax = int(_cmax_raw) if _cmax_raw not in (None, "") else None
+        except (TypeError, ValueError):
+            _cmax = None
+        with connect() as db:
+            _b = _budget_estimate(
+                db, script_id, algorithm="arc",
+                model=(llm_model or "deepseek-v4-flash"),
+            )
+        est_in = int(_b.get("est_input_tokens") or 0)
+        est_out = int(_b.get("est_output_tokens") or 0)
+        # chapter_max 区间钳:按 chapter_max/全书章数 线性折减(粗估,UI 标≈)。
+        if _cmax and chapter_count and _cmax < chapter_count:
+            ratio = max(0.0, min(1.0, _cmax / float(chapter_count)))
+            est_in = int(est_in * ratio)
+            est_out = int(est_out * ratio)
+    except Exception:
+        est_in = est_out = 0
+    return est_in, est_out
+
+
+def _estimate_tokens_worldbook(canon_total) -> tuple[int, int]:
+    _base = max(canon_total, 20)
+    est_in = _base * 1500
+    est_out = _base * 300
+    return est_in, est_out
+
+
+def _estimate_tokens_facts_refine(body, chapter_count) -> tuple[int, int]:
+    # 逐章调 LLM 精炼 summary/in_world_time(extract.facts_refine.refine_script)。
+    # 涉及章节数 = [ch_from, ch_to] 区间(默认整本),按 ~1.5k tokens/章估算
+    # (与 estimate_module_rebuild 既有粗估口径一致,不接 arc budget——精炼是逐章
+    # 独立小调用,非 arc 弧段合并调用)。
+    _ch_from_raw = body.get("ch_from")
+    _ch_to_raw = body.get("ch_to")
+    try:
+        _ch_from = int(_ch_from_raw) if _ch_from_raw not in (None, "") else 1
+    except (TypeError, ValueError):
+        _ch_from = 1
+    try:
+        _ch_to = int(_ch_to_raw) if _ch_to_raw not in (None, "") else chapter_count
+    except (TypeError, ValueError):
+        _ch_to = chapter_count
+    _ch_to = min(_ch_to, chapter_count) if chapter_count else _ch_to
+    _n_chapters = max(0, _ch_to - _ch_from + 1) if (_ch_to and _ch_from) else 0
+    est_in = _n_chapters * 1500
+    est_out = _n_chapters * 100  # 摘要产出短(≤200字),output 远小于 input
+    return est_in, est_out
+
+
+def _estimate_tokens_worldbook_enrich(script_id, body) -> tuple[int, int]:
+    # 命中 pattern 的世界书条目数(与 enrich_script_worldbook 同一 `title ~ pattern`
+    # 查询口径,不调 LLM,只查一次 DB)× ~2k tokens/条目。
+    _pattern = str(body.get("pattern") or "力量|概念|势力|体系")
+    try:
+        with connect() as db:
+            _wb_hit_row = db.execute(
+                "select count(*) as c from worldbook_entries "
+                "where script_id = %s and title ~ %s",
+                (script_id, _pattern),
+            ).fetchone()
+        _n_entries = int(_wb_hit_row["c"]) if _wb_hit_row else 0
+    except Exception:
+        _n_entries = 0
+    est_in = _n_entries * 2000
+    est_out = _n_entries * 400
+    return est_in, est_out
+
+
+def _estimate_tokens_world_key(script_id) -> tuple[int, int]:
+    # 第二层 LLM 窄确认按段(segment)发起调用,一段边界一次调用。段数用零 IO 的
+    # classify_segments 纯函数算(不落库、不调 LLM),口径与 backfill_worldlines
+    # 实际跑时产生的段数一致。
+    try:
+        from extract.world_key_backfill import classify_segments as _classify_segments
+        with connect() as db:
+            _ck_rows = db.execute(
+                "select chapter_index, title, volume_title from script_chapters "
+                "where script_id = %s", (script_id,),
+            ).fetchall()
+        _chapters_for_seg = [
+            {"chapter_index": r["chapter_index"], "title": r.get("title") or "",
+             "volume_title": r.get("volume_title") or ""}
+            for r in (_ck_rows or [])
+        ]
+        _segments = _classify_segments(_chapters_for_seg)
+        _n_segments = max(0, len(_segments) - 1)  # 首段无边界可确认,N 段有 N-1 条边界
+    except Exception:
+        _n_segments = 0
+    est_in = _n_segments * 1000
+    est_out = _n_segments * 150
+    return est_in, est_out

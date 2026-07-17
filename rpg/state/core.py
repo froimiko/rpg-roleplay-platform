@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from core.clock import now_iso
 from core.logging import get_logger
 from state._mixins import ApplyOpsMixin, PendingMixin, RulesGameplayMixin
 
@@ -387,7 +388,7 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
     @classmethod
     def new(cls) -> GameState:
         data = copy.deepcopy(DEFAULT_STATE)
-        data["created_at"] = datetime.now().isoformat(timespec="seconds")
+        data["created_at"] = now_iso()
         return cls(data)
 
     @staticmethod
@@ -488,7 +489,7 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
             has_legacy = any(memory_block.get(b) for b in legacy_buckets)
             if has_legacy:
                 backfilled: list[dict] = []
-                now_ts = datetime.now().isoformat(timespec="seconds")
+                now_ts = now_iso()
                 for bucket in legacy_buckets:
                     legacy_arr = memory_block.get(bucket) or []
                     if not isinstance(legacy_arr, list):
@@ -992,7 +993,7 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
             "text": text,
             "source": source,
             "turn": int(self.data.get("turn", 0)),
-            "ts": datetime.now().isoformat(timespec="seconds"),
+            "ts": now_iso(),
             "status": status,
         }
         if time_label:
@@ -1144,7 +1145,7 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
             "source": source,
             "locked": True,
             "turn": self.data.get("turn", 0),
-            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": now_iso(),
         }
         return old.get("value") != value
 

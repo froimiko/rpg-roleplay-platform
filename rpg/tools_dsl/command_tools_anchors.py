@@ -660,9 +660,8 @@ def _t_revoke_protagonist_pov(user_id: int, args: dict) -> str:
         return f"失败: {type(exc).__name__}: {exc}"
 
 
-def register_anchor_tools() -> None:
-    registry = get_registry()
-    specs = [
+def _anchor_worldline_specs() -> list:
+    return [
         ToolSpec(
             name="list_pending_anchors",
             description=(
@@ -857,6 +856,11 @@ def register_anchor_tools() -> None:
             origins=_ANCHOR_READ_ORIGINS,
             destructive=False,
         ),
+    ]
+
+
+def _anchor_pov_specs() -> list:
+    return [
         ToolSpec(
             name="revoke_protagonist_pov",
             description=(
@@ -912,6 +916,11 @@ def register_anchor_tools() -> None:
             ],
         ),
     ]
+
+
+def register_anchor_tools() -> None:
+    registry = get_registry()
+    specs = [*_anchor_worldline_specs(), *_anchor_pov_specs()]
     for spec in specs:
         if not registry.has(spec.name):
             registry.register(spec)

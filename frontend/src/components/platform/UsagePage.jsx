@@ -4,6 +4,7 @@ import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL,
 import {
   fmtN,
 } from './shared.jsx';
+import { downloadBlob } from '../../lib/download.js';
 import CSAlert from '@cloudscape-design/components/alert';
 import CSBox from '@cloudscape-design/components/box';
 import CSButton from '@cloudscape-design/components/button';
@@ -422,11 +423,7 @@ function UsagePage() {
                 const csv = [headers, ...rows].map(row =>
                   row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")
                 ).join("\n");
-                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a"); a.href = url;
-                a.download = `usage_by_model_${new Date().toISOString().slice(0,10)}.csv`;
-                a.click(); URL.revokeObjectURL(url);
+                downloadBlob(csv, `usage_by_model_${new Date().toISOString().slice(0,10)}.csv`, "text/csv;charset=utf-8;");
               }}
             >
               导出 CSV
@@ -520,11 +517,7 @@ function UsagePage() {
                 const csv = [headers, ...rows].map(row =>
                   row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")
                 ).join("\n");
-                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a"); a.href = url;
-                a.download = `usage_recent_${new Date().toISOString().slice(0,10)}.csv`;
-                a.click(); URL.revokeObjectURL(url);
+                downloadBlob(csv, `usage_recent_${new Date().toISOString().slice(0,10)}.csv`, "text/csv;charset=utf-8;");
               }}
             >
               导出 CSV

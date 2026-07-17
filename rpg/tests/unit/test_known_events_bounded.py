@@ -25,10 +25,15 @@ class KnownEventsInjectionBounded(unittest.TestCase):
 class KnownEventsWriteCapped(unittest.TestCase):
     def test_set_world_known_event_has_hard_cap(self):
         # 源码断言:set_world_known_event 写入处有硬上限删旧
+        # 执行体已抽取为模块级 _exec_set_world_known_event(细分抽取批次),守卫锚点跟随搬家:
+        # ① 分发分支必须仍接线到抽取函数 ② 抽取函数体内必须保有硬上限删旧
         i = CT_SRC.find('name == "set_world_known_event"')
         self.assertNotEqual(i, -1)
-        # 窗口覆盖整个执行器分支(acceptance 过滤块加入后 700 不够,守卫意图不变)
-        block = CT_SRC[i:i + 1400]
+        self.assertIn("_exec_set_world_known_event(state, args)", CT_SRC[i:i + 200],
+                      "set_world_known_event 分支未接线到抽取的执行函数")
+        j = CT_SRC.find("def _exec_set_world_known_event")
+        self.assertNotEqual(j, -1)
+        block = CT_SRC[j:j + 1400]
         self.assertTrue(re.search(r"len\(events\)\s*>\s*\d+", block),
                         "set_world_known_event 写入无硬上限 → state_snapshot 无界膨胀")
         self.assertIn("del events[:-", block, "未删除超限的旧事件")

@@ -19,6 +19,7 @@ import '../i18n/index.js';   // 初始化 i18next + 接 interfaceLang
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
 import { lsGet, lsSet, lsRemove } from '../lib/storage.js';
+import { isMobileV2Enabled } from '../lib/mobile-gate.js';
 
 // 客户端动作命令:本地执行、不发给 GM(区别于 /set /loc /time 等后端 directive,后者仍作为文本发送)。
 const CLIENT_CMDS = new Set(['retry', 'save', 'status', 'debug']);
@@ -87,15 +88,7 @@ const TWEAK_DEFAULTS = {
   showRail: true,
 };
 
-// 移动游戏台灰度开关:迁移期默认关闭(零影响真机用户),开发用 ?m2=1 或 localStorage。P8 改默认开。
-const MOBILE_GAME_ENABLED = (() => {
-  try {
-    const q = new URLSearchParams(location.search);
-    if (q.get('m2') === '1') { lsSet('rpg_mobile_v2', '1'); return true; }
-    if (q.get('m2') === '0') { lsRemove('rpg_mobile_v2'); return false; }
-    return lsGet('rpg_mobile_v2') === '1';
-  } catch (_) { return false; }
-})();
+const MOBILE_GAME_ENABLED = isMobileV2Enabled();
 
 const PUBLIC_STAGES = {
   context: { id: 'context', get label() { return i18n.t('game.console.stage.context'); }, order: 1 },

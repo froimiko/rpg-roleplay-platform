@@ -20,6 +20,8 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from core.text import slugify
+
 BASE = Path(__file__).parent.parent  # rpg/tools_dsl/ → rpg/
 CONFIG_DIR = BASE / "config"
 MCP_CONFIG_FILE = CONFIG_DIR / "mcp_servers.json"
@@ -556,8 +558,7 @@ def _skill_title(skill_file: Path) -> str:
 
 
 def _slugify(text: str) -> str:
-    slug = re.sub(r"[^0-9A-Za-z_\-\u4e00-\u9fff]+", "-", text.strip()).strip("-").lower()
-    return slug or "item"
+    return slugify(text)
 
 
 def _dedupe_dir(path: Path) -> Path:

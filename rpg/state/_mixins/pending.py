@@ -14,8 +14,8 @@
 from __future__ import annotations
 
 import logging as _logging
-from datetime import datetime
 
+from core.clock import now_iso
 from state.parsers import _clean_item, _parse_question
 from state.permissions import _normalize_permission_mode
 
@@ -74,7 +74,7 @@ class PendingMixin:
             return "待审写入不存在"
         permissions = self.data.setdefault("permissions", {})
         permissions.setdefault("audit_log", []).append({
-            "ts": datetime.now().isoformat(timespec="seconds"),
+            "ts": now_iso(),
             "path": item.get("path", ""),
             "value": item.get("value", ""),
             "source": f"{item.get('source', 'gm')}:rejected",
@@ -153,9 +153,8 @@ class PendingMixin:
         permissions["pending_questions"] = keep
         # audit
         audit = permissions.setdefault("audit_log", [])
-        from datetime import datetime as _dt
         audit.append({
-            "ts": _dt.now().isoformat(timespec="seconds"),
+            "ts": now_iso(),
             "kind": "pending_questions_expired",
             "source": "expire_stale_gm_questions",
             "reason": reason,
@@ -187,7 +186,7 @@ class PendingMixin:
             popped = questions.pop(int(index))
         if popped is not None:
             permissions.setdefault("audit_log", []).append({
-                "ts": datetime.now().isoformat(timespec="seconds"),
+                "ts": now_iso(),
                 "kind": "question_answered",
                 "question": popped.get("question", ""),
                 "choice": choice or "(skipped)",

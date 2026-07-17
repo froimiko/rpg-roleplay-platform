@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
-import { MField } from './shared.jsx';
+import { MField, EmptyState } from './shared.jsx';
 import { sha256hex } from '../../lib/crypto-safe.js';
 import { feedbackDecisionLabel } from '../../lib/feedback.js';
 
@@ -308,11 +308,7 @@ function FeedbackSection({ toast }) {
           {histErr ? (
             <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--danger-soft)', border: '1px solid rgba(200,103,93,0.3)', color: 'var(--danger)', fontSize: 13 }}>{histErr}</div>
           ) : history.length === 0 ? (
-            <div className="pl-empty">
-              <div className="ic"><Icon name="feedback" size={22} /></div>
-              <h3>{t('mobile.caps.feedback.history.empty_title')}</h3>
-              <p>{t('mobile.caps.feedback.history.empty_desc')}</p>
-            </div>
+            <EmptyState icon="feedback" titleKey="mobile.caps.feedback.history.empty_title" descKey="mobile.caps.feedback.history.empty_desc" />
           ) : filtered.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '24px 0' }}>{t('mobile.caps.feedback.history.filter_empty')}</div>
           ) : (

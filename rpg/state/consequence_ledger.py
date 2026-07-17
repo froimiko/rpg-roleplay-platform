@@ -27,6 +27,7 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
+from core.text import normalize_for_fp
 from state.parsers import _clean_item
 
 # pending 上限:防 LLM 刷屏。超出拒绝并在 updates 里说明。
@@ -45,21 +46,18 @@ def _ledger(state_data: dict) -> list[dict]:
     return ledger
 
 
-_FP_STRIP_RE = None  # 惰性编译
-
-
 def _normalize_for_fp(text: str) -> str:
     """指纹归一化:去掉全部标点/空白,只留文字数字。
 
     生产实测:史官跨回合重提取同一承诺时措辞会漂(「期限约定——」vs「期限——」、
     全角/半角逗号),精确匹配挡不住;归一化吃掉标点差异。措辞用词级漂移由
     recorder 提示词侧的「已登记清单」防(见 recorder._build_user_prompt)。
+
+    归一化规则统一到中立缝 core.text.normalize_for_fp(单一真源);本模块(柱子2)与
+    world_heartbeat 共同依赖该缝、而非互相 import,「两柱互不读写」的架构隔离仍成立
+    (详见设计文档 §分工)。
     """
-    global _FP_STRIP_RE
-    import re as _re
-    if _FP_STRIP_RE is None:
-        _FP_STRIP_RE = _re.compile(r"[\W_]+", _re.UNICODE)
-    return _FP_STRIP_RE.sub("", text or "")
+    return normalize_for_fp(text)
 
 
 def _fingerprint(text: str, due: dict) -> tuple[str, str, str]:

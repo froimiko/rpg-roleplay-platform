@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 
+from core.clock import now_iso
 from rules import RulesEngine, get_engine
 from rules_bridge.combat import _sync_player_combatant
 
@@ -119,7 +119,7 @@ def consume_item_action(state, item_id: str, qty: int = 1,
         "dc": None,
         "success": True,
         "reason": reason or f"消耗 {result.get('item_name')} ×{result.get('consumed')}",
-        "ts": datetime.now().isoformat(timespec="seconds"),
+        "ts": now_iso(),
         "extra": {
             "item_id": result.get("item_id"),
             "qty_before": result.get("qty_before"),

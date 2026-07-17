@@ -416,421 +416,22 @@ def import_script_pack(zip_bytes: bytes, user_id: int, progress_cb=None) -> dict
 
         # 5c. 写 chapter_facts — 不依赖 book_id/document_id (允许为 NULL 直到知识同步)
         #     用 chapter (index) 作 conflict key
-        for fact in facts:
-            # 映射 chapter_id
-            old_ch_id = fact.get("chapter_id")
-            new_ch_id = old_chapter_id_to_new.get(int(old_ch_id)) if old_ch_id else None
-            try:
-                db.execute(
-                    """
-                    INSERT INTO chapter_facts
-                      (book_id, script_id, document_id, chapter_id, chapter, title,
-                       viewpoint, summary, story_phase, story_time_label, scene_count,
-                       token_estimate, characters, locations, factions, concepts,
-                       items, relationships, events, confidence, metadata)
-                    SELECT b.id, %s, NULL, %s, %s, %s,
-                           %s, %s, %s, %s, %s,
-                           %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
-                           %s::jsonb, %s::jsonb, %s::jsonb, %s, %s::jsonb
-                    FROM books b
-                    WHERE b.script_id = %s
-                    ON CONFLICT DO NOTHING
-                    """,
-                    (
-                        new_script_id,
-                        new_ch_id,
-                        int(fact.get("chapter") or 0),
-                        str(fact.get("title") or ""),
-                        str(fact.get("viewpoint") or ""),
-                        str(fact.get("summary") or ""),
-                        str(fact.get("story_phase") or ""),
-                        str(fact.get("story_time_label") or ""),
-                        int(fact.get("scene_count") or 0),
-                        int(fact.get("token_estimate") or 0),
-                        json.dumps(fact.get("characters") or [], ensure_ascii=False, default=str),
-                        json.dumps(fact.get("locations") or [], ensure_ascii=False, default=str),
-                        json.dumps(fact.get("factions") or [], ensure_ascii=False, default=str),
-                        json.dumps(fact.get("concepts") or [], ensure_ascii=False, default=str),
-                        json.dumps(fact.get("items") or [], ensure_ascii=False, default=str),
-                        json.dumps(fact.get("relationships") or [], ensure_ascii=False, default=str),
-                        json.dumps(fact.get("events") or [], ensure_ascii=False, default=str),
-                        float(fact.get("confidence") or 0.5),
-                        json.dumps(fact.get("metadata") or {}, ensure_ascii=False, default=str),
-                        new_script_id,  # for books subquery
-                    ),
-                )
-            except Exception as exc:
-                warnings.append(f"chapter_fact chapter={fact.get('chapter')} skipped: {exc}")
-            _prog_done += 1
-            if progress_cb and _prog_done % 50 == 0:
-                try:
-                    progress_cb(_prog_done, _prog_total)
-                except Exception:
-                    pass
-        if progress_cb:
-            try:
-                progress_cb(_prog_total, _prog_total)  # 收尾置满,余下小表写入很快
-            except Exception:
-                pass
+        _import_chapter_facts(db, facts, old_chapter_id_to_new, new_script_id, warnings, progress_cb, _prog_done, _prog_total)
 
         # 5d. character_cards — 需要 book_id
-        #     若 pack 含 chunks/docs/cards/worldbook, 提前确保 book 行存在
-        if chunks or docs or cards or wb:
-            from platform_app.knowledge._sync import _ensure_book
-            try:
-                _ensure_book(db, {
-                    "id": new_script_id,
-                    "owner_id": user_id,
-                    "title": title,
-                    "description": description,
-                    "source_path": "",
-                })
-            except Exception:
-                pass  # book 建失败时后续走 skip+warn 分支
-
-        book_row = db.execute(
-            "SELECT id FROM books WHERE script_id = %s",
-            (new_script_id,),
-        ).fetchone()
-        if book_row:
-            book_id = int(book_row["id"])
-            for card in cards:
-                try:
-                    db.execute(
-                        """
-                        INSERT INTO character_cards
-                          (book_id, script_id, name, aliases, identity, appearance,
-                           personality, speech_style, current_status, secrets,
-                           sample_dialogue, token_budget, priority, enabled, metadata)
-                        VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s,
-                                %s::jsonb, %s, %s, %s, %s::jsonb)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            book_id, new_script_id,
-                            str(card.get("name") or ""),
-                            json.dumps(card.get("aliases") or [], ensure_ascii=False, default=str),
-                            str(card.get("identity") or ""),
-                            str(card.get("appearance") or ""),
-                            str(card.get("personality") or ""),
-                            str(card.get("speech_style") or ""),
-                            str(card.get("current_status") or ""),
-                            str(card.get("secrets") or ""),
-                            json.dumps(card.get("sample_dialogue") or [], ensure_ascii=False, default=str),
-                            int(card.get("token_budget") or 450),
-                            int(card.get("priority") or 100),
-                            bool(card.get("enabled", True)),
-                            json.dumps(card.get("metadata") or {}, ensure_ascii=False, default=str),
-                        ),
-                    )
-                except Exception as exc:
-                    warnings.append(f"character_card {card.get('name')!r} skipped: {exc}")
-        else:
-            if cards:
-                warnings.append(
-                    f"{len(cards)} character_cards skipped (no books row yet; "
-                    "run /api/scripts/{id}/knowledge/sync to rebuild)"
-                )
+        book_row, book_id = _import_character_cards(db, chunks, docs, cards, wb, new_script_id, user_id, title, description, warnings)
 
         # 5e. worldbook_entries
-        if book_row:
-            for entry in wb:
-                try:
-                    db.execute(
-                        """
-                        INSERT INTO worldbook_entries
-                          (book_id, script_id, title, content, keys, regex_keys,
-                           priority, token_budget, insertion_position, sticky_turns,
-                           cooldown_turns, probability, character_filter, scene_filter,
-                           enabled, metadata)
-                        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb,
-                                %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb,
-                                %s, %s::jsonb)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            book_id, new_script_id,
-                            str(entry.get("title") or ""),
-                            str(entry.get("content") or ""),
-                            json.dumps(entry.get("keys") or [], ensure_ascii=False, default=str),
-                            json.dumps(entry.get("regex_keys") or [], ensure_ascii=False, default=str),
-                            int(entry.get("priority") or 50),
-                            int(entry.get("token_budget") or 600),
-                            # SEC(C-2): 导入包的 insertion_position 必须命中白名单,非法值降级为 worldbook,
-                            # 防止任意字符串/越权写入 constant 常驻层(每轮无条件注入全体订阅者)。
-                            (str(entry.get("insertion_position") or "worldbook")
-                             if str(entry.get("insertion_position") or "worldbook")
-                             in {"worldbook", "constant", "before_context", "after_context"}
-                             else "worldbook"),
-                            int(entry.get("sticky_turns") or 0),
-                            int(entry.get("cooldown_turns") or 0),
-                            float(entry.get("probability") or 100.0),
-                            json.dumps(entry.get("character_filter") or [], ensure_ascii=False, default=str),
-                            json.dumps(entry.get("scene_filter") or [], ensure_ascii=False, default=str),
-                            bool(entry.get("enabled", True)),
-                            json.dumps(entry.get("metadata") or {}, ensure_ascii=False, default=str),
-                        ),
-                    )
-                except Exception as exc:
-                    warnings.append(f"worldbook entry {entry.get('title')!r} skipped: {exc}")
-        else:
-            if wb:
-                warnings.append(
-                    f"{len(wb)} worldbook_entries skipped (no books row yet; "
-                    "run /api/scripts/{id}/knowledge/sync to rebuild)"
-                )
+        _import_worldbook_entries(db, wb, book_row, book_id, new_script_id, warnings)
 
-        # 5g. documents — track (source_kind, source_ref) → new_document_id for chunks
-        # key: (source_kind, source_ref) → new document id
-        doc_key_to_new_id: dict[tuple[str, str], int] = {}
-        if book_row and docs:
-            for doc in docs:
-                old_ch_id = doc.get("chapter_id")
-                new_ch_id = old_chapter_id_to_new.get(int(old_ch_id)) if old_ch_id else None
-                src_kind = str(doc.get("source_kind") or "chapter")
-                src_ref = str(doc.get("source_ref") or "")
-                try:
-                    new_doc = db.execute(
-                        """
-                        INSERT INTO documents
-                          (book_id, script_id, chapter_id, source_kind, source_ref,
-                           title, content, metadata)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                        ON CONFLICT (book_id, source_kind, source_ref) DO UPDATE
-                          SET updated_at = now()
-                        RETURNING id
-                        """,
-                        (
-                            book_id, new_script_id, new_ch_id,
-                            src_kind, src_ref,
-                            str(doc.get("title") or ""),
-                            str(doc.get("content") or ""),
-                            json.dumps(doc.get("metadata") or {}, ensure_ascii=False, default=str),
-                        ),
-                    ).fetchone()
-                    if new_doc:
-                        doc_key_to_new_id[(src_kind, src_ref)] = int(new_doc["id"])
-                except Exception as exc:
-                    warnings.append(f"document source_ref={src_ref!r} skipped: {exc}")
-        elif docs and not book_row:
-            warnings.append(
-                f"{len(docs)} documents skipped (no books row yet; "
-                "run /api/scripts/{id}/knowledge/sync to rebuild)"
-            )
+        # 5g. documents
+        doc_key_to_new_id = _import_documents(db, docs, book_row, book_id, old_chapter_id_to_new, new_script_id, warnings)
 
-        # 5h. chunks — 仅当 pack 含 chunks 且 documents 成功插入时还原
-        if chunks and book_row and doc_key_to_new_id:
-            inserted_chunks = 0
-            for ck in chunks:
-                src_kind = str(ck.get("source_kind") or "chapter")
-                src_ref = str(ck.get("source_ref") or "")
-                doc_id = doc_key_to_new_id.get((src_kind, src_ref))
-                if doc_id is None:
-                    continue  # 对应 document 未插入, 跳过
-                chapter_index = int(ck.get("chapter_index") or 0)
-                ch_row = db.execute(
-                    "SELECT id FROM script_chapters WHERE script_id = %s AND chapter_index = %s",
-                    (new_script_id, chapter_index),
-                ).fetchone()
-                new_ch_id = int(ch_row["id"]) if ch_row else None
-                try:
-                    db.execute(
-                        """
-                        INSERT INTO document_chunks
-                          (document_id, book_id, script_id, chapter_id, chapter_index,
-                           chunk_index, content, token_count, embedding, embedding_model,
-                           metadata)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            doc_id, book_id, new_script_id, new_ch_id, chapter_index,
-                            int(ck.get("chunk_index") or 0),
-                            str(ck.get("content") or ""),
-                            int(ck.get("token_count") or 0),
-                            json.dumps(ck.get("embedding"), ensure_ascii=False, default=str)
-                            if ck.get("embedding") is not None else None,
-                            str(ck.get("embedding_model") or ""),
-                            json.dumps(ck.get("metadata") or {}, ensure_ascii=False, default=str),
-                        ),
-                    )
-                    inserted_chunks += 1
-                except Exception as exc:
-                    warnings.append(
-                        f"chunk chapter_index={chapter_index} chunk_index={ck.get('chunk_index')} skipped: {exc}"
-                    )
-            if inserted_chunks:
-                pass  # 正常还原, 不需要 warning
-        elif chunks and not book_row:
-            warnings.append(
-                f"{len(chunks)} chunks skipped (no books row yet; "
-                "run /api/scripts/{id}/knowledge/sync to rebuild)"
-            )
+        # 5h. chunks
+        _import_chunks(db, chunks, book_row, book_id, doc_key_to_new_id, new_script_id, warnings)
 
         # ── task 67: v2 5 张世界树/锚点/digest 表导入 ──────────────────
-        # 全部用 new_script_id 替换原 script_id,无 id 重映射(都用自然键/唯一约束)
-        if pack_format_version >= 2:
-            # 5i. kb_canon_entities — uniq (script_id, logical_key)
-            for ent in canon_entities:
-                try:
-                    db.execute(
-                        """
-                        INSERT INTO kb_canon_entities
-                          (script_id, logical_key, name, aliases, type, summary, attrs,
-                           first_revealed_chapter, public_knowledge, importance, metadata,
-                           full_name, identity, background, entity_subtype, parent_logical_key)
-                        VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s::jsonb,
-                                %s, %s, %s, %s::jsonb,
-                                %s, %s, %s, %s, %s)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            new_script_id,
-                            str(ent.get("logical_key") or ""),
-                            str(ent.get("name") or ""),
-                            json.dumps(ent.get("aliases") or [], ensure_ascii=False, default=str),
-                            str(ent.get("type") or ""),
-                            str(ent.get("summary") or ""),
-                            json.dumps(ent.get("attrs") or {}, ensure_ascii=False, default=str),
-                            int(ent.get("first_revealed_chapter") or 0),
-                            bool(ent.get("public_knowledge", False)),
-                            int(ent.get("importance") or 0),
-                            json.dumps(ent.get("metadata") or {}, ensure_ascii=False, default=str),
-                            str(ent.get("full_name") or ""),
-                            str(ent.get("identity") or ""),
-                            str(ent.get("background") or ""),
-                            str(ent.get("entity_subtype") or ""),
-                            str(ent.get("parent_logical_key") or ""),
-                        ),
-                    )
-                except Exception as exc:
-                    warnings.append(f"kb_canon_entity {ent.get('logical_key')!r} skipped: {exc}")
-
-            # 5j. script_timeline_anchors — uniq (script_id, story_phase, story_time_label)
-            for anc in timeline_anchors:
-                try:
-                    db.execute(
-                        """
-                        INSERT INTO script_timeline_anchors
-                          (script_id, story_phase, story_time_label, chapter_min, chapter_max,
-                           chapter_count, sample_title, sample_summary, keywords, confidence)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            new_script_id,
-                            str(anc.get("story_phase") or ""),
-                            str(anc.get("story_time_label") or ""),
-                            int(anc.get("chapter_min") or 0),
-                            int(anc.get("chapter_max") or 0),
-                            int(anc.get("chapter_count") or 0),
-                            str(anc.get("sample_title") or ""),
-                            str(anc.get("sample_summary") or ""),
-                            anc.get("keywords") or [],  # text[] — psycopg 直接接 list
-                            float(anc.get("confidence") or 1.0),
-                        ),
-                    )
-                except Exception as exc:
-                    warnings.append(f"timeline_anchor {anc.get('story_phase')}:{anc.get('story_time_label')!r} skipped: {exc}")
-
-            # 5k. phase_digests — 无 uniq,先 DELETE WHERE script_id=new 防重复
-            #     (这层是导入,new_script_id 是新建的,理论上没旧数据,但保守起见)
-            try:
-                db.execute("DELETE FROM phase_digests WHERE script_id = %s", (new_script_id,))
-            except Exception:
-                pass
-            for pd in phase_digests_rows:
-                try:
-                    db.execute(
-                        """
-                        INSERT INTO phase_digests
-                          (script_id, phase_label, chapter_min, chapter_max, summary,
-                           key_events, key_locations, key_characters,
-                           story_time_label_start, story_time_label_end, chapter_count)
-                        VALUES (%s, %s, %s, %s, %s,
-                                %s::jsonb, %s::jsonb, %s::jsonb,
-                                %s, %s, %s)
-                        """,
-                        (
-                            new_script_id,
-                            str(pd.get("phase_label") or ""),
-                            int(pd.get("chapter_min") or 0),
-                            int(pd.get("chapter_max") or 0),
-                            str(pd.get("summary") or ""),
-                            json.dumps(pd.get("key_events") or [], ensure_ascii=False, default=str),
-                            json.dumps(pd.get("key_locations") or [], ensure_ascii=False, default=str),
-                            json.dumps(pd.get("key_characters") or [], ensure_ascii=False, default=str),
-                            str(pd.get("story_time_label_start") or ""),
-                            str(pd.get("story_time_label_end") or ""),
-                            int(pd.get("chapter_count") or 0),
-                        ),
-                    )
-                except Exception as exc:
-                    warnings.append(f"phase_digest {pd.get('phase_label')!r} skipped: {exc}")
-
-            # 5l. script_worldlines — uniq (script_id, wl_key)
-            for wl in worldlines:
-                try:
-                    db.execute(
-                        """
-                        INSERT INTO script_worldlines
-                          (script_id, wl_key, label, parent_wl, branch_at_node,
-                           is_primary, source, metadata)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            new_script_id,
-                            str(wl.get("wl_key") or ""),
-                            str(wl.get("label") or ""),
-                            wl.get("parent_wl"),
-                            wl.get("branch_at_node"),
-                            bool(wl.get("is_primary", False)),
-                            str(wl.get("source") or "extracted"),
-                            json.dumps(wl.get("metadata") or {}, ensure_ascii=False, default=str),
-                        ),
-                    )
-                except Exception as exc:
-                    warnings.append(f"worldline {wl.get('wl_key')!r} skipped: {exc}")
-
-            # 5m. script_worldline_nodes — uniq (script_id, wl_key, node_key)
-            for nd in worldline_nodes:
-                try:
-                    db.execute(
-                        """
-                        INSERT INTO script_worldline_nodes
-                          (script_id, wl_key, node_key, seq, label, summary,
-                           chapter_min, chapter_max, anchor_keys, must_preserve, may_vary,
-                           causal_centrality, first_revealed_chapter)
-                        VALUES (%s, %s, %s, %s, %s, %s,
-                                %s, %s, %s::jsonb, %s::jsonb, %s::jsonb,
-                                %s, %s)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            new_script_id,
-                            str(nd.get("wl_key") or ""),
-                            str(nd.get("node_key") or ""),
-                            int(nd.get("seq") or 0),
-                            str(nd.get("label") or ""),
-                            str(nd.get("summary") or ""),
-                            nd.get("chapter_min"),
-                            nd.get("chapter_max"),
-                            json.dumps(nd.get("anchor_keys") or [], ensure_ascii=False, default=str),
-                            json.dumps(nd.get("must_preserve") or [], ensure_ascii=False, default=str),
-                            json.dumps(nd.get("may_vary") or [], ensure_ascii=False, default=str),
-                            float(nd.get("causal_centrality") or 0.0),
-                            int(nd.get("first_revealed_chapter") or 0),
-                        ),
-                    )
-                except Exception as exc:
-                    warnings.append(f"worldline_node {nd.get('wl_key')}:{nd.get('node_key')!r} skipped: {exc}")
-        else:
-            # v1 包 — 缺世界树/锚点/digest,给出补救路径提示
-            warnings.append(
-                f"v1 pack imported into script {new_script_id} (缺 kb_canon_entities/timeline_anchors/phase_digests/worldlines)。"
-                f"运行 /api/scripts/{new_script_id}/knowledge/sync 重建,否则 GM retrieval 上下文会残缺。"
-            )
+        _import_worldtree_tables(db, pack_format_version, canon_entities, timeline_anchors, phase_digests_rows, worldlines, worldline_nodes, new_script_id, warnings)
 
     # 6. overrides — must be after outer `with connect()` commits the scripts row
     if overrides:
@@ -918,3 +519,436 @@ def clone_public_script(src_script_id: int, dst_user_id: int) -> dict[str, Any]:
     except Exception:
         pass  # 计数失败不影响克隆结果
     return result
+
+
+def _import_chapter_facts(db, facts, old_chapter_id_to_new, new_script_id, warnings, progress_cb, _prog_done, _prog_total) -> None:
+    # 5c. 写 chapter_facts — 不依赖 book_id/document_id (允许为 NULL 直到知识同步)
+    #     用 chapter (index) 作 conflict key
+    for fact in facts:
+        # 映射 chapter_id
+        old_ch_id = fact.get("chapter_id")
+        new_ch_id = old_chapter_id_to_new.get(int(old_ch_id)) if old_ch_id else None
+        try:
+            db.execute(
+                """
+                INSERT INTO chapter_facts
+                  (book_id, script_id, document_id, chapter_id, chapter, title,
+                   viewpoint, summary, story_phase, story_time_label, scene_count,
+                   token_estimate, characters, locations, factions, concepts,
+                   items, relationships, events, confidence, metadata)
+                SELECT b.id, %s, NULL, %s, %s, %s,
+                       %s, %s, %s, %s, %s,
+                       %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
+                       %s::jsonb, %s::jsonb, %s::jsonb, %s, %s::jsonb
+                FROM books b
+                WHERE b.script_id = %s
+                ON CONFLICT DO NOTHING
+                """,
+                (
+                    new_script_id,
+                    new_ch_id,
+                    int(fact.get("chapter") or 0),
+                    str(fact.get("title") or ""),
+                    str(fact.get("viewpoint") or ""),
+                    str(fact.get("summary") or ""),
+                    str(fact.get("story_phase") or ""),
+                    str(fact.get("story_time_label") or ""),
+                    int(fact.get("scene_count") or 0),
+                    int(fact.get("token_estimate") or 0),
+                    json.dumps(fact.get("characters") or [], ensure_ascii=False, default=str),
+                    json.dumps(fact.get("locations") or [], ensure_ascii=False, default=str),
+                    json.dumps(fact.get("factions") or [], ensure_ascii=False, default=str),
+                    json.dumps(fact.get("concepts") or [], ensure_ascii=False, default=str),
+                    json.dumps(fact.get("items") or [], ensure_ascii=False, default=str),
+                    json.dumps(fact.get("relationships") or [], ensure_ascii=False, default=str),
+                    json.dumps(fact.get("events") or [], ensure_ascii=False, default=str),
+                    float(fact.get("confidence") or 0.5),
+                    json.dumps(fact.get("metadata") or {}, ensure_ascii=False, default=str),
+                    new_script_id,  # for books subquery
+                ),
+            )
+        except Exception as exc:
+            warnings.append(f"chapter_fact chapter={fact.get('chapter')} skipped: {exc}")
+        _prog_done += 1
+        if progress_cb and _prog_done % 50 == 0:
+            try:
+                progress_cb(_prog_done, _prog_total)
+            except Exception:
+                pass
+    if progress_cb:
+        try:
+            progress_cb(_prog_total, _prog_total)  # 收尾置满,余下小表写入很快
+        except Exception:
+            pass
+
+
+def _import_character_cards(db, chunks, docs, cards, wb, new_script_id, user_id, title, description, warnings):
+    # 5d. character_cards — 需要 book_id
+    #     若 pack 含 chunks/docs/cards/worldbook, 提前确保 book 行存在
+    if chunks or docs or cards or wb:
+        from platform_app.knowledge._sync import _ensure_book
+        try:
+            _ensure_book(db, {
+                "id": new_script_id,
+                "owner_id": user_id,
+                "title": title,
+                "description": description,
+                "source_path": "",
+            })
+        except Exception:
+            pass  # book 建失败时后续走 skip+warn 分支
+
+    book_row = db.execute(
+        "SELECT id FROM books WHERE script_id = %s",
+        (new_script_id,),
+    ).fetchone()
+    book_id = None  # book_row 为空时安全返回(下游仅在 if book_row 内读取,与原语义一致)
+    if book_row:
+        book_id = int(book_row["id"])
+        for card in cards:
+            try:
+                db.execute(
+                    """
+                    INSERT INTO character_cards
+                      (book_id, script_id, name, aliases, identity, appearance,
+                       personality, speech_style, current_status, secrets,
+                       sample_dialogue, token_budget, priority, enabled, metadata)
+                    VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s,
+                            %s::jsonb, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        book_id, new_script_id,
+                        str(card.get("name") or ""),
+                        json.dumps(card.get("aliases") or [], ensure_ascii=False, default=str),
+                        str(card.get("identity") or ""),
+                        str(card.get("appearance") or ""),
+                        str(card.get("personality") or ""),
+                        str(card.get("speech_style") or ""),
+                        str(card.get("current_status") or ""),
+                        str(card.get("secrets") or ""),
+                        json.dumps(card.get("sample_dialogue") or [], ensure_ascii=False, default=str),
+                        int(card.get("token_budget") or 450),
+                        int(card.get("priority") or 100),
+                        bool(card.get("enabled", True)),
+                        json.dumps(card.get("metadata") or {}, ensure_ascii=False, default=str),
+                    ),
+                )
+            except Exception as exc:
+                warnings.append(f"character_card {card.get('name')!r} skipped: {exc}")
+    else:
+        if cards:
+            warnings.append(
+                f"{len(cards)} character_cards skipped (no books row yet; "
+                "run /api/scripts/{id}/knowledge/sync to rebuild)"
+            )
+    return book_row, book_id
+
+
+def _import_worldbook_entries(db, wb, book_row, book_id, new_script_id, warnings) -> None:
+    # 5e. worldbook_entries
+    if book_row:
+        for entry in wb:
+            try:
+                db.execute(
+                    """
+                    INSERT INTO worldbook_entries
+                      (book_id, script_id, title, content, keys, regex_keys,
+                       priority, token_budget, insertion_position, sticky_turns,
+                       cooldown_turns, probability, character_filter, scene_filter,
+                       enabled, metadata)
+                    VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb,
+                            %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb,
+                            %s, %s::jsonb)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        book_id, new_script_id,
+                        str(entry.get("title") or ""),
+                        str(entry.get("content") or ""),
+                        json.dumps(entry.get("keys") or [], ensure_ascii=False, default=str),
+                        json.dumps(entry.get("regex_keys") or [], ensure_ascii=False, default=str),
+                        int(entry.get("priority") or 50),
+                        int(entry.get("token_budget") or 600),
+                        # SEC(C-2): 导入包的 insertion_position 必须命中白名单,非法值降级为 worldbook,
+                        # 防止任意字符串/越权写入 constant 常驻层(每轮无条件注入全体订阅者)。
+                        (str(entry.get("insertion_position") or "worldbook")
+                         if str(entry.get("insertion_position") or "worldbook")
+                         in {"worldbook", "constant", "before_context", "after_context"}
+                         else "worldbook"),
+                        int(entry.get("sticky_turns") or 0),
+                        int(entry.get("cooldown_turns") or 0),
+                        float(entry.get("probability") or 100.0),
+                        json.dumps(entry.get("character_filter") or [], ensure_ascii=False, default=str),
+                        json.dumps(entry.get("scene_filter") or [], ensure_ascii=False, default=str),
+                        bool(entry.get("enabled", True)),
+                        json.dumps(entry.get("metadata") or {}, ensure_ascii=False, default=str),
+                    ),
+                )
+            except Exception as exc:
+                warnings.append(f"worldbook entry {entry.get('title')!r} skipped: {exc}")
+    else:
+        if wb:
+            warnings.append(
+                f"{len(wb)} worldbook_entries skipped (no books row yet; "
+                "run /api/scripts/{id}/knowledge/sync to rebuild)"
+            )
+
+
+def _import_documents(db, docs, book_row, book_id, old_chapter_id_to_new, new_script_id, warnings):
+    # 5g. documents — track (source_kind, source_ref) → new_document_id for chunks
+    # key: (source_kind, source_ref) → new document id
+    doc_key_to_new_id: dict[tuple[str, str], int] = {}
+    if book_row and docs:
+        for doc in docs:
+            old_ch_id = doc.get("chapter_id")
+            new_ch_id = old_chapter_id_to_new.get(int(old_ch_id)) if old_ch_id else None
+            src_kind = str(doc.get("source_kind") or "chapter")
+            src_ref = str(doc.get("source_ref") or "")
+            try:
+                new_doc = db.execute(
+                    """
+                    INSERT INTO documents
+                      (book_id, script_id, chapter_id, source_kind, source_ref,
+                       title, content, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (book_id, source_kind, source_ref) DO UPDATE
+                      SET updated_at = now()
+                    RETURNING id
+                    """,
+                    (
+                        book_id, new_script_id, new_ch_id,
+                        src_kind, src_ref,
+                        str(doc.get("title") or ""),
+                        str(doc.get("content") or ""),
+                        json.dumps(doc.get("metadata") or {}, ensure_ascii=False, default=str),
+                    ),
+                ).fetchone()
+                if new_doc:
+                    doc_key_to_new_id[(src_kind, src_ref)] = int(new_doc["id"])
+            except Exception as exc:
+                warnings.append(f"document source_ref={src_ref!r} skipped: {exc}")
+    elif docs and not book_row:
+        warnings.append(
+            f"{len(docs)} documents skipped (no books row yet; "
+            "run /api/scripts/{id}/knowledge/sync to rebuild)"
+        )
+    return doc_key_to_new_id
+
+
+def _import_chunks(db, chunks, book_row, book_id, doc_key_to_new_id, new_script_id, warnings) -> None:
+    # 5h. chunks — 仅当 pack 含 chunks 且 documents 成功插入时还原
+    if chunks and book_row and doc_key_to_new_id:
+        inserted_chunks = 0
+        for ck in chunks:
+            src_kind = str(ck.get("source_kind") or "chapter")
+            src_ref = str(ck.get("source_ref") or "")
+            doc_id = doc_key_to_new_id.get((src_kind, src_ref))
+            if doc_id is None:
+                continue  # 对应 document 未插入, 跳过
+            chapter_index = int(ck.get("chapter_index") or 0)
+            ch_row = db.execute(
+                "SELECT id FROM script_chapters WHERE script_id = %s AND chapter_index = %s",
+                (new_script_id, chapter_index),
+            ).fetchone()
+            new_ch_id = int(ch_row["id"]) if ch_row else None
+            try:
+                db.execute(
+                    """
+                    INSERT INTO document_chunks
+                      (document_id, book_id, script_id, chapter_id, chapter_index,
+                       chunk_index, content, token_count, embedding, embedding_model,
+                       metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        doc_id, book_id, new_script_id, new_ch_id, chapter_index,
+                        int(ck.get("chunk_index") or 0),
+                        str(ck.get("content") or ""),
+                        int(ck.get("token_count") or 0),
+                        json.dumps(ck.get("embedding"), ensure_ascii=False, default=str)
+                        if ck.get("embedding") is not None else None,
+                        str(ck.get("embedding_model") or ""),
+                        json.dumps(ck.get("metadata") or {}, ensure_ascii=False, default=str),
+                    ),
+                )
+                inserted_chunks += 1
+            except Exception as exc:
+                warnings.append(
+                    f"chunk chapter_index={chapter_index} chunk_index={ck.get('chunk_index')} skipped: {exc}"
+                )
+        if inserted_chunks:
+            pass  # 正常还原, 不需要 warning
+    elif chunks and not book_row:
+        warnings.append(
+            f"{len(chunks)} chunks skipped (no books row yet; "
+            "run /api/scripts/{id}/knowledge/sync to rebuild)"
+        )
+
+
+def _import_worldtree_tables(db, pack_format_version, canon_entities, timeline_anchors, phase_digests_rows, worldlines, worldline_nodes, new_script_id, warnings) -> None:
+    # ── task 67: v2 5 张世界树/锚点/digest 表导入 ──────────────────
+    # 全部用 new_script_id 替换原 script_id,无 id 重映射(都用自然键/唯一约束)
+    if pack_format_version >= 2:
+        # 5i. kb_canon_entities — uniq (script_id, logical_key)
+        for ent in canon_entities:
+            try:
+                db.execute(
+                    """
+                    INSERT INTO kb_canon_entities
+                      (script_id, logical_key, name, aliases, type, summary, attrs,
+                       first_revealed_chapter, public_knowledge, importance, metadata,
+                       full_name, identity, background, entity_subtype, parent_logical_key)
+                    VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s::jsonb,
+                            %s, %s, %s, %s::jsonb,
+                            %s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        new_script_id,
+                        str(ent.get("logical_key") or ""),
+                        str(ent.get("name") or ""),
+                        json.dumps(ent.get("aliases") or [], ensure_ascii=False, default=str),
+                        str(ent.get("type") or ""),
+                        str(ent.get("summary") or ""),
+                        json.dumps(ent.get("attrs") or {}, ensure_ascii=False, default=str),
+                        int(ent.get("first_revealed_chapter") or 0),
+                        bool(ent.get("public_knowledge", False)),
+                        int(ent.get("importance") or 0),
+                        json.dumps(ent.get("metadata") or {}, ensure_ascii=False, default=str),
+                        str(ent.get("full_name") or ""),
+                        str(ent.get("identity") or ""),
+                        str(ent.get("background") or ""),
+                        str(ent.get("entity_subtype") or ""),
+                        str(ent.get("parent_logical_key") or ""),
+                    ),
+                )
+            except Exception as exc:
+                warnings.append(f"kb_canon_entity {ent.get('logical_key')!r} skipped: {exc}")
+
+        # 5j. script_timeline_anchors — uniq (script_id, story_phase, story_time_label)
+        for anc in timeline_anchors:
+            try:
+                db.execute(
+                    """
+                    INSERT INTO script_timeline_anchors
+                      (script_id, story_phase, story_time_label, chapter_min, chapter_max,
+                       chapter_count, sample_title, sample_summary, keywords, confidence)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        new_script_id,
+                        str(anc.get("story_phase") or ""),
+                        str(anc.get("story_time_label") or ""),
+                        int(anc.get("chapter_min") or 0),
+                        int(anc.get("chapter_max") or 0),
+                        int(anc.get("chapter_count") or 0),
+                        str(anc.get("sample_title") or ""),
+                        str(anc.get("sample_summary") or ""),
+                        anc.get("keywords") or [],  # text[] — psycopg 直接接 list
+                        float(anc.get("confidence") or 1.0),
+                    ),
+                )
+            except Exception as exc:
+                warnings.append(f"timeline_anchor {anc.get('story_phase')}:{anc.get('story_time_label')!r} skipped: {exc}")
+
+        # 5k. phase_digests — 无 uniq,先 DELETE WHERE script_id=new 防重复
+        #     (这层是导入,new_script_id 是新建的,理论上没旧数据,但保守起见)
+        try:
+            db.execute("DELETE FROM phase_digests WHERE script_id = %s", (new_script_id,))
+        except Exception:
+            pass
+        for pd in phase_digests_rows:
+            try:
+                db.execute(
+                    """
+                    INSERT INTO phase_digests
+                      (script_id, phase_label, chapter_min, chapter_max, summary,
+                       key_events, key_locations, key_characters,
+                       story_time_label_start, story_time_label_end, chapter_count)
+                    VALUES (%s, %s, %s, %s, %s,
+                            %s::jsonb, %s::jsonb, %s::jsonb,
+                            %s, %s, %s)
+                    """,
+                    (
+                        new_script_id,
+                        str(pd.get("phase_label") or ""),
+                        int(pd.get("chapter_min") or 0),
+                        int(pd.get("chapter_max") or 0),
+                        str(pd.get("summary") or ""),
+                        json.dumps(pd.get("key_events") or [], ensure_ascii=False, default=str),
+                        json.dumps(pd.get("key_locations") or [], ensure_ascii=False, default=str),
+                        json.dumps(pd.get("key_characters") or [], ensure_ascii=False, default=str),
+                        str(pd.get("story_time_label_start") or ""),
+                        str(pd.get("story_time_label_end") or ""),
+                        int(pd.get("chapter_count") or 0),
+                    ),
+                )
+            except Exception as exc:
+                warnings.append(f"phase_digest {pd.get('phase_label')!r} skipped: {exc}")
+
+        # 5l. script_worldlines — uniq (script_id, wl_key)
+        for wl in worldlines:
+            try:
+                db.execute(
+                    """
+                    INSERT INTO script_worldlines
+                      (script_id, wl_key, label, parent_wl, branch_at_node,
+                       is_primary, source, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        new_script_id,
+                        str(wl.get("wl_key") or ""),
+                        str(wl.get("label") or ""),
+                        wl.get("parent_wl"),
+                        wl.get("branch_at_node"),
+                        bool(wl.get("is_primary", False)),
+                        str(wl.get("source") or "extracted"),
+                        json.dumps(wl.get("metadata") or {}, ensure_ascii=False, default=str),
+                    ),
+                )
+            except Exception as exc:
+                warnings.append(f"worldline {wl.get('wl_key')!r} skipped: {exc}")
+
+        # 5m. script_worldline_nodes — uniq (script_id, wl_key, node_key)
+        for nd in worldline_nodes:
+            try:
+                db.execute(
+                    """
+                    INSERT INTO script_worldline_nodes
+                      (script_id, wl_key, node_key, seq, label, summary,
+                       chapter_min, chapter_max, anchor_keys, must_preserve, may_vary,
+                       causal_centrality, first_revealed_chapter)
+                    VALUES (%s, %s, %s, %s, %s, %s,
+                            %s, %s, %s::jsonb, %s::jsonb, %s::jsonb,
+                            %s, %s)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (
+                        new_script_id,
+                        str(nd.get("wl_key") or ""),
+                        str(nd.get("node_key") or ""),
+                        int(nd.get("seq") or 0),
+                        str(nd.get("label") or ""),
+                        str(nd.get("summary") or ""),
+                        nd.get("chapter_min"),
+                        nd.get("chapter_max"),
+                        json.dumps(nd.get("anchor_keys") or [], ensure_ascii=False, default=str),
+                        json.dumps(nd.get("must_preserve") or [], ensure_ascii=False, default=str),
+                        json.dumps(nd.get("may_vary") or [], ensure_ascii=False, default=str),
+                        float(nd.get("causal_centrality") or 0.0),
+                        int(nd.get("first_revealed_chapter") or 0),
+                    ),
+                )
+            except Exception as exc:
+                warnings.append(f"worldline_node {nd.get('wl_key')}:{nd.get('node_key')!r} skipped: {exc}")
+    else:
+        # v1 包 — 缺世界树/锚点/digest,给出补救路径提示
+        warnings.append(
+            f"v1 pack imported into script {new_script_id} (缺 kb_canon_entities/timeline_anchors/phase_digests/worldlines)。"
+            f"运行 /api/scripts/{new_script_id}/knowledge/sync 重建,否则 GM retrieval 上下文会残缺。"
+        )

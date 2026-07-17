@@ -482,9 +482,8 @@ def _t_continue_branch(user_id: int, args: dict) -> str:
         return f"失败: {type(exc).__name__}: {exc}"
 
 
-def register_saves_tools() -> None:
-    registry = get_registry()
-    specs: list[ToolSpec] = [
+def _save_specs() -> list:
+    return [
         ToolSpec(
             name="create_save",
             description=(
@@ -638,6 +637,11 @@ def register_saves_tools() -> None:
             origins=_USER_ORIGINS_DESTRUCTIVE,
             destructive=True,
         ),
+    ]
+
+
+def _branch_specs() -> list:
+    return [
         ToolSpec(
             name="list_branches",
             description="列出某存档的所有分支。",
@@ -692,6 +696,11 @@ def register_saves_tools() -> None:
             origins=_USER_ORIGINS_MUTATE,  # task 87 Phase 7
         ),
     ]
+
+
+def register_saves_tools() -> None:
+    registry = get_registry()
+    specs: list[ToolSpec] = [*_save_specs(), *_branch_specs()]
     for spec in specs:
         if not registry.has(spec.name):
             registry.register(spec)

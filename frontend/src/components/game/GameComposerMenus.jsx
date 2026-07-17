@@ -4,6 +4,7 @@ import React from 'react';
 import { useState as useStateC, useRef as useRefC } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../game-icons.jsx';
+import { useDismissOnOutsideOrEscape } from '../../hooks/useDismissOnOutsideOrEscape.js';
 
 const SLASH_COMMANDS = [
   { id: "status", trigger: "/status", labelKey: "game.command.status_label", groupKey: "game.command.group_query", hint: "/status" },
@@ -55,20 +56,7 @@ function CommandMenu({ query, onPick, onClose, triggerRef }) {
   const { t } = useTranslation();
   const menuRef = useRefC(null);
   // task 141: outside click + Esc 关闭 (之前 CommandMenu 漏修,点空白点不掉)
-  React.useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
-    const onOutside = (e) => {
-      const inMenu = menuRef.current && menuRef.current.contains(e.target);
-      const inTrigger = triggerRef && triggerRef.current && triggerRef.current.contains(e.target);
-      if (!inMenu && !inTrigger) onClose && onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    document.addEventListener("mousedown", onOutside, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("mousedown", onOutside, true);
-    };
-  }, [onClose, triggerRef]);
+  useDismissOnOutsideOrEscape(menuRef, triggerRef, onClose);
   // task 141: max-height 自适应 trigger 上方可用空间,popover 不冲出 viewport 顶。
   // PR #14: 再加 55vh 上限 + resize 响应,防止菜单过高挡住整个界面。
   const calcCmdHeight = React.useCallback(() => {
@@ -137,20 +125,7 @@ function AttachMenu({ onPick, onClose, triggerRef, onAiReply, aiReplyOnly = fals
     window.addEventListener("resize", calcHeight);
     return () => window.removeEventListener("resize", calcHeight);
   }, [calcHeight]);
-  React.useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
-    const onOutside = (e) => {
-      const inMenu = menuRef.current && menuRef.current.contains(e.target);
-      const inTrigger = triggerRef && triggerRef.current && triggerRef.current.contains(e.target);
-      if (!inMenu && !inTrigger) onClose && onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    document.addEventListener("mousedown", onOutside, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("mousedown", onOutside, true);
-    };
-  }, [onClose, triggerRef]);
+  useDismissOnOutsideOrEscape(menuRef, triggerRef, onClose);
 
   const { t } = useTranslation();
   return (

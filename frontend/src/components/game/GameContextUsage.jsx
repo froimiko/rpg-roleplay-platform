@@ -3,6 +3,7 @@
 import React from 'react';
 import { useState as useStateC, useRef as useRefC } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useDismissOnOutsideOrEscape } from '../../hooks/useDismissOnOutsideOrEscape.js';
 
 // task 39 收尾：MODEL_OPTIONS 已删，不再 export。
 function ContextBreakdownPanel({ used, cap, onClose, triggerRef }) {
@@ -27,20 +28,7 @@ function ContextBreakdownPanel({ used, cap, onClose, triggerRef }) {
     return () => { cancelled = true; };
   }, []);
 
-  React.useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    const onOutside = (e) => {
-      const inPanel = panelRef.current && panelRef.current.contains(e.target);
-      const inTrigger = triggerRef && triggerRef.current && triggerRef.current.contains(e.target);
-      if (!inPanel && !inTrigger) onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    document.addEventListener("mousedown", onOutside, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("mousedown", onOutside, true);
-    };
-  }, [onClose, triggerRef]);
+  useDismissOnOutsideOrEscape(panelRef, triggerRef, onClose);
 
   const fmt = (n) => n >= 1_000_000 ? (n / 1_000_000).toFixed(2) + "M"
                    : n >= 1_000     ? (n / 1_000).toFixed(1) + "k"

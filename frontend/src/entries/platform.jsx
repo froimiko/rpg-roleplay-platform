@@ -17,6 +17,7 @@ import '../ui-atlas.js';
 import '../console-assistant-navigation.jsx';
 import '../i18n/index.js';   // 初始化 i18next + 接 interfaceLang
 import { lsGet, lsSet, lsRemove } from '../lib/storage.js';
+import { isMobileV2Enabled } from '../lib/mobile-gate.js';
 
 // Cloudscape 设计系统 + 暖色主题(UI 底座)
 import '@cloudscape-design/global-styles/index.css';
@@ -74,16 +75,7 @@ const TWEAK_DEFAULTS = {
   accent: 'terracotta',
 };
 
-// 移动外壳灰度开关:迁移期默认关闭(零影响真机用户),开发用 ?m2=1 或 localStorage。
-// P8 收尾时改为 width<600 默认开。
-const MOBILE_V2_ENABLED = (() => {
-  try {
-    const q = new URLSearchParams(location.search);
-    if (q.get('m2') === '1') { lsSet('rpg_mobile_v2', '1'); return true; }
-    if (q.get('m2') === '0') { lsRemove('rpg_mobile_v2'); return false; }
-    return lsGet('rpg_mobile_v2') === '1';
-  } catch (_) { return false; }
-})();
+const MOBILE_V2_ENABLED = isMobileV2Enabled();
 const MOBILE_V2_MAX_WIDTH = 600;
 
 // 合法 page id 全集(History 路由 /<id> 校验用)。settings-deploy 等旧别名在 router.js

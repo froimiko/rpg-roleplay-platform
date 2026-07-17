@@ -273,7 +273,8 @@ async def api_desktop_login(request: Request, token: str = "", next: str = "/Pla
     from fastapi.responses import RedirectResponse
 
     from core.config import deployment_mode as _dm
-    if (_dm() or "").strip().lower() not in {"local", "desktop", "self_hosted", "self-hosted"}:
+    from core.config import LOCAL_MODES
+    if (_dm() or "").strip().lower() not in LOCAL_MODES:
         raise HTTPException(status_code=404, detail="仅本地部署可用")
     # 防开放重定向:next 必须是站内相对路径(单个 /,不允许 // 或 \\ 或带协议)。
     # 反斜杠要挡:浏览器会把 /\evil.com 当成协议相对 URL → 跳站外。

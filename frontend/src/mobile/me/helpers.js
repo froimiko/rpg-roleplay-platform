@@ -1,6 +1,7 @@
 /* MobileMe 纯工具 / 常量 —— 从 pages/MobileMe.jsx 拆出,逐字节不变。 */
 
 import i18n from '../../i18n';
+import { ACHV_CAT_ORDER, TIER_RANK } from '../../lib/achievements-const.js';
 
 /* ── 工具函数 ────────────────────────────────────────────────────── */
 const fmtN = (n) => n == null ? '—' : Number(n).toLocaleString();
@@ -26,9 +27,7 @@ const fmtAgo = (iso) => {
   } catch { return '—'; }
 };
 
-/* ── 成就分类顺序 ──────────────────────────────────────────────── */
-const ACHV_CAT_ORDER = ['启程', '叙事', '探索', '收藏', '坚持', '隐藏'];
-const TIER_RANK = { gold: 3, silver: 2, bronze: 1 };
+/* ── 成就分类顺序(收口到 lib/achievements-const.js,此处 re-export) ──────── */
 const TIER_COLOR = { gold: '#d4a35c', silver: '#aab0be', bronze: '#b97a5a' };
 
 export { fmtN, fmtWan, fmtDate, fmtAgo, ACHV_CAT_ORDER, TIER_RANK, TIER_COLOR };

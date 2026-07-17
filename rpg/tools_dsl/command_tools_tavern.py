@@ -658,10 +658,7 @@ def _t_set_tavern_immersive(state: Any, args: dict) -> str:
 # ────────────────────────────────────────────────────────────
 
 
-def register_tavern_tools() -> None:
-    """注册酒馆 v2 工具到全局 registry。幂等(已注册则跳过)。"""
-    registry = get_registry()
-
+def _register_tavern_character_tools(registry) -> None:
     if not registry.has("set_tavern_character"):
         registry.register(ToolSpec(
             name="set_tavern_character",
@@ -800,6 +797,8 @@ def register_tavern_tools() -> None:
             destructive=False,
         ))
 
+
+def _register_tavern_script_tools(registry) -> None:
     if not registry.has("tavern_list_scripts"):
         registry.register(ToolSpec(
             name="tavern_list_scripts",
@@ -836,6 +835,8 @@ def register_tavern_tools() -> None:
             destructive=True,
         ))
 
+
+def _register_tavern_interaction_tools(registry) -> None:
     if not registry.has("ask_player_choice"):
         registry.register(ToolSpec(
             name="ask_player_choice",
@@ -958,6 +959,14 @@ def register_tavern_tools() -> None:
             destructive=False,
             input_examples=({}, {"scope": "chapters"}, {"title": "我的剧本", "scope": "full"}),
         ))
+
+
+def register_tavern_tools() -> None:
+    """注册酒馆 v2 工具到全局 registry。幂等(已注册则跳过)。"""
+    registry = get_registry()
+    _register_tavern_character_tools(registry)
+    _register_tavern_script_tools(registry)
+    _register_tavern_interaction_tools(registry)
 
 
 __all__ = ["register_tavern_tools"]

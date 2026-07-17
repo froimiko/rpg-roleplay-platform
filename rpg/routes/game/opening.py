@@ -1,8 +1,10 @@
 """routes.game.opening —— /api/opening(开场流水线 · SSE)。
 
-含 rail(贴原著)开场策略(_RAIL_OPENING_INSTRUCTION / _game_opening_policy)与
-同步 generator → 异步 SSE 的桥接器 _bridge_sync_generator_to_async(本模块私有,与
-chat_pipeline._common 的同名桥并列、互不引用)。
+含 rail(贴原著)开场策略(_RAIL_OPENING_INSTRUCTION / _game_opening_policy)。
+同步 generator → 异步 SSE 的桥接器收敛到权威 chat_pipeline._common._bridge_sync_generator_to_async
+(强版:_Error wrapper 区分「产出项」与「异常」,消除弱版 `isinstance(item, Exception)` 把
+generator 正常 yield 的 Exception 实例误判为错误的隐患;并支持 *args/**kwargs 透传)。本模块
+仍以本名 re-export 该桥(routes.game.__init__ 依赖此名)。
 """
 from __future__ import annotations
 
@@ -13,61 +15,11 @@ from typing import Any
 from fastapi import Depends
 from fastapi.responses import StreamingResponse
 
+from chat_pipeline._common import _bridge_sync_generator_to_async
 from routes._deps_fastapi import get_current_user
 from state.parsers import _extract_trailing_markdown_options
 
 from ._shared import router, _client_safe_error, _note_channel_health_failure
-
-
-async def _bridge_sync_generator_to_async(gen_factory, stop_event: threading.Event | None = None):
-    """跑同步 generator,SSE 取消时设置 stop_event 让 generator 早退。
-
-    gen_factory: 无参 callable,返回 sync generator (内部可持有 stop_event 引用检查)。
-    stop_event:  外部传入的 threading.Event;未传时内部新建一个。
-    SSE 客户端断开 / 异常 / 正常完成时 finally 均会 set(),确保 sync 端早退。
-    """
-    if stop_event is None:
-        stop_event = threading.Event()
-    loop = asyncio.get_running_loop()
-    # asyncio.Queue + call_soon_threadsafe:工作线程产出的 item 投递回 event loop,
-    # async 端 `await q.get()` 真正挂起协程,不忙等。
-    # 旧实现用 `await asyncio.sleep(0)` 轮询 → 每条并发流 spin 紧循环烧满 CPU、
-    # 饿死 event loop(新请求分配延迟 + SSE 事件被挤掉 = 并发阻碍/丢事件根因)。
-    q: asyncio.Queue = asyncio.Queue()
-    SENTINEL = object()
-
-    def _put(item) -> None:
-        # 从工作线程安全地把 item 投递回 event loop 线程
-        try:
-            loop.call_soon_threadsafe(q.put_nowait, item)
-        except RuntimeError:
-            # loop 已关闭(进程收尾):忽略,runner 下一轮靠 stop_event 早退
-            pass
-
-    def _runner():
-        try:
-            for item in gen_factory():
-                if stop_event.is_set():
-                    break
-                _put(item)
-        except Exception as exc:
-            _put(exc)
-        finally:
-            _put(SENTINEL)
-
-    fut = loop.run_in_executor(None, _runner)
-    try:
-        while True:
-            item = await q.get()
-            if item is SENTINEL:
-                break
-            if isinstance(item, Exception):
-                raise item
-            yield item
-    finally:
-        # SSE 客户端断开 / 异常 / 正常完成都通知 sync 端早退
-        stop_event.set()
-        await fut
 
 
 # ── 游戏流水线 · 开场策略(rail 知识只住游戏层,不进底层 GMAgent)──────────────

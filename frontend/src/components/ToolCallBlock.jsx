@@ -12,22 +12,17 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
-
-function _fmtToolValue(v) {
-  if (v == null) return '';
-  if (typeof v === 'string') return v;
-  try { return JSON.stringify(v, null, 2); } catch (_) { return String(v); }
-}
+import { fmtToolValue as _fmtToolValue, computeToolSummary } from '../lib/tool-call-summary.js';
 
 export function ToolCallBlock({ ops }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   if (!Array.isArray(ops) || ops.length === 0) return null;
-  const n = ops.length;
-  const firstName = (ops[0] && ops[0].tool) || t('tavern_app.tool_block.tool_fallback');
-  const summary = n === 1
-    ? t('tavern_app.tool_block.summary_one', { name: firstName })
-    : t('tavern_app.tool_block.summary_many', { count: n, name: firstName });
+  const summary = computeToolSummary(ops, t, {
+    fallback: 'tavern_app.tool_block.tool_fallback',
+    one: 'tavern_app.tool_block.summary_one',
+    many: 'tavern_app.tool_block.summary_many',
+  });
   return (
     <div className={`tvp-tools${open ? ' open' : ''}`}>
       <button

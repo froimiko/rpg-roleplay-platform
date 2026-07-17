@@ -9,7 +9,6 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 import sys
 
@@ -22,16 +21,23 @@ logger = logging.getLogger("run_cron")
 
 
 def _write_audit(db, action: str, details: dict) -> None:
-    """把 cron 运行结果写到 admin_audit_log."""
+    """把 cron 运行结果写到 admin_audit_log.
+
+    收敛到 admin._shared._write_audit(同表 admin_audit_log 同列同序)——cron 侧固定
+    actor={id:None, username:'cron'} / target_type='system' / target_id='' / ip='127.0.0.1'。
+    details 落库字节一致:原 json.dumps(dict) 与 Jsonb(dict) 进 jsonb 列后归一化结果相同
+    (调用方 6 处均传 result dict,永不 None)。cron「失败不阻断」语义由本 try/except 保留。
+    """
     try:
-        db.execute(
-            """
-            insert into admin_audit_log
-              (actor_id, actor_username, action, target_type, target_id, details, ip)
-            values
-              (null, 'cron', %s, 'system', '', %s, '127.0.0.1')
-            """,
-            (action, json.dumps(details)),
+        from rpg.platform_app.api.admin._shared import _write_audit as _admin_write_audit
+        _admin_write_audit(
+            db,
+            actor={"id": None, "username": "cron"},
+            action=action,
+            target_type="system",
+            target_id="",
+            details=details,
+            ip="127.0.0.1",
         )
     except Exception:
         logger.exception("run_cron: failed to write admin_audit_log for action=%s", action)

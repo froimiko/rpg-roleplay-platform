@@ -30,13 +30,13 @@ def _resolve_sid(script_id: int | None, args: dict) -> int | None:
 
 
 def _user_can_read_script(db, sid: int, user_id: int) -> bool:
-    """剧本读权限:owner 或订阅者(照搬 command_tools_queries._user_can_read_script)。
-    读工具用这个,**不是** script_owned 写闸 —— 订阅者本就有读权。"""
-    return db.execute(
-        "select 1 from scripts s where s.id = %s and ("
-        "  s.owner_id = %s or s.id in (select script_id from user_script_subscriptions where user_id = %s))",
-        (int(sid), user_id, user_id),
-    ).fetchone() is not None
+    """剧本读权限:owner 或订阅者(权威谓词 = platform_app.perms.script_readable)。
+    读工具用这个,**不是** script_owned 写闸 —— 订阅者本就有读权。
+
+    保留同名壳(被 sw.chapters._user_can_read_script 的 patch-where-used 锚定)+
+    int(sid) 强转位置与异常行为。"""
+    from platform_app.perms import script_readable
+    return bool(script_readable(db, int(sid), user_id))
 
 
 def _strlist(v: Any) -> list[str]:

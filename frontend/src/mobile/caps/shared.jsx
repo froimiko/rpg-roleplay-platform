@@ -1,18 +1,23 @@
 /* Extracted from pages/MobileCaps.jsx — mechanical split, byte-for-byte. */
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { Icon } from '../icons.jsx';
+import { Toggle } from '../Toggle.jsx';  // 权威单一实现(语义统一);settings/shared.jsx 同源 re-export
 
 /* ──────────────────────────────────────────────────────────────────
    Shared micro-components
    ────────────────────────────────────────────────────────────────── */
-function Toggle({ on, onChange, disabled }) {
+
+/* 空态占位(pl-empty)—— 五个 caps section(Apis/Feedback/Mcp/Plugins/Skills)逐字节同构,
+   仅 icon 名与 i18n key 不同(size 恒 22)。DOM 逐字复制,各处 icon/titleKey/descKey 由调用点传入。 */
+function EmptyState({ icon, titleKey, descKey }) {
+  const { t } = useTranslation();
   return (
-    <button
-      className={'pl-toggle' + (on ? ' on' : '')}
-      onClick={() => !disabled && onChange(!on)}
-      role="switch"
-      aria-checked={on}
-      style={disabled ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
-    />
+    <div className="pl-empty">
+      <div className="ic"><Icon name={icon} size={22} /></div>
+      <h3>{t(titleKey)}</h3>
+      <p>{t(descKey)}</p>
+    </div>
   );
 }
 
@@ -42,4 +47,4 @@ function MField({ label, desc, children }) {
   );
 }
 
-export { Toggle, StatusPill, MField };
+export { Toggle, StatusPill, MField, EmptyState };

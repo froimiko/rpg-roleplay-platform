@@ -127,6 +127,8 @@ class NovelRetrievalProvider(ContextProvider):
         # MAX_LAYER_CHARS["novel_retrieval"] (默认 1800) 截掉,世界线收束段在 pos 3000+
         # 必然丢 → GM 永远收不到 pending anchors,玩家进 ch1 GM 不知道该让 [卡切尔] 登场。
         # 拆开后 anchor_pending 独立 trim 上限 3000,RAG body 保留原 1800 上限,各取所需。
+        # 切割逻辑收敛到权威 context_engine.core._split_anchor_pending(逐边界样例核证全等)。
+        from context_engine.core import _split_anchor_pending
         anchor_section, rag_body = _split_anchor_pending(text)
         # fork 收编:旧 fallback 路径(core.py)对 rag_body 调 _neutralize_state_write_tags 把原文里的
         # 【签到奖励】【状态写入：…】等括号换成［］,切断「原著括号→GM 复述→apply_structured_updates
@@ -158,26 +160,6 @@ class NovelRetrievalProvider(ContextProvider):
             tokens_estimate=len(text) // 2,
             debug={"query": query, "chars": len(text), "has_anchor_pending": bool(anchor_section)},
         )
-
-
-def _split_anchor_pending(text: str) -> tuple[str, str]:
-    """从 retrieve_context 拼出来的整段文本里,拆出 "=== 世界线收束·接下来的锚点 ===" 段。
-
-    返回 (anchor_section, rag_body)。没匹配时返回 ("", text)。
-    """
-    if not text:
-        return "", text or ""
-    marker = "=== 世界线收束·接下来的锚点 ==="
-    start = text.find(marker)
-    if start < 0:
-        return "", text
-    next_section = text.find("\n=== ", start + len(marker))
-    if next_section < 0:
-        return text[start:].strip(), text[:start].strip()
-    return (
-        text[start:next_section].strip(),
-        (text[:start] + text[next_section + 1:]).strip(),
-    )
 
 
 def _extract_anchor_npc_names(state, save_id: int | None) -> list[str]:

@@ -14,7 +14,7 @@ from ._deps import _is_loopback, _set_session_cookie, current_user, json_respons
 
 router = APIRouter()
 
-_LOCAL_MODES = {"local", "desktop", "self_hosted", "self-hosted"}
+from core.config import LOCAL_MODES as _LOCAL_MODES
 
 
 def _local_mode() -> bool:

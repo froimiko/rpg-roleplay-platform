@@ -462,6 +462,201 @@ def _set_player_profile_field(state, args, field, label):
     return f"玩家{label} → {v[:40]}"
 
 
+def _exec_set_world_field(state, args) -> str:
+    key = (args.get("key") or "").strip()
+    value = (args.get("value") or "").strip()
+    if not key or not value:
+        return "set_world_field 失败: key 或 value 为空"
+    if key == "time":
+        return execute_tool(state, "set_world_time", {"target": value})
+    if key == "location":
+        return execute_tool(state, "set_player_location", {"location": value})
+    return execute_tool(state, "set_world_attribute", {"key": key, "value": value})
+
+
+def _exec_add_memory(state, args) -> str:
+    bucket = (args.get("bucket") or "").strip()
+    text = (args.get("text") or "").strip()
+    pin = bool(args.get("pin"))
+    if not bucket or not text:
+        return "add_memory 失败: bucket 或 text 为空"
+    valid_buckets = {"facts", "resources", "abilities", "notes", "pinned"}
+    if bucket not in valid_buckets:
+        return f"add_memory 失败: bucket 非法 ({bucket} 不在 {valid_buckets})"
+    # dispatch 到对应旧 executor
+    old_map = {
+        "facts": "add_memory_fact",
+        "resources": "add_memory_resource",
+        "abilities": "add_memory_ability",
+        "notes": "add_memory_note",
+        "pinned": "pin_memory",
+    }
+    main = execute_tool(state, old_map[bucket], {"text": text})
+    if pin and bucket != "pinned":
+        pin_r = execute_tool(state, "pin_memory", {"text": text})
+        return f"{main} + 同时固定: {pin_r}"
+    return main
+
+
+def _exec_set_world_time(state, args) -> str:
+    target = (args.get("target") or "").strip()
+    if not target:
+        return "set_world_time 失败: target 为空"
+    old = state.data.get("world", {}).get("time", "")
+    state.update_time(target, source="user_set")
+    # 时间连续性护栏 v0:天数倒退检测(检测→surface,不拦截;解析不出天数即休眠)。
+    try:
+        from state.time_ops import detect_day_regression
+        _regress = detect_day_regression(old, target)
+    except Exception:
+        _regress = None
+    if _regress:
+        try:
+            from datetime import datetime as _dt
+            _audit = state.data.setdefault("permissions", {}).setdefault("audit_log", [])
+            _audit.append({
+                "ts": _dt.now().isoformat(timespec="seconds"),
+                "kind": "time_day_regression",
+                "source": "time_continuity_guard",
+                "turn": int(state.data.get("turn") or 0),
+                "from": old, "to": target,
+                "hint": _regress,
+            })
+            state.data["permissions"]["audit_log"] = _audit[-200:]
+        except Exception:
+            pass
+        return f"时间线 → {target} (原: {old}) ⚠ {_regress}"
+    return f"时间线 → {target} (原: {old})"
+
+
+def _exec_set_world_known_event(state, args) -> str:
+    event = (args.get("event") or "").strip()
+    if not event:
+        return "set_world_known_event 失败: event 为空"
+    # acceptance 验收元信息属流水线审计,不进玩家可见事件库(与 apply_ops 列表闸/
+    # save_kb.materialize 同谓词,dispatcher 工具路径是第三个写入口)。
+    from state.json_ops import is_acceptance_meta
+    if is_acceptance_meta(event):
+        return "set_world_known_event 忽略: acceptance 验收元信息不进事件库"
+    events = state.data.setdefault("world", {}).setdefault("known_events", [])
+    if event not in events:
+        events.append(event)
+        # 硬上限:known_events 原本无 cap,GM 每轮记流水账长局后会无界堆积撑大
+        # state_snapshot(持久化进 DB)。注入只看最近 15 条,故保留最近 100 条足矣。
+        if len(events) > 100:
+            del events[:-100]
+        return f"已知事件 += {event}"
+    return f"已知事件已存在: {event}"
+
+
+def _exec_set_world_attribute(state, args) -> str:
+    key = (args.get("key") or "").strip()
+    value = (args.get("value") or "").strip()
+    if not key or not value:
+        return "set_world_attribute 失败: key 或 value 为空"
+    # 禁用 time/timeline (有专门工具)
+    if key in {"time", "timeline"}:
+        return f"set_world_attribute 失败: 请用 set_world_time 改 {key}"
+    world = state.data.setdefault("world", {})
+    world[key] = value
+    return f"world.{key} = {value}"
+
+
+def _exec_confirm_time_jump(state, args) -> str:
+    target = (args.get("target") or "").strip() or None
+    timeline = (state.data.get("world") or {}).get("timeline") or {}
+    pending = timeline.get("pending_jump") or {}
+    actual_target = target or pending.get("to") or state.data.get("world", {}).get("time")
+    if not pending:
+        return "confirm_time_jump 失败: 没有待确认的 pending_jump"
+    state.confirm_time_jump(actual_target)
+    return f"时间跳跃确认 → {actual_target}"
+
+
+def _exec_delete_relationship(state, args) -> str:
+    ch = (args.get("character") or "").strip()
+    if not ch:
+        return "delete_relationship 失败: character 为空"
+    rels = state.data.setdefault("relationships", {})
+    if ch not in rels:
+        return f"delete_relationship: {ch} 不在 relationships(无需删)"
+    del rels[ch]
+    return f"关系已删除: {ch}"
+
+
+def _exec_set_timeline_phase(state, args) -> str:
+    phase = (args.get("phase") or "").strip()
+    if not phase:
+        return "set_timeline_phase 失败: phase 为空"
+    timeline = state.data.setdefault("world", {}).setdefault("timeline", {})
+    old = timeline.get("current_phase", "")
+    timeline["current_phase"] = phase
+    # 走现成 mark_user_locked,后续 update_time / _phase_for_time 不再覆盖
+    try:
+        state.mark_user_locked("world.timeline.current_phase")
+    except Exception:
+        pass
+    return f"timeline.current_phase: {old or '∅'} → {phase}"
+
+
+def _exec_advance_story_progress(state, args) -> str:
+    raw = args.get("to_chapter")
+    try:
+        to_ch = int(raw)
+    except (TypeError, ValueError):
+        return "advance_story_progress 失败: to_chapter 必须是整数章号"
+    if to_ch < 1:
+        return "advance_story_progress 失败: to_chapter 必须 ≥ 1"
+    # save_id 由 dispatcher 无条件注入 args(服务端绑定、防跨档),不信任 state。
+    sid = args.get("save_id")
+    if not sid:
+        return "advance_story_progress 失败: 无 active save(存档未就绪)"
+    clamp_note = ""
+    try:
+        from platform_app.db import connect
+        from gm_serving.settings import advance_progress, read_settings
+        from gm_serving.settings import set_user_progress_floor
+        with connect() as db:
+            # 手滑护栏:advance_progress 是 max-only 单调,目标超剧本实际章数
+            # (如想打 30 打成 300)会顶死进度并炸开全部防剧透 → 钳到最后一章。
+            # 无剧本档(script_id null/酒馆)或章表空时不钳,发散语义保留。
+            row = db.execute(
+                "select coalesce(max(sc.chapter_index), 0) as m "
+                "from game_saves gs join script_chapters sc on sc.script_id = gs.script_id "
+                "where gs.id = %s",
+                (int(sid),),
+            ).fetchone()
+            max_ch = int((row or {}).get("m") or 0)
+            if max_ch > 0 and to_ch > max_ch:
+                clamp_note = f"(目标第 {to_ch} 章超出剧本共 {max_ch} 章,已按第 {max_ch} 章推进)"
+                to_ch = max_ch
+            before = (read_settings(db, int(sid)) or {}).get("progress_chapter")
+            advance_progress(db, int(sid), to_ch)  # max-only,单调只增
+            # 玩家显式跳章=确定性地板,揭示钳制(clamp_reveal_progress)对它放行,
+            # 逃生阀语义保留(d50eb926a)。
+            set_user_progress_floor(db, int(sid), to_ch)
+            after = (read_settings(db, int(sid)) or {}).get("progress_chapter")
+    except Exception as exc:
+        return f"advance_story_progress 失败: {type(exc).__name__}: {exc}"
+    if before is not None and after is not None and int(after) == int(before):
+        return f"进度未变:已在第 {after} 章(目标第 {to_ch} 章 ≤ 当前,单调不回退){clamp_note}"
+    return f"进度推进:第 {before} 章 → 第 {after} 章{clamp_note}"
+
+
+def _exec_add_hypothesis(state, args) -> str:
+    v = (args.get("text") or "").strip()
+    if not v:
+        return "add_hypothesis 失败: text 为空"
+    hid = state.add_hypothesis(
+        text=v,
+        source="user:/set:tool",
+        time_label=args.get("time_label"),
+        characters=args.get("characters"),
+    )
+    return f"推测登记: {hid}"
+
+
+
 def execute_tool(state: Any, name: str, args: dict) -> str:
     """执行单个工具调用,返回人类可读的执行结果文本。
 
@@ -471,66 +666,11 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
     try:
         # iter#6 合并版入口 — dispatch 到对应旧 executor 路径
         if name == "set_world_field":
-            key = (args.get("key") or "").strip()
-            value = (args.get("value") or "").strip()
-            if not key or not value:
-                return "set_world_field 失败: key 或 value 为空"
-            if key == "time":
-                return execute_tool(state, "set_world_time", {"target": value})
-            if key == "location":
-                return execute_tool(state, "set_player_location", {"location": value})
-            return execute_tool(state, "set_world_attribute", {"key": key, "value": value})
+            return _exec_set_world_field(state, args)
         if name == "add_memory":
-            bucket = (args.get("bucket") or "").strip()
-            text = (args.get("text") or "").strip()
-            pin = bool(args.get("pin"))
-            if not bucket or not text:
-                return "add_memory 失败: bucket 或 text 为空"
-            valid_buckets = {"facts", "resources", "abilities", "notes", "pinned"}
-            if bucket not in valid_buckets:
-                return f"add_memory 失败: bucket 非法 ({bucket} 不在 {valid_buckets})"
-            # dispatch 到对应旧 executor
-            old_map = {
-                "facts": "add_memory_fact",
-                "resources": "add_memory_resource",
-                "abilities": "add_memory_ability",
-                "notes": "add_memory_note",
-                "pinned": "pin_memory",
-            }
-            main = execute_tool(state, old_map[bucket], {"text": text})
-            if pin and bucket != "pinned":
-                pin_r = execute_tool(state, "pin_memory", {"text": text})
-                return f"{main} + 同时固定: {pin_r}"
-            return main
+            return _exec_add_memory(state, args)
         if name == "set_world_time":
-            target = (args.get("target") or "").strip()
-            if not target:
-                return "set_world_time 失败: target 为空"
-            old = state.data.get("world", {}).get("time", "")
-            state.update_time(target, source="user_set")
-            # 时间连续性护栏 v0:天数倒退检测(检测→surface,不拦截;解析不出天数即休眠)。
-            try:
-                from state.time_ops import detect_day_regression
-                _regress = detect_day_regression(old, target)
-            except Exception:
-                _regress = None
-            if _regress:
-                try:
-                    from datetime import datetime as _dt
-                    _audit = state.data.setdefault("permissions", {}).setdefault("audit_log", [])
-                    _audit.append({
-                        "ts": _dt.now().isoformat(timespec="seconds"),
-                        "kind": "time_day_regression",
-                        "source": "time_continuity_guard",
-                        "turn": int(state.data.get("turn") or 0),
-                        "from": old, "to": target,
-                        "hint": _regress,
-                    })
-                    state.data["permissions"]["audit_log"] = _audit[-200:]
-                except Exception:
-                    pass
-                return f"时间线 → {target} (原: {old}) ⚠ {_regress}"
-            return f"时间线 → {target} (原: {old})"
+            return _exec_set_world_time(state, args)
         if name == "set_player_location":
             loc = (args.get("location") or "").strip()
             if not loc:
@@ -538,43 +678,11 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
             state.update_location(loc)
             return f"位置 → {loc}"
         if name == "set_world_known_event":
-            event = (args.get("event") or "").strip()
-            if not event:
-                return "set_world_known_event 失败: event 为空"
-            # acceptance 验收元信息属流水线审计,不进玩家可见事件库(与 apply_ops 列表闸/
-            # save_kb.materialize 同谓词,dispatcher 工具路径是第三个写入口)。
-            from state.json_ops import is_acceptance_meta
-            if is_acceptance_meta(event):
-                return "set_world_known_event 忽略: acceptance 验收元信息不进事件库"
-            events = state.data.setdefault("world", {}).setdefault("known_events", [])
-            if event not in events:
-                events.append(event)
-                # 硬上限:known_events 原本无 cap,GM 每轮记流水账长局后会无界堆积撑大
-                # state_snapshot(持久化进 DB)。注入只看最近 15 条,故保留最近 100 条足矣。
-                if len(events) > 100:
-                    del events[:-100]
-                return f"已知事件 += {event}"
-            return f"已知事件已存在: {event}"
+            return _exec_set_world_known_event(state, args)
         if name == "set_world_attribute":
-            key = (args.get("key") or "").strip()
-            value = (args.get("value") or "").strip()
-            if not key or not value:
-                return "set_world_attribute 失败: key 或 value 为空"
-            # 禁用 time/timeline (有专门工具)
-            if key in {"time", "timeline"}:
-                return f"set_world_attribute 失败: 请用 set_world_time 改 {key}"
-            world = state.data.setdefault("world", {})
-            world[key] = value
-            return f"world.{key} = {value}"
+            return _exec_set_world_attribute(state, args)
         if name == "confirm_time_jump":
-            target = (args.get("target") or "").strip() or None
-            timeline = (state.data.get("world") or {}).get("timeline") or {}
-            pending = timeline.get("pending_jump") or {}
-            actual_target = target or pending.get("to") or state.data.get("world", {}).get("time")
-            if not pending:
-                return "confirm_time_jump 失败: 没有待确认的 pending_jump"
-            state.confirm_time_jump(actual_target)
-            return f"时间跳跃确认 → {actual_target}"
+            return _exec_confirm_time_jump(state, args)
         if name == "reject_time_jump":
             reason = (args.get("reason") or "玩家拒绝").strip()
             timeline = (state.data.get("world") or {}).get("timeline") or {}
@@ -610,27 +718,9 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
             state.update_relationship(ch, st)
             return f"关系 {ch} → {st}"
         if name == "delete_relationship":
-            ch = (args.get("character") or "").strip()
-            if not ch:
-                return "delete_relationship 失败: character 为空"
-            rels = state.data.setdefault("relationships", {})
-            if ch not in rels:
-                return f"delete_relationship: {ch} 不在 relationships(无需删)"
-            del rels[ch]
-            return f"关系已删除: {ch}"
+            return _exec_delete_relationship(state, args)
         if name == "set_timeline_phase":
-            phase = (args.get("phase") or "").strip()
-            if not phase:
-                return "set_timeline_phase 失败: phase 为空"
-            timeline = state.data.setdefault("world", {}).setdefault("timeline", {})
-            old = timeline.get("current_phase", "")
-            timeline["current_phase"] = phase
-            # 走现成 mark_user_locked,后续 update_time / _phase_for_time 不再覆盖
-            try:
-                state.mark_user_locked("world.timeline.current_phase")
-            except Exception:
-                pass
-            return f"timeline.current_phase: {old or '∅'} → {phase}"
+            return _exec_set_timeline_phase(state, args)
         if name == "set_main_quest":
             v = (args.get("text") or "").strip()
             if not v:
@@ -644,47 +734,7 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
             state.data.setdefault("memory", {})["current_objective"] = v
             return f"当前目标 → {v}"
         if name == "advance_story_progress":
-            raw = args.get("to_chapter")
-            try:
-                to_ch = int(raw)
-            except (TypeError, ValueError):
-                return "advance_story_progress 失败: to_chapter 必须是整数章号"
-            if to_ch < 1:
-                return "advance_story_progress 失败: to_chapter 必须 ≥ 1"
-            # save_id 由 dispatcher 无条件注入 args(服务端绑定、防跨档),不信任 state。
-            sid = args.get("save_id")
-            if not sid:
-                return "advance_story_progress 失败: 无 active save(存档未就绪)"
-            clamp_note = ""
-            try:
-                from platform_app.db import connect
-                from gm_serving.settings import advance_progress, read_settings
-                from gm_serving.settings import set_user_progress_floor
-                with connect() as db:
-                    # 手滑护栏:advance_progress 是 max-only 单调,目标超剧本实际章数
-                    # (如想打 30 打成 300)会顶死进度并炸开全部防剧透 → 钳到最后一章。
-                    # 无剧本档(script_id null/酒馆)或章表空时不钳,发散语义保留。
-                    row = db.execute(
-                        "select coalesce(max(sc.chapter_index), 0) as m "
-                        "from game_saves gs join script_chapters sc on sc.script_id = gs.script_id "
-                        "where gs.id = %s",
-                        (int(sid),),
-                    ).fetchone()
-                    max_ch = int((row or {}).get("m") or 0)
-                    if max_ch > 0 and to_ch > max_ch:
-                        clamp_note = f"(目标第 {to_ch} 章超出剧本共 {max_ch} 章,已按第 {max_ch} 章推进)"
-                        to_ch = max_ch
-                    before = (read_settings(db, int(sid)) or {}).get("progress_chapter")
-                    advance_progress(db, int(sid), to_ch)  # max-only,单调只增
-                    # 玩家显式跳章=确定性地板,揭示钳制(clamp_reveal_progress)对它放行,
-                    # 逃生阀语义保留(d50eb926a)。
-                    set_user_progress_floor(db, int(sid), to_ch)
-                    after = (read_settings(db, int(sid)) or {}).get("progress_chapter")
-            except Exception as exc:
-                return f"advance_story_progress 失败: {type(exc).__name__}: {exc}"
-            if before is not None and after is not None and int(after) == int(before):
-                return f"进度未变:已在第 {after} 章(目标第 {to_ch} 章 ≤ 当前,单调不回退){clamp_note}"
-            return f"进度推进:第 {before} 章 → 第 {after} 章{clamp_note}"
+            return _exec_advance_story_progress(state, args)
         if name in ("add_memory_fact", "add_memory_resource", "add_memory_ability",
                      "pin_memory", "add_memory_note"):
             bucket = {
@@ -706,16 +756,7 @@ def execute_tool(state: Any, name: str, args: dict) -> str:
             state.set_memory_mode(mode)
             return f"记忆模式 → {mode}"
         if name == "add_hypothesis":
-            v = (args.get("text") or "").strip()
-            if not v:
-                return "add_hypothesis 失败: text 为空"
-            hid = state.add_hypothesis(
-                text=v,
-                source="user:/set:tool",
-                time_label=args.get("time_label"),
-                characters=args.get("characters"),
-            )
-            return f"推测登记: {hid}"
+            return _exec_add_hypothesis(state, args)
         if name == "set_user_variable":
             k = (args.get("key") or "").strip()
             v = (args.get("value") or "").strip()

@@ -1,8 +1,7 @@
 """combat.py — 战斗初始化、攻击、回合推进。"""
 from __future__ import annotations
 
-from datetime import datetime
-
+from core.clock import now_iso
 import modules as module_registry
 from rules import RulesEngine, get_engine
 from rules_bridge.entity_sync import _entities_from_encounter
@@ -70,7 +69,7 @@ def start_encounter_by_id(state, encounter_id: str, seed: int | None = None) -> 
             "modifier": entry.get("dex_mod"),
             "total": entry.get("init"),
             "reason": f"先攻 - {enc_def.get('name')}",
-            "ts": datetime.now().isoformat(timespec="seconds"),
+            "ts": now_iso(),
         })
     return {"ok": True, "encounter": encounter}
 

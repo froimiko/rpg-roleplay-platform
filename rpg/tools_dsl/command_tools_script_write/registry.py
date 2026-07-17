@@ -27,9 +27,8 @@ from .worldbook import (
     _t_upsert_worldbook_entries,
 )
 
-def register_script_write_tools() -> None:
-    registry = get_registry()
-    specs: list[ToolSpec] = [
+def _write_entity_crud_specs() -> list:
+    return [
         ToolSpec(
             name="update_script_chapter",
             description=(
@@ -295,6 +294,11 @@ def register_script_write_tools() -> None:
             origins=_SCRIPT_WRITE_ORIGINS,
             destructive=True,
         ),
+    ]
+
+
+def _write_document_manuscript_specs() -> list:
+    return [
         ToolSpec(
             name="read_uploaded_document",
             description=(
@@ -466,6 +470,11 @@ def register_script_write_tools() -> None:
             destructive=False,
         ),
     ]
+
+
+def register_script_write_tools() -> None:
+    registry = get_registry()
+    specs: list[ToolSpec] = [*_write_entity_crud_specs(), *_write_document_manuscript_specs()]
     for spec in specs:
         if not registry.has(spec.name):
             registry.register(spec)

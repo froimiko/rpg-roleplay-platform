@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from core.text import slugify
+
 # 游标解析单一真相源 = db.cursor_id;保留 _cursor_int 名做薄别名,本模块的
 # 兄弟调用方(memory/worldbook/context_runs/character_cards)按名 import 零改动。
 from platform_app.db import cursor_id as _cursor_int  # noqa: F401  (兄弟模块按名 re-export)
@@ -45,8 +47,7 @@ def _require_script_owner(db, user_id: int, script_id: int) -> dict[str, Any]:
 
 
 def _slugify(text: str) -> str:
-    slug = re.sub(r"[^0-9A-Za-z_\-一-鿿]+", "-", text.strip()).strip("-").lower()
-    return slug or "book"
+    return slugify(text, fallback="book")
 
 
 def _keys_for(title: str, content: str) -> list[str]:

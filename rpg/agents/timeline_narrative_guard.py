@@ -20,6 +20,8 @@ import logging
 import re
 from typing import Any
 
+from core.clock import now_iso
+
 _log = logging.getLogger(__name__)
 
 # 禁词模式 — 涵盖"穿越/重置/醒来发现/时间倒流"类过渡叙事的常见表达。
@@ -150,9 +152,8 @@ def record_violations_to_audit(state: Any, violations: list[dict[str, Any]]) -> 
     data = getattr(state, "data", state) or {}
     permissions = data.setdefault("permissions", {})
     audit = permissions.setdefault("audit_log", [])
-    from datetime import datetime
     audit.append({
-        "ts": datetime.now().isoformat(timespec="seconds"),
+        "ts": now_iso(),
         "kind": "time_jump_narrative_violation",
         "source": "timeline_narrative_guard",
         "turn": int(data.get("turn") or 0),
@@ -252,11 +253,10 @@ def detect_weekday_violations(text: str, base_weekday: int | None = None) -> lis
 
 def _record_weekday_audit(state: Any, errs: list[dict[str, Any]]) -> None:
     try:
-        from datetime import datetime
         data = getattr(state, "data", state) or {}
         aud = data.setdefault("permissions", {}).setdefault("audit_log", [])
         aud.append({
-            "ts": datetime.now().isoformat(timespec="seconds"),
+            "ts": now_iso(),
             "kind": "weekday_arithmetic_error", "source": "weekday_check",
             "turn": int(data.get("turn") or 0), "violations": errs,
         })

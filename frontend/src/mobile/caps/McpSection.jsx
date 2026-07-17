@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
 import { Sheet } from '../Sheet.jsx';
-import { Toggle, StatusPill, MField } from './shared.jsx';
+import { Toggle, StatusPill, MField, EmptyState } from './shared.jsx';
 
 /* ──────────────────────────────────────────────────────────────────
    MCP
@@ -153,11 +153,7 @@ function McpSection({ toast }) {
         {loading && items.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px 0' }}>{t('common.loading')}</div>
         ) : items.length === 0 ? (
-          <div className="pl-empty">
-            <div className="ic"><Icon name="diamond" size={22} /></div>
-            <h3>{t('mobile.caps.mcp.empty_title')}</h3>
-            <p>{t('mobile.caps.mcp.empty_desc')}</p>
-          </div>
+          <EmptyState icon="diamond" titleKey="mobile.caps.mcp.empty_title" descKey="mobile.caps.mcp.empty_desc" />
         ) : (
           <div style={{ display: 'grid', gap: 9 }}>
             {items.map((it) => (

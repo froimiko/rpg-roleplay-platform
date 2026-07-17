@@ -9,6 +9,16 @@ Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0
 
 ## [Unreleased]
 
+## [1.70.1] - 2026-07-17 (@ 4db7320e6)
+
+### Changed
+- **函数寻根轮4 + 细分函数抽取(全站可维护性批次,行为保持型)**:
+  - 权威缝新建×3:`core/text.py`(slugify/指纹归一,收口 4 处克隆)、`core/clock.py`(`now_iso`,收口 23 处内联时间戳表达式)、`core/config.py` 部署模式判定(`LOCAL_MODES`/`is_local_deployment_mode`/`deployment_mode_normalized`,收口 11 处散落字面量集合 + 2 份 `_deployment_mode` 字节级克隆)。
+  - 真等价收口:`_user_can_read_script`×3 → `perms.script_readable`(清除 CLAUDE.md 明令禁止的手写归属 SQL);SSE 同步→异步桥接器双实现收口到 `chat_pipeline._common` 强版(顺带消除 opening.py 弱版把 generator 正常 yield 的 Exception 实例误判为线程异常的隐患);cron `_write_audit` → `admin/_shared` 权威版(同表同列,失败不阻断语义保留);`_detect_cover_mime`/`_split_anchor_pending`/`_estimate_tokens`(顺带修 None 防御)收口;context_engine 两个「避循环 import」理由已过期的死码函数删除。
+  - 超长函数细分(逐字节搬家,名字签名零变):`_do_init_db` 665 行→6 段;`import_script_pack` 尾部 6 个消费段;rebuild worker(10 分支)/scheduler(统计+6 估算);`import_save` 阶段 2/3/4(阶段 5 因源码守卫锚定刻意留守);timeline 路由 4 段;`build_constant_worldbook` 纯函数提升(先补 7 例直测再拆);tools_dsl 五个 `register_*` 按域切 spec 列表(注册顺序 LLM 可见,保序切分);`execute_tool` 10 个长分支体抽取(if/elif 链保序);apply_ops 三段拒绝写审计块 DRY 成 `_deny_write`(audit 字段与文案逐字节等价)+ 时间戳缝接入。
+  - 前端:hooks/lib 权威缝×5(`useDismissOnOutsideOrEscape` 收口 5 处弹层关闭 effect、`downloadBlob`×3、成就常量表、移动壳灰度开关 IIFE、`setPanelVisible` 字节级克隆);ToolCallBlock 桌面/移动共享纯逻辑 `tool-call-summary.js`(补移动版缺失的 aria-expanded);mobile/caps 空态×5 → `EmptyState`;移动裸开关权威化 `mobile/Toggle.jsx`(两处 shared.jsx 改 re-export)。
+  - 验收:unit 全量零失败(新增 7 例直测)、collect 2748 零错误、429 条路由 dump diff 空、前端 build 绿;`test_known_events_bounded` 守卫锚点随分支体抽取跟随搬家并加强(新增分发接线断言)。防误合否决记录:knowledge 分页 SQL 参数化、路由样板装饰器化、图标字典合并、admin 解封双函数等 7 项。
+
 ## [1.70.0] - 2026-07-17 (@ 43b6563e6)
 
 ### Changed

@@ -270,11 +270,8 @@ def _user_can_read_script(db, sid: int, user_id: int) -> bool:
     """剧本读权限:owner 或订阅者。镜像 tavern_bind_script 的校验 —— 防 LLM 用任意
     script_id 跨用户读取他人私有剧本的章节/世界书/NPC 内容(script 级工具的 sid 可由
     args 注入,env.script_id 在酒馆/无剧本会话里为 None)。"""
-    return db.execute(
-        "select 1 from scripts s where s.id = %s and ("
-        "  s.owner_id = %s or s.id in (select script_id from user_script_subscriptions where user_id = %s))",
-        (int(sid), user_id, user_id),
-    ).fetchone() is not None
+    from platform_app.perms import script_readable
+    return bool(script_readable(db, int(sid), user_id))
 
 
 def _t_get_chapter_facts(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
@@ -377,9 +374,8 @@ def _t_list_my_credentials_meta(user_id: int, args: dict) -> str:
 # ────────────────────────────────────────────────────────────
 
 
-def register_misc_tools() -> None:
-    registry = get_registry()
-    save_specs = [
+def _misc_save_specs() -> list:
+    return [
         ("set_permission_mode",
          "切换写入权限模式: full_access(LLM 自由写)/auto_review(自动审批)/default(默认)/read_only(LLM 不写)",
          {"type": "object",
@@ -399,14 +395,10 @@ def register_misc_tools() -> None:
          # task 48: inject_pending_question 是 debug 用工具,助手不应自调
          frozenset({"ui_button", "api_direct"}), False),
     ]
-    for name, desc, schema, exec_, scope, origins, destructive in save_specs:
-        if not registry.has(name):
-            registry.register(ToolSpec(
-                name=name, description=desc, input_schema=schema,
-                executor=exec_, scope=scope, origins=origins, destructive=destructive,
-            ))
 
-    user_specs = [
+
+def _misc_user_specs() -> list:
+    return [
         # task 87 Phase 7 安全审查 — user 级 mutate (跨 save 影响) 全部禁 LLM:
         ("set_preference", "设置当前用户偏好键值对 (写 user_preferences.preferences 的某一项)",
          {"type": "object",
@@ -439,14 +431,10 @@ def register_misc_tools() -> None:
          "只返凭证元数据(provider/last_updated),**永不返 key 本身**",
          {"type": "object", "properties": {}}, _t_list_my_credentials_meta, _USER_READ, False),
     ]
-    for name, desc, schema, exec_, origins, destructive in user_specs:  # type: ignore[assignment]
-        if not registry.has(name):
-            registry.register(ToolSpec(
-                name=name, description=desc, input_schema=schema,
-                executor=exec_, scope="user", origins=origins, destructive=destructive,
-            ))
 
-    script_specs = [
+
+def _misc_script_specs() -> list:
+    return [
         ("get_chapter_facts",
          "按 script_id + chapter_index 检索章节事实表",
          {"type": "object",
@@ -460,6 +448,27 @@ def register_misc_tools() -> None:
           "required": []},
          _t_get_worldbook),
     ]
+
+
+def register_misc_tools() -> None:
+    registry = get_registry()
+    save_specs = _misc_save_specs()
+    for name, desc, schema, exec_, scope, origins, destructive in save_specs:
+        if not registry.has(name):
+            registry.register(ToolSpec(
+                name=name, description=desc, input_schema=schema,
+                executor=exec_, scope=scope, origins=origins, destructive=destructive,
+            ))
+
+    user_specs = _misc_user_specs()
+    for name, desc, schema, exec_, origins, destructive in user_specs:  # type: ignore[assignment]
+        if not registry.has(name):
+            registry.register(ToolSpec(
+                name=name, description=desc, input_schema=schema,
+                executor=exec_, scope="user", origins=origins, destructive=destructive,
+            ))
+
+    script_specs = _misc_script_specs()
     for name, desc, schema, exec_ in script_specs:  # type: ignore[assignment]
         if not registry.has(name):
             registry.register(ToolSpec(

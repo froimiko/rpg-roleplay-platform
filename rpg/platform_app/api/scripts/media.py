@@ -13,20 +13,11 @@ from ...db import connect
 from ...perms import script_owned
 from .._deps import json_response, require_user
 from ._shared import router
+# 封面 MIME 魔数校验与 me._shared._detect_image_mime 逐字节相同(PNG/JPEG/WebP 同判、同
+# ValueError 文案)—— 收敛到单一真相源,本地保留 _detect_cover_mime 名(调用点零改动)。
+from ..me._shared import _detect_image_mime as _detect_cover_mime
 
 _MAX_COVER_BYTES = 8 * 1024 * 1024  # 8 MB
-
-
-def _detect_cover_mime(data: bytes) -> tuple[str, str]:
-    """读 data[:12] 魔数，返回 (mime, ext)。不合法抛 ValueError。"""
-    head = data[:12]
-    if head[:8] == b"\x89PNG\r\n\x1a\n":
-        return "image/png", "png"
-    if head[:2] == b"\xff\xd8":
-        return "image/jpeg", "jpg"
-    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        return "image/webp", "webp"
-    raise ValueError("仅支持 PNG / JPEG / WebP 图片（魔数校验失败）")
 
 
 @router.post("/api/scripts/{script_id}/cover-url")

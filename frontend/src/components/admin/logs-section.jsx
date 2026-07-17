@@ -8,6 +8,7 @@ import CSButton from '@cloudscape-design/components/button';
 import CSBox from '@cloudscape-design/components/box';
 import CSAlert from '@cloudscape-design/components/alert';
 import CSSelect from '@cloudscape-design/components/select';
+import { downloadBlob } from '../../lib/download.js';
 
 /* ─────────────────────────────────────────────────────────────────
    页面 5：AdminLogsPage — 系统日志
@@ -72,13 +73,7 @@ export function AdminLogsPage() {
 
   function handleDownload() {
     const content = (lines || []).join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `system-logs-${Date.now()}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(content, `system-logs-${Date.now()}.log`, 'text/plain');
   }
 
   function lineColor(line) {

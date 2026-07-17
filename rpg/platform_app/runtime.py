@@ -38,6 +38,7 @@ def _runtime_backend() -> str:
     from core.config import (
         runtime_backend as _runtime_backend_cfg,
     )
+    from core.config import LOCAL_MODES
     backend = _runtime_backend_cfg().strip().lower()
     if backend in {"db", "file"}:
         return backend
@@ -54,6 +55,7 @@ def _should_mirror_save_file() -> bool:
         return False
     from core.config import is_local_mode as _is_local_mode
     from core.config import require_auth as _require_auth
+    from core.config import LOCAL_MODES
     if _require_auth():
         return False
     return _is_local_mode()

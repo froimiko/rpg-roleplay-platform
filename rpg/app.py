@@ -82,8 +82,8 @@ app = FastAPI(title=f"{APP_TITLE} RPG", lifespan=lifespan)
 
 
 def _deployment_mode() -> str:
-    from core.config import deployment_mode as _deployment_mode_cfg
-    return _deployment_mode_cfg().strip().lower() or "local"
+    from core.config import deployment_mode_normalized as _deployment_mode_cfg
+    return _deployment_mode_cfg()
 
 
 def _verify_acceptance_rule(acceptance: list[str], response_text: str, updates: list[str]) -> list[str]:

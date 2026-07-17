@@ -211,12 +211,13 @@ def _t_list_scripts(user_id: int, args: dict) -> str:
 
 
 def _user_can_read_script(db, sid: int, user_id: int) -> bool:
-    """剧本读权限:owner 或订阅者。防 LLM 用任意 script_id 跨用户读他人私有剧本(章节/NPC)。"""
-    return db.execute(
-        "select 1 from scripts s where s.id = %s and ("
-        "  s.owner_id = %s or s.id in (select script_id from user_script_subscriptions where user_id = %s))",
-        (int(sid), user_id, user_id),
-    ).fetchone() is not None
+    """剧本读权限:owner 或订阅者。防 LLM 用任意 script_id 跨用户读他人私有剧本(章节/NPC)。
+
+    权威谓词收敛到 platform_app.perms.script_readable(owner ∪ subscription),此处保留
+    同名壳(被 tests 的 patch-where-used 锚定)+ int(sid) 强转位置与异常行为。
+    """
+    from platform_app.perms import script_readable
+    return bool(script_readable(db, int(sid), user_id))
 
 
 def _t_get_script_chapters(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
