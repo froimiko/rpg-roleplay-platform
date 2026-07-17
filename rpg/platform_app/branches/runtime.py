@@ -19,7 +19,6 @@ from platform_app.branches._helpers import (
     tavern_card_cols,
     write_runtime_snapshot,
 )
-from platform_app.branches._runtime_repo import _db_mark_checkout_dirty
 from platform_app.branches.commits import _insert_commit, _state_snapshot_hash
 from platform_app.branches.refs import (
     _find_or_create_ref_for_commit,
@@ -29,6 +28,12 @@ from platform_app.branches.refs import (
 )
 from platform_app.branches.summary import schedule_llm_summary
 from platform_app.db import connect, expose, init_db
+
+
+class RuntimeTurnConflict(Exception):
+    """本回合流式期间存档已被别处(另一 tab/设备)推进 → record_runtime_turn 拒绝提交、
+    整回合原子放弃(不落 commit/kb_events/messages)。由调用链(_persist_chat_turn)抛出、
+    chat SSE 层接住转成用户可见错误横幅「存档已在别处推进,请刷新后重试」。"""
 
 
 def record_runtime_turn(
@@ -74,16 +79,20 @@ def record_runtime_turn(
             save = db.execute("select * from game_saves where id = %s", (save_id,)).fetchone()
             if user_id and (not save or int(save["user_id"]) != int(user_id)):
                 return {"ok": False, "reason": "runtime 不属于当前用户"}
+            # 并发冲突检测(P0 丢回合根修 · 双端并发状态覆盖):提交前先看 game_saves 活跃指针
+            # 是否已被别处推进。parent_id 是请求早期读入的旧基线;LLM 流式(数十秒)期间另一
+            # tab / 设备可能已提交新回合,使 DB 活跃指针领先。旧逻辑此时把 parent「假 rebase」到
+            # 最新 commit,却仍用请求早期旧基线的 state_snapshot(下方 data)整体覆盖 → 后写者的
+            # 全量快照抹掉前写者回合(库尸检:同 (save,turn,assistant) 重复 90 组)。最小诚实方案=
+            # 拒绝提交:此处 return 早于 _insert_commit 与下方 kb import(且早于建 ref),整回合原子
+            # 放弃(绝不落 commit / kb_events / messages),冲突信号上抛由 SSE 层转错误横幅。
+            fresh_save = db.execute("select active_commit_id, active_branch_node_id from game_saves where id = %s", (save_id,)).fetchone()
+            fresh_active = int((fresh_save or {}).get("active_commit_id") or (fresh_save or {}).get("active_branch_node_id") or 0)
+            if fresh_active and fresh_active != parent_id:
+                return {"ok": False, "conflict": True, "reason": "存档已在别处推进,请刷新后重试"}
             if not ref_id:
                 ref = _find_or_create_ref_for_commit(db, int(save["user_id"]), parent)
                 ref_id = ref["id"]
-            fresh_save = db.execute("select active_commit_id, active_branch_node_id from game_saves where id = %s", (save_id,)).fetchone()
-            fresh_active = int(fresh_save.get("active_commit_id") or fresh_save.get("active_branch_node_id") or 0)
-            if fresh_active and fresh_active != parent_id:
-                fresh_parent = db.execute("select * from branch_commits where id = %s and save_id = %s", (fresh_active, save_id)).fetchone()
-                if fresh_parent:
-                    parent = fresh_parent
-                    parent_id = fresh_active
             row = _insert_commit(
                 db,
                 save_id=save_id,
@@ -318,11 +327,3 @@ def bootstrap_runtime_binding(user_id: int | None = None) -> dict[str, Any]:
         from platform_app.branches.seed import _seed_and_bootstrap
         return _seed_and_bootstrap(owner_id, save_id, seed_path, user_id=user_id)
     return _runtime_module.activate_state_snapshot(save["owner_id"], save["id"], commit["id"], commit_state(commit), commit["state_path"], ref_id=ref["id"])
-
-
-def mark_runtime_dirty(save_id: int, runtime_state: dict[str, Any]) -> None:
-    """Runtime state 已被改写、但尚未 commit 时调用。"""
-    snap_hash = _state_snapshot_hash(runtime_state)
-    turn = int(runtime_state.get("turn", 0)) if isinstance(runtime_state, dict) else 0
-    with connect() as db:
-        _db_mark_checkout_dirty(db, save_id, runtime_state, snap_hash, turn)

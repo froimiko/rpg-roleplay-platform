@@ -10,7 +10,7 @@ import json
 
 from fastapi import Depends, Request
 
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router, _store_imported_card_image
 
 
@@ -109,7 +109,7 @@ async def api_import_tavern_card(request: Request, user=Depends(require_user)):
             "llm_structured": bool((payload.get("metadata") or {}).get("llm_structured_description")),
         })
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/me/character-cards/{card_id}/export-tavern")
@@ -187,7 +187,7 @@ async def api_import_json_card(request: Request, user=Depends(require_user)):
             "llm_structured": bool((payload.get("metadata") or {}).get("llm_structured_description")),
         })
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 # ── 酒馆聊天记录导入 ──────────────────────────────────────────────────
@@ -220,14 +220,14 @@ async def api_import_tavern_chat(request: Request, user=Depends(require_user)):
     try:
         header, commits = tavern_chats.parse_chat_jsonl(jsonl_text)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
     payload = tavern_chats.chat_to_save_payload(header, commits, title=custom_title)
 
     try:
         result = save_io.import_save(user["id"], payload)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
     preview = [
         {"turn": c["turn_index"], "is_gm": bool(c.get("gm_output")), "preview": c.get("content_preview", "")}

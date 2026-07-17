@@ -19,13 +19,21 @@ class _FakeDB:
     def __init__(self, canon_rows):
         self._canon_rows = canon_rows
         self.inserts = []  # (title, content, priority)
+        self.insert_meta = {}  # title -> {"keys": [...], "insertion_position": str}
         self._last = ""
 
     def execute(self, sql, params=None):
         self._last = sql
         if "insert into worldbook_entries" in sql.lower():
-            # params 顺序: (book_id, script_id, title, content, keys, priority, metadata)
-            self.inserts.append((params[2], params[3], params[5]))
+            # params 顺序: (book_id, script_id, title, content, keys, priority, insertion_position, metadata)
+            title = params[2]
+            self.inserts.append((title, params[3], params[5]))
+            keys_param = params[4]
+            keys = getattr(keys_param, "obj", keys_param)  # 解 Jsonb 包装
+            self.insert_meta[title] = {
+                "keys": list(keys or []),
+                "insertion_position": params[6],
+            }
         return self
 
     def fetchall(self):
@@ -41,7 +49,7 @@ def _canon_rows():
     return [
         {"logical_key": "lk_de", "name": "德军", "type": "faction",
          "entity_subtype": "军队", "parent_logical_key": "",
-         "summary": "德意志国防军,二战主要军事力量。", "aliases": [],
+         "summary": "德意志国防军,二战主要军事力量。", "aliases": ["国防军", "德意志国防军"],
          "first_revealed_chapter": 1, "importance": 20},
         {"logical_key": "lk_us", "name": "美军", "type": "faction",
          "entity_subtype": "军队", "parent_logical_key": "",
@@ -116,6 +124,60 @@ class BuildConstantWorldbookBehavior(unittest.TestCase):
         content, priority = self.by_title["概念·以太体系"]
         self.assertEqual(priority, 70)
         self.assertEqual(content, "以太是本作驱动超凡能力的基础能量。")
+
+    # ── insertion_position 分派 + keys(修3:止损 detail 被 constant 3000 预算静默丢弃)──
+
+    def test_index_entry_is_constant_no_keys(self):
+        # 索引条 priority 88 ≥ 80 → 每轮常驻,不需要触发词
+        meta = self.db.insert_meta["势力索引·军队"]
+        self.assertEqual(meta["insertion_position"], "constant")
+        self.assertEqual(meta["keys"], [])
+
+    def test_detail_entry_is_worldbook_with_keys(self):
+        # faction detail priority 78 < 80 → 'worldbook'(关键词触发),keys 非空且含实体名
+        meta = self.db.insert_meta["势力·德军"]
+        self.assertEqual(meta["insertion_position"], "worldbook")
+        self.assertTrue(meta["keys"])  # 非空 —— 否则永不命中 retrieval 的 <80 触发池
+        self.assertIn("德军", meta["keys"])
+
+    def test_detail_keys_include_aliases(self):
+        # 触发词 = 实体名 + 别名(去重保序)
+        keys = self.db.insert_meta["势力·德军"]["keys"]
+        self.assertIn("德军", keys)
+        self.assertIn("国防军", keys)
+        self.assertIn("德意志国防军", keys)
+        self.assertEqual(len(keys), len(set(keys)))  # 去重
+
+    def test_concept_detail_is_worldbook(self):
+        # concept detail priority 70 < 80 → 'worldbook' + keys
+        meta = self.db.insert_meta["概念·以太体系"]
+        self.assertEqual(meta["insertion_position"], "worldbook")
+        self.assertIn("以太体系", meta["keys"])
+
+
+class InsertionDispatchPureFunctions(unittest.TestCase):
+    """分派/触发词的纯函数:确定性阈值 80 + keys=名+别名。"""
+
+    def test_dispatch_threshold(self):
+        from extract.resolve import (
+            CONSTANT_INSERTION_MIN_PRIORITY,
+            _worldbook_insertion_position,
+        )
+        self.assertEqual(CONSTANT_INSERTION_MIN_PRIORITY, 80)
+        self.assertEqual(_worldbook_insertion_position(100), "constant")
+        self.assertEqual(_worldbook_insertion_position(80), "constant")
+        self.assertEqual(_worldbook_insertion_position(79), "worldbook")
+        self.assertEqual(_worldbook_insertion_position(65), "worldbook")
+
+    def test_trigger_keys_name_plus_aliases_dedup(self):
+        from extract.resolve import _entry_trigger_keys
+        canon = {"德军": {"aliases": ["国防军", "德军", ""]}}
+        keys = _entry_trigger_keys("德军", canon)
+        self.assertEqual(keys, ["德军", "国防军"])  # 去空去重保序
+
+    def test_trigger_keys_no_canon(self):
+        from extract.resolve import _entry_trigger_keys
+        self.assertEqual(_entry_trigger_keys("某势力", {}), ["某势力"])
 
 
 if __name__ == "__main__":

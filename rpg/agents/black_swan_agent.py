@@ -1,10 +1,12 @@
 """agents.black_swan_agent — 主动触发世界事件的子代理。
 
-5 层 validator 管线 (设计 ready,本次 MVP 实现 Layer 1+2+3a+3c+3d+4+5):
+validator 管线 (设计 5 层,当前确定性【已实现 3 层】:3a/3c/3d):
 1. 现实切片快照
 2. native tool_use 强 schema
-3. 5 个 validator (本次 3 个: 3a token blacklist / 3c hard constraint / 3d timeline anchor;
-   3b NPC presence / 3e independent critic 留接口)
+3. validator —— 接入 run_validators 的确定性层:3a token blacklist / 3c hard constraint /
+   3d timeline anchor。设计中的 3b NPC presence / 3e independent critic 【未实现·未接入】:
+   3b 原依赖 v28 已删除的 script_character_cards 表,且「NPC 是否在场」已由 3d 覆盖;
+   3e 需二次 LLM 评分属非确定性。二者不再 return True 冒充「已过」(杜绝日志假绿)。
 4. retry (max 2 次)
 5. dispatcher 落地,origin="autonomous_agent"
 
@@ -221,24 +223,16 @@ def validator_timeline_anchor(proposal: dict, snapshot: dict) -> tuple[bool, str
     return True, ""
 
 
-# ─── Layer 3b/3e: 留接口 (TODO) ──────────────────────────────────
-
-def validator_npc_presence(
-    proposal: dict, snapshot: dict, script_id: int | None
-) -> tuple[bool, str]:
-    """TODO: 接 script_character_cards.available_in_phases 字段。
-
-    当前 short-circuit 通过。等剧本元数据扩展后实现。
-    """
-    return True, ""  # TODO
-
-
-def validator_independent_critic(proposal: dict, snapshot: dict) -> tuple[bool, str]:
-    """TODO: 接 independent LLM critic (二次 LLM 评分一致性)。
-
-    当前 short-circuit 通过。需要 prompt tuning + LLM 调用。
-    """
-    return True, ""  # TODO
+# ─── Layer 3b/3e: 设计层,当前【未实现·未接入 run_validators】────────────────────
+# 诚实原则(反假绿):这两层曾是 `return True` 占位,却与真 validator 同构输出,日志读
+# 起来像「5 层全过」,实则空转。经核查后【摘除】而非保留占位:
+#   · 3b npc_presence — 原设计读 script_character_cards.available_in_phases;该表 v28 起
+#     已删除,且「事件涉及 NPC 是否在当前场景」已由 3d_timeline_anchor(involved_npcs ⊆
+#     active_npcs)确定性覆盖,再实现即重复。故不接入。
+#   · 3e independent_critic — 需二次 LLM 评分一致性,属非确定性,不放入确定性校验管线。
+# 若日后实现,补真实逻辑后再登记进 run_validators;在此之前绝不 return True 冒充「已过」。
+DESIGNED_VALIDATOR_LAYERS = 5
+UNIMPLEMENTED_VALIDATORS = ("3b_npc_presence", "3e_independent_critic")
 
 
 # ─── 全套 validator 跑 ────────────────────────────────────────────
@@ -247,13 +241,16 @@ def run_validators(
     proposal: dict, snapshot: dict,
     script_id: int | None, script_overrides: dict | None
 ) -> list[tuple[str, bool, str]]:
-    """跑所有 validator,返回 [(name, passed, reason), ...]"""
+    """跑【已实现】的确定性 validator,返回 [(name, passed, reason), ...]。
+
+    只含真正执行确定性检查的 3 层(3a/3c/3d)。设计中的 3b/3e 未实现、不在此登记
+    (理由见上),避免占位 return True 制造「N/5 全过」假象。script_id 保留在签名里供
+    未来层使用。
+    """
     return [
         ("3a_token_blacklist", *validator_token_blacklist(proposal, snapshot, script_overrides)),
-        ("3b_npc_presence", *validator_npc_presence(proposal, snapshot, script_id)),
         ("3c_hard_constraints", *validator_hard_constraints(proposal, snapshot)),
         ("3d_timeline_anchor", *validator_timeline_anchor(proposal, snapshot)),
-        ("3e_independent_critic", *validator_independent_critic(proposal, snapshot)),
     ]
 
 
@@ -593,6 +590,12 @@ def maybe_trigger(
             dispatch_results = dispatch_event(
                 proposal, state,
                 user_id=user_id, save_id=save_id, script_id=script_id,
+            )
+            # 诚实日志:如实记「已实现层数 / 设计层数」+ 未实现层,别让读日志的人误以为 5 层全跑。
+            log.info(
+                "[black_swan] save=%s 事件落地:%d/%d 设计层已实现且通过(未实现层不计入:%s)",
+                save_id, len(last_validator_results), DESIGNED_VALIDATOR_LAYERS,
+                ", ".join(UNIMPLEMENTED_VALIDATORS),
             )
             return {
                 "triggered": True,

@@ -7,7 +7,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -100,7 +100,7 @@ async def api_set_script_gm_style(request: Request, script_id: int, user=Depends
     try:
         clean = validate_patch(body.get("gm_style") if "gm_style" in body else body)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     data = dict(get_overrides_by_script_id(script_id) or {})
     cur = dict(data.get("gm_style") if isinstance(data.get("gm_style"), dict) else {})
     cur.update(clean)

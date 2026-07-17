@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from .. import federation
-from ._deps import _client_ip, json_response, require_user
+from ._deps import _client_ip, json_response, require_user, value_error_response
 
 router = APIRouter()
 
@@ -122,7 +122,7 @@ async def api_device_approve(request: Request, user=Depends(require_user)):
     try:
         return json_response(federation.device_approve(user["id"], body.get("user_code") or "", deny=deny))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -169,7 +169,7 @@ async def api_ext_pack(script_id: int, request: Request, pat=Depends(require_pat
     except PermissionError:
         return json_response({"ok": False, "error": "该剧本未公开"}, status_code=403)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=404)
+        return value_error_response(exc, status_code=404)
     ascii_fallback = filename.encode("ascii", "ignore").decode("ascii") or f"script-{script_id}.zip"
     quoted = _quote(filename, safe="")
     cd = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quoted}"
@@ -190,7 +190,7 @@ async def api_ext_publish(request: Request, pat=Depends(require_pat_publish)):
     try:
         return json_response(federation.ext_publish_pack(pat["user"]["id"], raw))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -208,7 +208,7 @@ async def api_connector_set(request: Request, user=Depends(require_user)):
         federation.connector_set(user["id"], body.get("base_url") or "", body.get("token") or "")
         return json_response(federation.connector_get(user["id"]))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/me/library-connector/test")
@@ -216,7 +216,7 @@ async def api_connector_test(user=Depends(require_user)):
     try:
         return json_response(await asyncio.to_thread(federation.connector_test, user["id"]))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/me/library-connector/scripts")
@@ -224,7 +224,7 @@ async def api_connector_scripts(q: str | None = None, limit: int = 30, offset: i
     try:
         return json_response(await asyncio.to_thread(federation.connector_list, user["id"], q, limit, offset))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/me/library-connector/import")
@@ -236,7 +236,7 @@ async def api_connector_import(request: Request, user=Depends(require_user)):
     try:
         return json_response(await asyncio.to_thread(federation.connector_import, user["id"], int(rid)))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/me/library-connector/publish")
@@ -260,7 +260,7 @@ async def api_connector_device_start(request: Request, user=Depends(require_user
             federation.connector_device_start, user["id"],
             body.get("base_url") or "", body.get("scopes") or ["library:read"]))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/me/library-connector/device/poll")
@@ -271,4 +271,4 @@ async def api_connector_device_poll(request: Request, user=Depends(require_user)
             federation.connector_device_poll, user["id"],
             body.get("base_url") or "", body.get("device_code") or ""))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -27,7 +27,7 @@ async def api_upsert_persona(request: Request, user=Depends(require_user)):
     try:
         return json_response({"ok": True, "persona": user_cards.upsert_persona(user["id"], body)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/me/personas/{persona_id}")
@@ -60,7 +60,7 @@ async def api_upsert_character_card(request: Request, user=Depends(require_user)
     try:
         return json_response({"ok": True, "card": user_cards.upsert_user_card(user["id"], body)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/me/character-cards/{card_id}")

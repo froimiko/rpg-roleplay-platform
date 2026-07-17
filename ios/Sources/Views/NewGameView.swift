@@ -20,8 +20,7 @@ struct NewGameView: View {
     @State private var origin = "native"
     @State private var steering = "guided"
     @State private var foreknowledge = "none"
-    @State private var spoiler = "loose"
-    @State private var npcAwareness = "oblivious"
+    // npc_awareness / spoiler_guard 已下架(死设置,后端零读取点),不再收集。
     @State private var storyIntent = ""
     @State private var saveName = ""
     @State private var loading = true
@@ -111,13 +110,9 @@ struct NewGameView: View {
             order: ["soul", "body", "dual", "native"], sel: origin) { origin = $0 }
         sectionTitle("引导强度", "rail=贴原著重现 / guided=软引导 / free=自由发挥。")
         seg(["rail": "贴原著", "guided": "软引导", "free": "自由"], order: ["rail", "guided", "free"], sel: steering) { steering = $0 }
-        sectionTitle("元知识 · 防剧透", nil)
+        sectionTitle("元知识", nil)
         rowLabel("你对剧情的了解")
         seg(["none": "一无所知", "partial": "略知一二", "omniscient": "全知"], order: ["none", "partial", "omniscient"], sel: foreknowledge) { foreknowledge = $0 }
-        rowLabel("NPC 对你的态度")
-        seg(["oblivious": "无察觉", "suspicious": "起疑"], order: ["oblivious", "suspicious"], sel: npcAwareness) { npcAwareness = $0 }
-        rowLabel("防剧透")
-        seg(["strict": "严格", "loose": "宽松"], order: ["strict", "loose"], sel: spoiler) { spoiler = $0 }
     }
 
     // MARK: 步骤 3 确认
@@ -255,10 +250,9 @@ struct NewGameView: View {
         if !intent.isEmpty { body["story_intent"] = intent }
         do {
             let saveId = try await store.api.newGame(base: store.serverURL, body: body)
-            // 应用引导强度/元知识/NPC 察觉/防剧透(建档项)。
+            // 应用引导强度/元知识(建档项)。npc_awareness/spoiler_guard 已下架(死设置)。
             await store.api.saveSettings(base: store.serverURL, saveId: saveId, updates: [
                 "steering_strength": steering, "foreknowledge_mode": foreknowledge,
-                "npc_awareness": npcAwareness, "spoiler_guard": spoiler,
             ], isCreate: true)
             // 进入前必须激活存档(加载运行时 + 设为当前),否则游戏台 /api/state 无活动运行时。
             // 激活失败必须上报并中止:否则玩家进游戏台时服务端无运行时,首屏空白/报错。

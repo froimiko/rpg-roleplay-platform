@@ -10,7 +10,7 @@ from psycopg.types.json import Jsonb
 
 from ...db import connect
 from ...perms import script_owned
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router, _require_owner, _write_commit
 
 # ─── commits log ─────────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ async def api_checkout_commit(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         # 校验 commit 存在且属于该 script
         c = db.execute(

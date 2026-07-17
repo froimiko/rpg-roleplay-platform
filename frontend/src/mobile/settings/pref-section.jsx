@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
 import { SetGroup, MSlider, Toggle, usePrefSave } from './shared.jsx';
+import { changeLanguage } from '../../i18n/index.js';
 
 /* ────────────────────────────────────────────────────────────────── */
 /* SECTION: 偏好 (preferences)                                        */
@@ -57,7 +58,7 @@ function PrefSection({ nav }) {
             {[['zh-CN','简体'],['zh-TW','繁體'],['en','EN']].map(([id, l]) => (
               <button key={id} className={lang===id?'active accent':''} onClick={() => {
                 setLang(id); save('ui_language', id);
-                import('../../i18n/index.js').then(m => m.changeLanguage(id)).catch(() => {});
+                Promise.resolve(changeLanguage(id)).catch(() => {});
               }}>{l}</button>
             ))}
           </div>

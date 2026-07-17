@@ -122,6 +122,12 @@ def json_response(content, status_code: int = 200, **kwargs):
     return BaseJSONResponse(encoded, status_code=status_code, **kwargs)
 
 
+def value_error_response(exc: ValueError, status_code: int = 400):
+    """`except ValueError as exc: return json_response({"ok": False, "error": str(exc)}, status_code=N)`
+    的样板收敛。仅用于响应体恰为该形状的调用点,别用于带额外字段的响应。"""
+    return json_response({"ok": False, "error": str(exc)}, status_code=status_code)
+
+
 def _request_is_https(request: Request) -> bool:
     """浏览器面向的连接是否 HTTPS。
     容器内 uvicorn 不带 --proxy-headers 时 request.url.scheme 恒为 http(哪怕前面挂了

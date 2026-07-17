@@ -8,7 +8,7 @@ from fastapi import Depends, Request
 from psycopg.types.json import Jsonb
 
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -77,7 +77,7 @@ async def api_set_my_gm_style(request: Request, user=Depends(require_user)):
     try:
         clean = validate_patch(body.get("gm_style") if "gm_style" in body else body)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     # patch 合并进 preferences.gm_style(保留其它偏好 + 已设旋钮)
     with connect() as db:
         row = db.execute(

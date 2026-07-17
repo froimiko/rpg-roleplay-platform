@@ -44,6 +44,24 @@ def _t_schedule_consequence(state: Any, args: dict) -> str:
     if due_location is not None:
         due_location = str(due_location).strip() or None
 
+    # 权限闸门(孪生洞补齐):apply_structured_updates 的 JSON-op "consequence" 分支已并入
+    # pending 闸,本工具面是同名 state 方法的孪生直写路径,同样须闸。GM 自主写后果账本
+    # (consequence_echo provider 注入 GM 上下文,有真实叙事影响)在 read_only/default 下
+    # 不直写、经 add_pending_narrative_op 入 pending(与 JSON-op 路径同构,同一 approve 路径
+    # 回放);full_access/auto_review 直写不变。玩家主动 origin(ui_button/llm_set/api_direct
+    # = UI 按钮 / /set 命令 / 直接 API)属玩家意志,豁免直写。_origin 由 dispatcher 无条件
+    # 注入(env.args["_origin"]=env.origin),不可被 LLM 伪造;user_intent 判定对照本域
+    # command_tools._set_player_profile_field 的现行读法。
+    origin = str(args.get("_origin") or "")
+    user_intent = origin in ("ui_button", "llm_set", "api_direct")
+    if not user_intent and state._gm_narrative_needs_pending():
+        return state.add_pending_narrative_op(
+            "consequence",
+            {"text": text, "due_turns": due_turns, "due_location": due_location},
+            source="gm:tool",
+            display=f"后果登记：{text[:40]}",
+        )
+
     ok, msg = state.register_consequence(
         text=text,
         due_turns=due_turns,

@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 
 from .. import knowledge
-from ._deps import _resolve_save_id, json_response, require_user
+from ._deps import _resolve_save_id, json_response, require_user, value_error_response
 
 router = APIRouter()
 
@@ -19,7 +19,7 @@ async def api_worldline_variables(request: Request, user=Depends(require_user)):
         save_id = _resolve_save_id(user["id"], body)
         return json_response({"ok": True, **knowledge.list_worldline_variables(user["id"], save_id)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 # 保留 request：需要读 request.query_params（save_id/bucket/limit/cursor）
@@ -39,4 +39,4 @@ async def api_memories(request: Request, user=Depends(require_user)):
             ),
         })
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)

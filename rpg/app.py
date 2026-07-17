@@ -1433,13 +1433,20 @@ def _persist_chat_turn(
     """
     state.record_turn(message_for_model, response)
     state.save()
-    platform_branches.record_runtime_turn(
+    _rt = platform_branches.record_runtime_turn(
         message_for_model,
         response,
         str(SAVE_FILE),
         user_id=api_user["id"] if api_user else None,
         state_data=state.data,
     )
+    # 双端并发状态覆盖根修:record_runtime_turn 检测到存档已被别处推进时拒绝提交(未落 commit/
+    # kb_events),返回 conflict 信号。此处必须【整回合原子放弃】—— 不再写 messages / timeline
+    # anchors,把冲突上抛由 chat SSE 层转成用户可见错误横幅(存档已在别处推进,请刷新后重试)。
+    if isinstance(_rt, dict) and _rt.get("conflict"):
+        raise platform_branches.RuntimeTurnConflict(
+            str(_rt.get("reason") or "存档已在别处推进,请刷新后重试")
+        )
     if persist_user_id and active_save_id:
         try:
             platform_knowledge.record_turn_messages(

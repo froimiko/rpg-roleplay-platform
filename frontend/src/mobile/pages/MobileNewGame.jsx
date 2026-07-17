@@ -66,10 +66,9 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
   const [identityKnown, setIdentityKnown] = useState(true);
 
   // ── Step 3 state ──
+  // npc_awareness / spoiler_guard 已下架(死设置,后端零读取点),不再收集。
   const [foreknowledge, setForeknowledge] = useState('none');
-  const [npcAwareness, setNpcAwareness] = useState('oblivious');
   const [steering, setSteering] = useState('guided');
-  const [spoiler, setSpoiler] = useState('loose');
   const [storyIntent, setStoryIntent] = useState('');
 
   // ── Step 4 state ──
@@ -138,9 +137,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
             if ('identity' in draft) setIdentity(draft.identity);
             if ('identityKnown' in draft) setIdentityKnown(draft.identityKnown);
             if (draft.foreknowledge) setForeknowledge(draft.foreknowledge);
-            if (draft.npcAwareness) setNpcAwareness(draft.npcAwareness);
             if (draft.steering) setSteering(draft.steering);
-            if (draft.spoiler) setSpoiler(draft.spoiler);
             if (typeof draft.storyIntent === 'string') setStoryIntent(draft.storyIntent);
             if (typeof draft.step === 'number' && draft.step < TOTAL_STEPS) setStep(draft.step);
           }
@@ -159,11 +156,11 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
     lsSetJSON(DRAFT_KEY, {
       scriptId, title, roleMode, pickedCard, newCardName, newCardRole, newCardBg,
       birthpoint, playerOrigin, identity, identityKnown,
-      foreknowledge, npcAwareness, steering, spoiler, storyIntent, step,
+      foreknowledge, steering, storyIntent, step,
     });
   }, [scriptId, title, roleMode, pickedCard, newCardName, newCardRole, newCardBg,
       birthpoint, playerOrigin, identity, identityKnown,
-      foreknowledge, npcAwareness, steering, spoiler, storyIntent, step]);
+      foreknowledge, steering, storyIntent, step]);
 
   // ── 各步骤校验 ──
   const allRoleOptions = [
@@ -240,9 +237,8 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
         story_intent: storyIntent.trim() || null,
         player_origin: playerOrigin || 'soul',
         ...(identity && playerOrigin !== 'body' ? { identity_known: identityKnown } : {}),
-        // 注意:foreknowledge_mode/npc_awareness/steering_strength/spoiler_guard 是
-        // 游戏设置字段,saves.create 的 payload 后端不消费(由 updateSettings 写入),
-        // 已删除以避免后端无效字段警告。
+        // 注意:foreknowledge_mode/steering_strength 是游戏设置字段,saves.create 的 payload
+        // 后端不消费(由 updateSettings 写入),已删除以避免后端无效字段警告。
       };
 
       // window.__createAndEnterSave 仅在桌面 PlatformShellCS 注册;移动外壳(MobileRoot)下它 undefined,
@@ -255,9 +251,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
         try {
           await window.api.saves.updateSettings(newSaveId, {
             foreknowledge_mode: foreknowledge,
-            npc_awareness: npcAwareness,
             steering_strength: steering,
-            spoiler_guard: spoiler,
           }, true);
         } catch (settingsErr) {
           // 设置写失败不阻断进入游戏,但给用户非阻塞提示。
@@ -346,12 +340,8 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
                 <StepMeta
                   foreknowledge={foreknowledge}
                   setForeknowledge={setForeknowledge}
-                  npcAwareness={npcAwareness}
-                  setNpcAwareness={setNpcAwareness}
                   steering={steering}
                   setSteering={setSteering}
-                  spoiler={spoiler}
-                  setSpoiler={setSpoiler}
                   storyIntent={storyIntent}
                   setStoryIntent={setStoryIntent}
                 />
@@ -371,9 +361,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
                   playerOrigin={playerOrigin}
                   identity={identity}
                   foreknowledge={foreknowledge}
-                  npcAwareness={npcAwareness}
                   steering={steering}
-                  spoiler={spoiler}
                   submitErr={submitErr}
                   submitting={submitting}
                 />

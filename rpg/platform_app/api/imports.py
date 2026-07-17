@@ -8,7 +8,7 @@ from core.llm_backend import DEFAULT_FALLBACK_API, DEFAULT_FALLBACK_MODEL
 
 from .. import script_import
 from ..db import connect
-from ._deps import json_response, require_user
+from ._deps import json_response, require_user, value_error_response
 
 router = APIRouter()
 
@@ -377,7 +377,7 @@ async def api_script_import_pipeline(request: Request, script_id: int, user=Depe
             "error": str(exc),
         }, status_code=400)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/scripts/import-jobs/{job_id}")
@@ -447,7 +447,7 @@ async def api_import_job_cancel(job_id: str, user=Depends(require_user)):
     try:
         return json_response(import_pipeline.cancel_job(user["id"], job_id))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=404)
+        return value_error_response(exc, status_code=404)
 
 
 @router.get("/api/me/import-jobs")
@@ -521,7 +521,7 @@ async def api_rebuild_module_estimate(
             user["id"], script_id, module, body=body,
         ))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/{script_id}/rebuild/chunks")

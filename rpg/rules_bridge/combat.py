@@ -174,6 +174,9 @@ def enemy_attack(state, attacker_id: str, target_id: str = "player",
         amount = int((result.damage or {}).get("total", 0))
         actual = state.damage_player(amount, reason=f"enemy_attack {attacker_id}")
         _sync_player_combatant(state)
+        # 打玩家走 damage_player 直改 HP,绕过 apply_rules_state_ops → 原来漏审计(打 NPC 分支有)。
+        # 补一条同构 audit_log(source=rules_engine),dice_log 仍由下方 append_dice_log 单独写,不双写。
+        state.append_rules_audit(reason=f"enemy_attack {attacker_id}", ops=1)
         result.gm_facts.append(
             f"玩家受到 {actual} 点伤害（HP {state.data['player_character'].get('hp')}/"
             f"{state.data['player_character'].get('max_hp')}）。"

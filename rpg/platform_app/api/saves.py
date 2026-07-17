@@ -14,7 +14,7 @@ from fastapi.responses import Response
 from .. import branches, knowledge, workspace
 from ..db import connect
 from ..perms import owns_save, script_readable
-from ._deps import json_response, require_user
+from ._deps import json_response, require_user, value_error_response
 
 router = APIRouter()
 
@@ -39,7 +39,7 @@ async def api_save_export(save_id: int, user=Depends(require_user)):
     try:
         payload = save_io.export_save(user["id"], save_id)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
     body = _json.dumps({"ok": True, **payload}, ensure_ascii=False).encode("utf-8")
     # 文件名 — 用 save title 或兜底 save-{id}
     save_title = (payload.get("save") or {}).get("title") or f"save-{save_id}"
@@ -64,7 +64,7 @@ async def api_save_export_txt(save_id: int, user=Depends(require_user)):
     try:
         filename, text = save_io.export_transcript_txt(user["id"], save_id)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
     ascii_fallback = filename.encode("ascii", "ignore").decode("ascii") or f"save-{save_id}.txt"
     quoted = _quote(filename, safe="")
     cd = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quoted}"
@@ -82,7 +82,7 @@ async def api_save_export_estimate(save_id: int, user=Depends(require_user)):
     try:
         return json_response(save_bundle.estimate_bundle_sizes(user["id"], save_id))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
 
 
 @router.get("/api/saves/{save_id}/export/bundle")
@@ -94,7 +94,7 @@ async def api_save_export_bundle(save_id: int, tier: str = "no_vectors", user=De
     except PermissionError:
         return json_response({"ok": False, "error": "只能完整导出自己拥有的剧本(订阅的公开剧本不可打包,版权)"}, status_code=403)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
     ascii_fallback = filename.encode("ascii", "ignore").decode("ascii") or f"save-bundle-{save_id}.zip"
     quoted = _quote(filename, safe="")
     cd = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quoted}"
@@ -151,7 +151,7 @@ async def api_save_import(request: Request, user=Depends(require_user)):
     except HTTPException:
         raise
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/saves/{save_id}")
@@ -160,7 +160,7 @@ async def api_save_detail(save_id: int, user=Depends(require_user)):
     try:
         return json_response({"ok": True, "save": workspace.save_detail(user["id"], save_id)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
 
 
 @router.post("/api/saves")
@@ -302,7 +302,7 @@ async def api_continue_branch(request: Request, user=Depends(require_user)):
     try:
         result = branches.continue_from(user["id"], node_id)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     # 同 activate:fork 后必须清缓存,否则 Game Console /api/state 仍读旧 runtime
     try:
         import app as _ui
@@ -365,7 +365,7 @@ async def api_rollback_to_message(request: Request, user=Depends(require_user)):
     try:
         result = branches.rollback_to_message(user["id"], save_id, message_index)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     # 同 activate:回滚 commit 后必须清 app.py 进程内 state 缓存
     try:
         import app as _ui
@@ -380,7 +380,7 @@ async def api_save_context_runs(save_id: int, limit: int | None = None, cursor: 
     try:
         return json_response({"ok": True, **knowledge.list_context_runs(user["id"], save_id, limit, cursor)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/saves/{save_id}/anchors")

@@ -896,12 +896,47 @@ def _passes_importance(name: str, canon_by_name, min_imp: int = MIN_IMPORTANCE_F
     return int(c.get("importance") or 0) >= min_imp
 
 
+# insertion_position 分派阈值:priority ≥ 此值(纪元/各类索引/核心势力)→ 'constant',每轮常驻;
+# 以下(单个 detail 卡)→ 'worldbook'(白名单枚举里的非常驻默认值),靠 keys 关键词按需触发。
+# 病灶:旧实现【全员 constant + keys 空】—— context_inject 的 constant 层有 3000 token 硬顶
+# (compute_budget clamp 到 _BUDGET_MAX),大剧本几十上百条 detail 按 priority 排到预算外被静默
+# 丢弃;而 retrieval/sources.py 的关键词触发池(priority<80)又因 keys 为空永不命中 → detail 两头
+# 落空。分层后:高价值索引/纪元常驻;detail 退出常驻预算竞争,改由 keys 命中注入。
+# 80 与 retrieval/sources.py 的「priority>=80 高优先常驻池 / <80 keys 匹配池」边界对齐。
+CONSTANT_INSERTION_MIN_PRIORITY = 80
+
+
+def _worldbook_insertion_position(priority: int) -> str:
+    """按重要度(priority)确定性分派 insertion_position。见 CONSTANT_INSERTION_MIN_PRIORITY。"""
+    return "constant" if int(priority or 0) >= CONSTANT_INSERTION_MIN_PRIORITY else "worldbook"
+
+
+def _entry_trigger_keys(name: str, canon_by_name: dict) -> list[str]:
+    """detail 条目的触发词 = 实体名 + 别名(去空去重,保序)。
+
+    keys 命中走 retrieval/sources.py 的 <80 匹配池(`k in query` 子串命中),故用原文名/别名
+    而非 slug(slug 化后无法匹配中文正文)。别名复用 canon 行既有 aliases 字段。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    aliases = (canon_by_name.get(name) or {}).get("aliases") or []
+    for cand in [name, *aliases]:
+        s = str(cand or "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
 def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
     """生成 worldbook_entries — 每个 faction/power_concept/location 独立一条。
 
-    book_id 必填。constant 条目每轮无条件常驻注入,但 priority 分层 —
-    纪元 100(必注入)/ 力量体系 95(头部)/ 主要势力 90(头部)/
-    单个 faction-detail 80 / power-detail 75 / location-detail 65.
+    book_id 必填。priority 分层同时决定 insertion_position(见 _worldbook_insertion_position):
+      · priority ≥ 80(纪元 100 / 力量体系索引 95 / 主要势力索引 90 / subtype 索引 88 /
+        核心势力 82)→ 'constant',每轮常驻。
+      · priority < 80(faction-detail 78 / org 76 / power 75 / concept 70 / location 65)→
+        'worldbook',带 keys(名+别名)按需触发 —— 不再挤 constant 3000 预算被静默丢弃。
+    只改新导入分派逻辑;存量行经本函数 on-conflict 重建时随之对齐,单独批量回填另议。
 
     content 富化策略:
       1. 优先用 kb_canon_entities.summary (LLM 抽取的背景描述)
@@ -945,25 +980,26 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
     except Exception:
         pass
 
-    entries: list[tuple[str, str, int]] = []  # (title, content, priority)
+    # (title, content, priority, keys):keys=触发词(detail 卡用;索引/纪元常驻,keys 空)
+    entries: list[tuple[str, str, int, list[str]]] = []
     if getattr(seed, "era", ""):
         entries.append((
             "纪元",
             f"本作纪元固定为「{seed.era}」。所有时间表述以此为准,绝不套用现实世界年代。",
-            100,
+            100, [],
         ))
     # 头部聚合索引(留给 GM 一眼看全貌)
     if getattr(seed, "power_system", None):
         entries.append((
             "力量体系 · 索引",
             "本作核心力量体系名录(详条另查): " + "、".join(seed.power_system),
-            95,
+            95, [],
         ))
     if getattr(seed, "key_factions", None):
         entries.append((
             "主要势力 · 索引",
             "本作主要势力名录(详条另查): " + "、".join(seed.key_factions[:20]),
-            90,
+            90, [],
         ))
     # P0 大改:按 subtype 聚类(开放标签 group by)+ parent 树状渲染
     # 旧版按硬编码"势力/力量/地点/概念"4 桶分;新版按 LLM 自抽的 subtype 自然聚类,
@@ -1004,14 +1040,14 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
             continue
         seen_titles.add(title)
         content = _enrich(fac, f"势力名称: {fac}", canon_by_name)
-        entries.append((title, content, 82))
+        entries.append((title, content, 82, _entry_trigger_keys(fac, canon_by_name)))
     for power in seed_powers:
         title = f"力量·{power}"
         if title in seen_titles:
             continue
         seen_titles.add(title)
         content = _enrich(power, f"力量体系条目: {power}", canon_by_name)
-        entries.append((title, content, 75))
+        entries.append((title, content, 75, _entry_trigger_keys(power, canon_by_name)))
 
     # 按 subtype 分组渲染 — 每组先一条索引(列出本 subtype 所有成员)+ 单条 detail
     # 例:subtype="军队" 索引条 = "军队类:德军、美军、俄军";单条 = "势力·德军 = ..."
@@ -1035,7 +1071,7 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
         if idx_title not in seen_titles and len(names) >= 2:
             seen_titles.add(idx_title)
             idx_content = f"【{subtype}类 {eff_type}】" + "、".join(names[:30])
-            entries.append((idx_title, idx_content, SUBTYPE_INDEX_PRIORITY))
+            entries.append((idx_title, idx_content, SUBTYPE_INDEX_PRIORITY, []))
         # 每个 entity 一条 detail,跟 parent 显式关联,GM 能看到层级
         for c in members:
             nm = c.get("name", "")
@@ -1063,21 +1099,26 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
             if child_names:
                 child_label = f" · 下辖: {', '.join(child_names[:6])}"
             content = base + parent_label + child_label
-            entries.append((title, content, SUBTYPE_DETAIL_PRIORITY.get(eff_type, 70)))
+            entries.append((title, content, SUBTYPE_DETAIL_PRIORITY.get(eff_type, 70),
+                            _entry_trigger_keys(nm, canon_by_name)))
 
     written = 0
-    for title, content, priority in entries:
+    for title, content, priority, keys in entries:
+        # 分派 insertion_position:高价值(索引/纪元/核心势力)常驻;detail 卡走 'worldbook'
+        # 靠 keys 触发,退出 constant 3000 预算竞争(病灶=旧实现全员 constant 致 detail 被静默丢)。
+        ipos = _worldbook_insertion_position(priority)
         db.execute(
             """
             insert into worldbook_entries(book_id, script_id, title, content, keys, priority, insertion_position, enabled, metadata)
-            values (%s, %s, %s, %s, %s, %s, 'constant', true, %s)
+            values (%s, %s, %s, %s, %s, %s, %s, true, %s)
             on conflict(script_id, title) do update set
               content=excluded.content, priority=excluded.priority,
-              insertion_position='constant',
+              keys=excluded.keys,
+              insertion_position=excluded.insertion_position,
               metadata=excluded.metadata, updated_at=now()
             where coalesce(worldbook_entries.metadata->>'source','') <> 'editor'
             """,
-            (book_id, script_id, title, content, Jsonb([]), priority,
+            (book_id, script_id, title, content, Jsonb(keys), priority, ipos,
              Jsonb({"source": "extracted"})),
         )
         written += 1

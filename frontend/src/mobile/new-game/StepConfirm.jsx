@@ -9,7 +9,7 @@ import { ErrBar } from './shared.jsx';
 /* ================================================================
    STEP 4 — 确认
    ================================================================ */
-function StepConfirm({ title, setTitle, scripts, scriptId, birthpoint, birthpointRequired, roleMode, pickedCard, newCardName, allRoleOptions, playerOrigin, identity, foreknowledge, npcAwareness, steering, spoiler, submitErr, submitting }) {
+function StepConfirm({ title, setTitle, scripts, scriptId, birthpoint, birthpointRequired, roleMode, pickedCard, newCardName, allRoleOptions, playerOrigin, identity, foreknowledge, steering, submitErr, submitting }) {
   const { t } = useTranslation();
   const selScript = scripts.find(s => String(s.id) === String(scriptId)) || null;
   const pickedOpt = allRoleOptions.find(o => o.key === pickedCard);
@@ -31,7 +31,6 @@ function StepConfirm({ title, setTitle, scripts, scriptId, birthpoint, birthpoin
     { k: t('mobile.new_game.confirm.row_identity'), v: identity ? `${identity.name || ''} ${identity.role || ''}`.trim() || t('mobile.new_game.confirm.identity_set') : t('mobile.new_game.confirm.identity_none') },
     { k: t('mobile.new_game.confirm.row_foreknowledge'), v: { none: t('mobile.new_game.meta.foreknowledge_none'), partial: t('mobile.new_game.meta.foreknowledge_partial'), omniscient: t('mobile.new_game.meta.foreknowledge_omniscient') }[foreknowledge] || foreknowledge },
     { k: t('mobile.new_game.confirm.row_steering'), v: { rail: t('mobile.new_game.meta.steering_rail'), guided: t('mobile.new_game.meta.steering_guided'), free: t('mobile.new_game.meta.steering_free') }[steering] || steering },
-    { k: t('mobile.new_game.confirm.row_spoiler'), v: { strict: t('mobile.new_game.meta.spoiler_strict'), loose: t('mobile.new_game.meta.spoiler_loose') }[spoiler] || spoiler },
   ];
 
   return (

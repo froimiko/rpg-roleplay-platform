@@ -26,6 +26,7 @@ from ._deps import (
     json_response,
     platform_for,
     require_admin,
+    value_error_response,
 )
 
 router = APIRouter()
@@ -138,7 +139,7 @@ async def api_verify_email(request: Request):
         _set_session_cookie(response, request, token)
         return response
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/auth/resend-code")
@@ -154,7 +155,7 @@ async def api_resend_code(request: Request):
         await asyncio.to_thread(_auth.resend_verification_code, email, ip=ip)
         return json_response({"ok": True, "message": "验证码已重发，请查收邮件"})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=429)
+        return value_error_response(exc, status_code=429)
 
 
 # 保留 request：login 需要 _client_ip(request) 用于速率限制
@@ -180,7 +181,7 @@ async def api_login(request: Request):
             headers={"Retry-After": str(rl.retry_after_sec)},
         )
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/auth/login-code/request")
@@ -200,7 +201,7 @@ async def api_login_code_request(request: Request):
             headers={"Retry-After": str(rl.retry_after_sec)},
         )
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/auth/login-code/verify")
@@ -223,7 +224,7 @@ async def api_login_code_verify(request: Request):
             headers={"Retry-After": str(rl.retry_after_sec)},
         )
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/auth/apple")
@@ -362,7 +363,7 @@ async def api_passwordless_verify(request: Request):
         _set_session_cookie(response, request, token)
         return response
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 # admin 角色门控收敛到 _deps.require_admin(唯一来源);保留本名供 Depends(_require_admin) 旧引用。

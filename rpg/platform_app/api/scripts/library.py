@@ -9,7 +9,7 @@ from fastapi import Depends, Request
 
 from ... import script_import
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -38,7 +38,7 @@ async def api_script_delete(request: Request, script_id: int, user=Depends(requi
     try:
         return json_response(script_import.delete_script(user["id"], script_id, force=bool(body.get("force"))))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
 
 
 @router.post("/api/scripts/{script_id}/rename")
@@ -251,5 +251,5 @@ async def api_fork_public_script(script_id: int, user=Depends(require_user)):
     except PermissionError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=403)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     return json_response({"ok": True, **result})

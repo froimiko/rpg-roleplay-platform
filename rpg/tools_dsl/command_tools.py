@@ -647,6 +647,24 @@ def _exec_add_hypothesis(state, args) -> str:
     v = (args.get("text") or "").strip()
     if not v:
         return "add_hypothesis 失败: text 为空"
+    # 权限闸门(孪生洞补齐):本工具直调 state.add_hypothesis,绕过 apply_state_write 权限
+    # 闸门。推测经 context_providers/memory.py 以「未确认推测」注入 GM 上下文,有真实叙事
+    # 影响,与 apply_ops.py 的 JSON-op "hypothesis" 分支同构须闸——同走 add_pending_narrative_op
+    # 入队、同 _approve_narrative_op_pending 回放(value 键 text/time_label/characters 一致)。
+    # GM 自主写(llm_chat/llm_chat_json_op)在 read_only/default 下入 pending 不直写;玩家主动
+    # origin(ui_button/llm_set/api_direct = UI 按钮 / /set 命令 / 直接 API)属玩家意志,豁免
+    # 直写。_origin 由 dispatcher 无条件注入(env.args["_origin"]=env.origin),不可被 LLM
+    # 伪造;user_intent 判定口径对照本域 _set_player_profile_field 的现行读法。
+    origin = str(args.get("_origin") or "")
+    user_intent = origin in ("ui_button", "llm_set", "api_direct")
+    if not user_intent and state._gm_narrative_needs_pending():
+        return state.add_pending_narrative_op(
+            "hypothesis",
+            {"text": v, "time_label": args.get("time_label"),
+             "characters": args.get("characters")},
+            source="gm:tool",
+            display=f"推测登记：{v[:40]}",
+        )
     hid = state.add_hypothesis(
         text=v,
         source="user:/set:tool",

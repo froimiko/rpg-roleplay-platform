@@ -6,6 +6,7 @@ import AgentModelPicker from '../AgentModelPicker.jsx';
 import { useAutoSave } from '../../platform-app.jsx';
 import { SetGroup, SetRow, SetSelect } from './shared.jsx';
 import CSToggle from '@cloudscape-design/components/toggle';
+import { changeLanguage } from '../../i18n/index.js';
 
 function PrefSection() {
   // task 52：从 user_preferences 拉真实初值，改动直接 patch /api/me/preference。
@@ -40,7 +41,7 @@ function PrefSection() {
             { value: 'zh-TW', label: '繁體中文' },
             { value: 'en', label: 'English (Beta)' },
           ]}
-          onChange={(v) => { setInterfaceLang(v); save("ui_language", v); import('../../i18n/index.js').then(m => m.changeLanguage(v)); }} />
+          onChange={(v) => { setInterfaceLang(v); save("ui_language", v); changeLanguage(v); }} />
       </SetRow>
       <SetRow label={t('settings.preferences.serif_font')} description={t('settings.preferences.serif_font_desc')}>
         <CSToggle checked={serif} onChange={({ detail }) => { setSerif(detail.checked); save("serif", detail.checked); }}>

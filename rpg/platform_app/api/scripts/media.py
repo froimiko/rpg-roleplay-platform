@@ -11,7 +11,7 @@ from fastapi import Depends, File, Request, UploadFile
 
 from ...db import connect
 from ...perms import script_owned
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 # 封面 MIME 魔数校验与 me._shared._detect_image_mime 逐字节相同(PNG/JPEG/WebP 同判、同
 # ValueError 文案)—— 收敛到单一真相源,本地保留 _detect_cover_mime 名(调用点零改动)。
@@ -91,7 +91,7 @@ async def api_upload_npc_card_avatar(script_id: int, card_id: int, file: UploadF
     try:
         mime, ext = _detect_cover_mime(data)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     from ... import storage as _storage
     filename = f"upload_{user_id}_{secrets.token_hex(12)}.{ext}"
     storage_key, url = _storage.store_bytes(data, kind="ai_images", filename=filename)
@@ -141,7 +141,7 @@ async def api_upload_script_cover(script_id: int, file: UploadFile = File(...), 
     try:
         mime, ext = _detect_cover_mime(data)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
     # 4. 存储
     from ... import storage as _storage

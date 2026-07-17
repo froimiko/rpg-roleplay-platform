@@ -11,7 +11,7 @@ from fastapi import Depends, Request
 
 from ... import knowledge
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -176,7 +176,7 @@ async def api_script_chapter_facts(script_id: int, limit: int | None = None, cur
     try:
         return json_response({"ok": True, **knowledge.list_chapter_facts(user["id"], script_id, limit, cursor)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/scripts/{script_id}/timeline")

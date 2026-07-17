@@ -185,12 +185,21 @@ async def api_opening(
             try:
                 persist_user_id, active_save_id = _resolve_persist_target(api_user)
                 if api_user and persist_user_id and active_save_id:
-                    platform_branches.record_runtime_turn(
+                    _open_rt = platform_branches.record_runtime_turn(
                         "",
                         opening_visible,
                         user_id=api_user["id"],
                         state_data=state.data,
                     )
+                    # 并发双开:开场已在别处生成(record_runtime_turn 检测活跃指针漂移已原子放弃)。
+                    # 发冲突错误让前端刷新,跳过后续 session/messages 写入,不落半个开场。
+                    if isinstance(_open_rt, dict) and _open_rt.get("conflict"):
+                        yield _sse("error", {
+                            "message": "开场已在别处生成,请刷新后重试。",
+                            "kind": "save_conflict",
+                        })
+                        yield _sse("done", {"status": _payload_sse(api_user), "interrupted": True})
+                        return
                     platform_knowledge.ensure_game_session(persist_user_id, active_save_id, state.data)
                     # 写入 messages 表:kb_native 存档 materialize() 从 messages 重建 history,
                     # 若不写,开场白在 messages 表缺失 → materialize 丢开场 → 前端只显示后续对话。

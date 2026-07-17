@@ -93,6 +93,23 @@ class ApplyOpsMixin:
             extra_known=extra_known,
         )
 
+    def _gm_narrative_needs_pending(self) -> bool:
+        """GM 自主叙事记忆写入(consequence / npc_agenda / hypothesis 系 JSON op)是否
+        需先入 pending 而非直写。read_only / default 模式入 pending,full_access 直写
+        (台账修复口径;auto_review 归入直写侧,与其「自动应用+审计」语义一致)。
+
+        这些 op 原直调 register_consequence / upsert_npc_agenda / add_hypothesis 等
+        专用方法,完全绕过 apply_state_write_typed 的权限闸门 —— read_only 拦不住,破坏
+        「任何 LLM 自动写入都入 pending」承诺。核实:它们【确实进 GM 上下文注入】——
+        consequence_echo(后果回响)/ npc_agenda(NPC 议程)provider + memory provider
+        以「未确认推测」注入,confirm_hypothesis 更升级出注入的 runtime_fact,有真实
+        叙事影响,故必须并入闸门。"""
+        from state.permissions import _normalize_permission_mode
+        mode = _normalize_permission_mode(
+            self.data.setdefault("permissions", {}).get("mode", "full_access")
+        )
+        return mode in ("read_only", "default")
+
     def apply_structured_updates(self, gm_response: str) -> list[str]:
         updates: list[str] = []
         memory = self.data["memory"]
@@ -154,9 +171,22 @@ class ApplyOpsMixin:
         #   2. 权限模式（read_only 全挡 / default 白名单 / ...）入 pending
         #   3. 路由到具体的 update_* 方法（apply_state_write 内部 kind dispatch）
         #
-        # 例外：时间跳跃 pending_jump 状态机（confirm/reject）+ 询问玩家 +
-        # 设定校验 + 世界线推演 这些没有 path 的"控制流"标签保持原路径，
-        # 因为它们不是字段写入而是流程信号。
+        # 例外(刻意豁免,理由已逐条核实显式化)：以下没有 path 的"控制流"标签保持
+        # 原路径,因为它们不是"GM 自主写游戏态",而是流程信号 / 玩家意志落地：
+        #   · 时间跳跃 pending_jump 状态机(confirm/reject_time_jump)——pending_jump
+        #     由玩家自然语言 request_time_jump 发起,GM confirm 只是落地玩家已表达的
+        #     意志(且对 pending 语境有重防御,见下方分支),非 GM 自主写。
+        #   · 询问玩家(add_pending_question)——只入队一条待答问题,不改任何游戏态字段;
+        #     真正的状态变化发生在玩家回答之后。
+        #   · 设定校验(_scan/_set_worldline_validation)——只写校验结论标记,不改剧情态。
+        #   · 世界线推演(_store_worldline_projection)——自带确认闸:未过校验且已有
+        #     user_variables 时只落 pending_projection 返回 False(待用户确认),不直写。
+        # ⚠️ 注意区分:上面是【标签路径】的控制流豁免。而下方【JSON op 路径】的
+        # consequence / npc_agenda / hypothesis / confirm_/reject_hypothesis 系
+        # **不在**此豁免内 —— 它们是 GM 自主写入的叙事记忆且【会进 GM 上下文注入】
+        # (consequence_echo / npc_agenda / memory provider 消费),故走
+        # _gm_narrative_needs_pending 权限闸门(read_only/default 入 pending),
+        # 不能沿用"控制流信号"的豁免(它们有真实叙事影响,非纯流程信号)。
         def _gm_write_via_gate(path: str, value, *, append=False, overwrite=False, label_for_update: str = "") -> None:
             """统一权限闸门。所有"写状态字段"的 GM 标签都走这里。
 
@@ -335,6 +365,17 @@ class ApplyOpsMixin:
                         _log_op_parse_error("consequence op 缺 'text' 字段", op)
                         updates.append(f"JSON op 忽略（后果缺文本）：{op}")
                         continue
+                    # 权限闸门:GM 自主写后果账本(consequence_echo provider 注入 GM
+                    # 上下文,有真实叙事影响)。read_only/default 入 pending 不直写。
+                    if self._gm_narrative_needs_pending():
+                        updates.append(self.add_pending_narrative_op(
+                            "consequence",
+                            {"text": c_text, "due_turns": op.get("due_turns"),
+                             "due_location": op.get("due_location")},
+                            source="gm:json",
+                            display=f"后果登记：{c_text[:40]}",
+                        ))
+                        continue
                     ok, msg = self.register_consequence(
                         text=c_text,
                         due_turns=op.get("due_turns"),
@@ -359,6 +400,20 @@ class ApplyOpsMixin:
                     # text_stripped,不能用 gm_response —— 后者含 op 本身,名字恒在里面,
                     # 会废掉整个防臆造闸。
                     _agenda_extra = {a_name} if a_name and a_name in text_stripped else None
+                    # 权限闸门:GM 自主写 NPC 议程(npc_agenda provider 注入 GM 上下文)。
+                    # read_only/default 入 pending。extra_known 是 set,存 list(JSON 可
+                    # 序列化,随存档持久化),approve 时重建 set —— 保留「本回合正文出现过
+                    # 该名字=已知」这一登记时刻的信号,不受审批时回合漂移影响。
+                    if self._gm_narrative_needs_pending():
+                        updates.append(self.add_pending_narrative_op(
+                            "npc_agenda",
+                            {"name": a_name, "goal": op.get("goal"),
+                             "stance": op.get("stance"),
+                             "extra_known": list(_agenda_extra) if _agenda_extra else None},
+                            source="gm:json",
+                            display=f"NPC议程：{a_name}",
+                        ))
+                        continue
                     ok, msg = self.upsert_npc_agenda(
                         name=a_name,
                         goal=op.get("goal"),
@@ -374,6 +429,17 @@ class ApplyOpsMixin:
                         _log_op_parse_error("hypothesis op 缺 'text' 或 'value' 字段", op)
                         updates.append(f"JSON op 忽略（推测缺文本）：{op}")
                         continue
+                    # 权限闸门:GM 自主写推测(memory provider 以「未确认推测」注入 GM
+                    # 上下文)。read_only/default 入 pending。
+                    if self._gm_narrative_needs_pending():
+                        updates.append(self.add_pending_narrative_op(
+                            "hypothesis",
+                            {"text": text, "time_label": op.get("time_label"),
+                             "characters": op.get("characters")},
+                            source="gm:json",
+                            display=f"推测登记：{text[:40]}",
+                        ))
+                        continue
                     mid = self.add_hypothesis(
                         text=text,
                         source="gm:json",
@@ -383,8 +449,17 @@ class ApplyOpsMixin:
                     updates.append(f"推测登记：{mid} {text[:40]}")
                     continue
                 # task 75：confirm/reject hypothesis（玩家或 GM 后续轮可触发）
+                # 权限闸门:confirm 升级推测为 runtime_fact(注入 GM 上下文的叙事事实),
+                # reject 删活跃推测 —— 都是 GM 自主改叙事记忆。read_only/default 入 pending
+                # (有 id 才闸;缺 id 走原失败分支保持既有报错行为)。
                 if kind == "confirm_hypothesis":
                     hid = op.get("id") or ""
+                    if hid and self._gm_narrative_needs_pending():
+                        updates.append(self.add_pending_narrative_op(
+                            "confirm_hypothesis", {"id": hid},
+                            source="gm:json", display=f"确认推测：{hid}",
+                        ))
+                        continue
                     if hid and self.confirm_hypothesis(hid, source="gm:json"):
                         updates.append(f"推测确认：{hid}")
                     else:
@@ -392,6 +467,12 @@ class ApplyOpsMixin:
                     continue
                 if kind == "reject_hypothesis":
                     hid = op.get("id") or ""
+                    if hid and self._gm_narrative_needs_pending():
+                        updates.append(self.add_pending_narrative_op(
+                            "reject_hypothesis", {"id": hid},
+                            source="gm:json", display=f"拒绝推测：{hid}",
+                        ))
+                        continue
                     if hid and self.reject_hypothesis(hid):
                         updates.append(f"推测拒绝：{hid}")
                     else:
@@ -742,18 +823,7 @@ class ApplyOpsMixin:
                 applied.append(f"set {path}={_get_path(self.data, path)}")
             except Exception as e:
                 applied.append(f"failed {path}: {e}")
-        # audit
-        try:
-            audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
-            audit.append({
-                "ts": now_iso(),
-                "source": "rules_engine",
-                "ops": len(ops or []),
-                "reason": reason,
-                "turn": self.data.get("turn", 0),
-            })
-            self.data["permissions"]["audit_log"] = audit[-200:]
-        except Exception:
-            pass
+        # audit — 与战斗直改路径共用 append_rules_audit 单一落法(见 rules_gameplay mixin)。
+        self.append_rules_audit(reason=reason, ops=len(ops or []))
         return applied
 

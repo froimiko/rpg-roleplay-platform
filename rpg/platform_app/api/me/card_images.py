@@ -11,7 +11,7 @@ import secrets
 from fastapi import Depends, File, Request, UploadFile
 
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router, _detect_image_mime
 
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8 MB
@@ -27,7 +27,7 @@ async def api_set_auto_image_sync(request: Request, card_id: int, user=Depends(r
     try:
         return json_response(user_cards.set_auto_image_sync(user["id"], card_id, bool(body.get("enabled"))))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/me/character-cards/{card_id}/generate-persona-image")
@@ -84,7 +84,7 @@ async def api_set_current_persona_image(card_id: int, image_id: int, user=Depend
     try:
         return json_response(image_jobs.set_current_persona_image(user["id"], card_id, image_id))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/me/character-cards/{card_id}/avatar-url")
@@ -191,7 +191,7 @@ async def api_upload_card_avatar(card_id: int, file: UploadFile = File(...), use
     try:
         mime, ext = _detect_image_mime(data)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
     # 4. 存储
     from ... import storage as _storage
@@ -251,7 +251,7 @@ async def api_upload_persona_image(card_id: int, file: UploadFile = File(...), u
     try:
         mime, ext = _detect_image_mime(data)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
     # 4. 存储
     from ... import storage as _storage

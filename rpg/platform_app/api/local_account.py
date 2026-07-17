@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from .. import auth as _auth
 from ..security import public_user
-from ._deps import _is_loopback, _set_session_cookie, current_user, json_response
+from ._deps import _is_loopback, _set_session_cookie, current_user, json_response, value_error_response
 
 router = APIRouter()
 
@@ -65,7 +65,7 @@ async def update_local_profile(request: Request):
             display_name=body.get("display_name") if "display_name" in body else None,
         )
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     return json_response({"ok": True, "account": _account_view(updated)})
 
 
@@ -127,7 +127,7 @@ async def register_via_invite(request: Request):
             age_confirmed=bool(body.get("age_confirmed")),
         )
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     resp = json_response({"ok": True, "user": public_user(user), "next": "/Platform.html"})
     _set_session_cookie(resp, request, session_token)
     return resp

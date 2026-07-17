@@ -201,6 +201,10 @@ MAX_CALLS_PER_USER_PER_SECOND = 20
 MAX_TRACE_SEEN = 1024
 AUDIT_LOG_LIMIT = 200
 RECENT_AUDIT_LIMIT = 1000
+# _SYNC_SCOPE_LOCKS LRU 上限:进程级全局,key=(user_id, save_id|None),生命周期是整个
+# 进程运行期(不像 _trace_seen 单回合内清空)——长期运行下"曾经玩过的 (user,save) 组合数"
+# 无界增长,plain dict 永不缩小 = 真实内存泄漏。1024 同样远超任何时刻的活跃并发存档数。
+MAX_SYNC_SCOPE_LOCKS = 1024
 
 # SEC(H-14/H-15): dispatcher 多为「每请求新建实例」(chat_pipeline/chat_tool_router/apply_ops/
 # black_swan_agent/ui_dispatch_helper),所以实例级限流 bucket / asyncio.Lock 都形同虚设
@@ -208,7 +212,7 @@ RECENT_AUDIT_LIMIT = 1000
 # 同步写路径用全局 per-(user,save) RLock 串行化同一存档的并发回合(双 tab / 重叠 SSE)。
 _GLOBAL_RATE_BUCKETS: dict[int, list[float]] = {}
 _GLOBAL_RATE_LOCK = threading.Lock()
-_SYNC_SCOPE_LOCKS: dict[tuple[int, int | None], threading.RLock] = {}
+_SYNC_SCOPE_LOCKS: OrderedDict[tuple[int, int | None], threading.RLock] = OrderedDict()
 _SYNC_LOCKS_GUARD = threading.Lock()
 
 
@@ -218,7 +222,34 @@ def _get_sync_scope_lock(key: tuple[int, int | None]) -> threading.RLock:
         if lock is None:
             lock = threading.RLock()
             _SYNC_SCOPE_LOCKS[key] = lock
+        else:
+            _SYNC_SCOPE_LOCKS.move_to_end(key)  # LRU:活跃 scope 推到末尾,不会被淘汰
+        if len(_SYNC_SCOPE_LOCKS) > MAX_SYNC_SCOPE_LOCKS:
+            _evict_idle_sync_scope_locks()
         return lock
+
+
+def _evict_idle_sync_scope_locks() -> None:
+    """把 _SYNC_SCOPE_LOCKS 降到 MAX_SYNC_SCOPE_LOCKS 以内,只淘汰当前空闲的锁。
+
+    跟 _trace_seen(纯去重数据,淘汰只丢一点去重效果)不同,这里淘汰的是**锁对象本身**:
+    若淘汰一把正被别的线程持有的锁,后续同 key 再次 _get_sync_scope_lock 会新建一个
+    不同的 RLock 实例,导致同一 (user,save) 出现两把互不相识的锁——直接击穿 SEC(H-15)
+    要防的并发覆盖。用 acquire(blocking=False) 探测「此刻没人持有」再淘汰:拿得到锁 =
+    确认空闲,立刻释放并从表中删除;拿不到 = 仍被占用,跳过留下,下轮再试。
+    调用方已持有 _SYNC_LOCKS_GUARD,期间不会有新 key 并发插入。
+    """
+    for key in list(_SYNC_SCOPE_LOCKS.keys()):
+        if len(_SYNC_SCOPE_LOCKS) <= MAX_SYNC_SCOPE_LOCKS:
+            return
+        lock = _SYNC_SCOPE_LOCKS.get(key)
+        if lock is None:
+            continue
+        if lock.acquire(blocking=False):
+            try:
+                _SYNC_SCOPE_LOCKS.pop(key, None)
+            finally:
+                lock.release()
 
 
 # JSON-mode fallback 模型(无 native function calling 的中转/廉价模型)常把 integer 参数

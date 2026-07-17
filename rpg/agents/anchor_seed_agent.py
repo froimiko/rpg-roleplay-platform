@@ -32,12 +32,15 @@ GM 看到的锚点信息是: summary + participants + locations + importance + i
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 from psycopg.types.json import Jsonb
 
 from platform_app.db import connect, init_db
+
+log = logging.getLogger(__name__)
 
 
 def _anchor_pace(user_id: int | None = None) -> bool:
@@ -453,6 +456,13 @@ def get_progress_window(save_id: int, world_time_label: str | None = None,
                     "last_satisfied_chapter": None,
                 }
     # 3. fallback 剧本开头
+    # 退化兜底:无 occurred/variant/superseded 锚点 + 无 progress_chapter + 无 label 命中
+    # (典型=未拆书/无锚点剧本)→ 窗口坍到 [1,30]。记一行 info,让「未拆书剧本被静默兜底」
+    # 可观测(与 worldbook_agent.consult 空结果同回合出现 = 强信号)。
+    log.info(
+        "[progress_window] 退化 fallback[1,30]:save=%s script=%s label=%r",
+        sid, script_id, world_time_label,
+    )
     return {
         "chapter_min": 1,
         "chapter_max": 30,

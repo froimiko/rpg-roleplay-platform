@@ -7,7 +7,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router, _require_owner, _write_commit
 
 # ─── anchors CRUD ─────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ async def api_anchor_update(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         before_row = db.execute(
             f"SELECT {_ANCHOR_COLS} FROM script_timeline_anchors WHERE id = %s AND script_id = %s",
@@ -137,7 +137,7 @@ async def api_anchor_add(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         new_row = db.execute(
             """
@@ -184,7 +184,7 @@ async def api_anchor_delete(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         before_row = db.execute(
             "SELECT id, story_phase, story_time_label, sample_summary FROM script_timeline_anchors WHERE id=%s AND script_id=%s",

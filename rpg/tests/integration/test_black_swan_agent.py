@@ -305,26 +305,29 @@ class TestMaybeTrigger(unittest.TestCase):
         self.assertTrue(result["triggered"])
         self.assertEqual(result["retries"], 0)
         mock_dispatch.assert_called_once()
-        # all 5 validators present
-        self.assertEqual(len(result["validator_results"]), 5)
+        # 只跑【已实现】的 3 层确定性 validator(3a/3c/3d);3b/3e 未实现已从 run_validators 摘除,
+        # 不再占位 return True 冒充「已过」(诚实原则,反假绿)。
+        self.assertEqual(len(result["validator_results"]), 3)
         self.assertTrue(all(v[1] for v in result["validator_results"]))
 
 
 # ── run_validators 聚合 ───────────────────────────────────────────────────────
 
 class TestRunValidators(unittest.TestCase):
-    def test_returns_five_entries(self):
+    def test_returns_only_implemented_entries(self):
+        """只登记【已实现】的确定性 3 层;3b/3e 未实现,不得出现(反假绿)。"""
         from agents.black_swan_agent import run_validators
         proposal = {"event_kind": "new_event", "summary": "普通事件。"}
         snap = {"current_phase": "X", "active_npcs": [], "locked_variables": {}}
         results = run_validators(proposal, snap, script_id=None, script_overrides=None)
-        self.assertEqual(len(results), 5)
+        self.assertEqual(len(results), 3)
         names = [r[0] for r in results]
         self.assertIn("3a_token_blacklist", names)
-        self.assertIn("3b_npc_presence", names)
         self.assertIn("3c_hard_constraints", names)
         self.assertIn("3d_timeline_anchor", names)
-        self.assertIn("3e_independent_critic", names)
+        # 未实现的占位层绝不出现在结果里
+        self.assertNotIn("3b_npc_presence", names)
+        self.assertNotIn("3e_independent_critic", names)
 
 
 # ── handle_introspection_tool ────────────────────────────────────────────────

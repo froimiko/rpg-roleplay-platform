@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -56,7 +56,7 @@ async def api_set_credential(request: Request, user=Depends(require_user)):
         )
         return json_response(result)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/me/credentials/delete")

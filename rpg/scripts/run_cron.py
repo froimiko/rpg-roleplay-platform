@@ -61,6 +61,37 @@ def cmd_prune_audit(db) -> dict:
     return result
 
 
+def cmd_prune_retention(db) -> dict:
+    """补齐此前无 prune 的三张表(2026-07 债务台账 retention 系统性遗漏族):
+    tool_invocations(90d,增长最快,分批删)/ chat_postproc_tasks 终态行(30d)/
+    email_verifications(7d,对应安全审计 H-7 的 pending 行长期留存暴露面)。"""
+    # 生产以 `-m rpg.scripts.run_cron` 跑(rpg.* 可导);测试/直接调以 rpg/ 为根
+    # (顶层可导,`rpg` 包名不可导)—— 同 cmd_phase_digest_backfill 的 dual-import 写法。
+    try:
+        from rpg.cron.prune_retention import (
+            run_prune_tool_invocations,
+            run_prune_postproc_tasks,
+            run_prune_email_verifications,
+        )
+    except ModuleNotFoundError:
+        from cron.prune_retention import (
+            run_prune_tool_invocations,
+            run_prune_postproc_tasks,
+            run_prune_email_verifications,
+        )
+    r1 = run_prune_tool_invocations(db)
+    r2 = run_prune_postproc_tasks(db)
+    r3 = run_prune_email_verifications(db)
+    result = {
+        "tool_invocations_pruned": r1["pruned"],
+        "postproc_tasks_pruned": r2["pruned"],
+        "email_verifications_pruned": r3["pruned"],
+    }
+    logger.info("prune_retention: %s", result)
+    _write_audit(db, "cron.prune_retention", result)
+    return result
+
+
 def cmd_policy_dispatch(db) -> dict:
     """扫描并发送待发政策变更通知邮件 (DOC-02/AUP-03)."""
     from cron.policy_notice import run_dispatch_due
@@ -156,6 +187,7 @@ COMMANDS = {
     "policy_activate": cmd_policy_activate,
     "prune_feedback": cmd_prune_feedback,
     "phase_digest_backfill": cmd_phase_digest_backfill,
+    "prune_retention": cmd_prune_retention,
 }
 
 _ALL_COMMAND_NAMES = "|".join(COMMANDS.keys())

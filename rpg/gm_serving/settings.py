@@ -15,17 +15,15 @@ SETTINGS_SCHEMA: list[dict] = [
     {"key": "foreknowledge_mode", "label": "穿越者先知程度", "type": "enum", "default": "none",
      "options": ["none", "partial", "omniscient"], "locked_after_create": False, "step": 3,
      "help": "none=与角色同步无先知;partial=模糊知道著名未来大事;omniscient=全知原著。调节防剧透集合宽度。"},
-    {"key": "npc_awareness", "label": "NPC 察觉异常先知", "type": "enum", "default": "oblivious",
-     "options": ["oblivious", "suspicious"], "locked_after_create": False, "step": 3,
-     "help": "suspicious 时 NPC 会对玩家的异常先知起疑。"},
+    # 注:npc_awareness / spoiler_guard 已下架(2026-07-18)—— 全库零读取点(schema/持久化/移动
+    # 向导俱全,但 context 注入/GM prompt/rails 从未消费),属「UI 存在≠生效」的死设置。诚实优于
+    # 装饰:从 schema/表单下架;持久化列(save_io / _session_repo)保留不动库,存量值静默失效。
+    # 若日后要真做防剧透强度:接 clamp_reveal_progress 的 lookahead;NPC 起疑属叙事层,另设计。
     {"key": "steering_strength", "label": "剧情引导强度", "type": "enum", "default": "guided",
      "options": ["rail", "guided", "free"], "locked_after_create": False, "step": 4,
      "help": "rail=贴原著(强力锚点):把下一个待发生锚点当成必须推进的下一拍,GM 主动收束、"
              "偏离 1-3 轮内拉回(仍允许合理变体);guided=软引导(默认温和):软目标朝锚点自然推进;"
              "free=自由:不注入引导。"},
-    {"key": "spoiler_guard", "label": "防剧透强度", "type": "enum", "default": "strict",
-     "options": ["strict", "loose"], "locked_after_create": False, "step": 4,
-     "help": "strict=严格按进度过滤未揭示内容;loose=放宽。"},
 ]
 
 _DEFAULTS = {s["key"]: s["default"] for s in SETTINGS_SCHEMA}

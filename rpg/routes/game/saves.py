@@ -14,6 +14,7 @@ from fastapi import Depends
 from fastapi.responses import JSONResponse
 from platform_app.api._deps import json_response
 
+from platform_app.branches._helpers import acquire_save_advisory_lock
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse, StateResponse
 
@@ -76,6 +77,12 @@ async def api_message_edit(
             # (任何登录用户可改他人存档的消息)。与全平台 save 端点统一走 perms.owns_save。
             if not owns_save(db, int(save_id), int(api_user["id"])):
                 return json_response({"ok": False, "error": "无权访问该存档"}, status_code=403)
+            # 并发锁(与 record_runtime_turn / persist_runtime_state / 分支写操作同 key 的事务级
+            # advisory lock):_amend_history_message 对 branch_commits/game_saves/runtime_checkouts
+            # 三表读改写,不持锁会与并发回合提交 / autosave / 另一 tab 的编辑互相覆盖快照(同类操作
+            # 注释都要求「必须在锁内」)。复用本 with 内的 db 连接(锁内严禁开新连接=PgBouncer 池
+            # 死锁),随 db.commit() 释放。
+            acquire_save_advisory_lock(db, int(save_id), int(api_user["id"]))
             # 与 acceptance 选择同款持久化:写穿【活跃 commit 快照(kb_native materialize 权威源)+ 工作树
             # 快照 + snapshot_hash bump(跨 worker 失效)+ messages 表】。旧实现只改 messages + state.save()
             # blob,不改 commit 快照 → kb_native 存档编辑后刷新/换 worker 就回退(与 acceptance 同源 bug)。
@@ -231,6 +238,65 @@ def _resolve_message_index_by_content(db, save_id: int, content: str, *, role: s
     return None
 
 
+def _retire_and_remaintain_after_rewrite(db, save_id: int, turn: int, rewrite_text: str, uid: int) -> None:
+    """换稿旧稿幽灵根修:玩家选「改写」后,退役该回合 commit 关联的 kb_events(首稿抽取,情景召回
+    会持续回忆被换掉的旧剧情),再用新稿【确定性】重跑史官维护(实体 encountered + 关系)。
+
+    仅对 KB-backed 存档(kb_native 或每用户 kb_state flag)生效——非 KB 档无 kb_events,直接跳过。
+    退役采用【就地 UPDATE 原行的 retired_at_commit】而非插 tombstone:episodic 语料是扁平
+    `where retired_at_commit is null` 查询(kb/episodic.py 的向量与关键词两路),tombstone 另插新行
+    无法遮蔽原行;只有就地置 retired 才能让扁平语料与 _newest_visible 双双排除。amend 本身已就地改
+    commit 快照(非 COW),故此处就地退役语义一致、对派生分支影响相同。
+
+    已知局限(留后续):首稿的结构化 ops(memory.facts / world.known_events)已落进 state blob,
+    acceptance 选择不回滚 state,故下一回合 import_state 可能把同文事件按新 commit 重新落库。本修
+    先断当前召回旧稿(ledger 允许「先落 retire 防旧稿召回」),彻底修需 acceptance 回滚 state ops。"""
+    srow = db.execute(
+        "select active_commit_id, script_id, kb_native, user_id from game_saves where id = %s",
+        (save_id,),
+    ).fetchone()
+    if not srow:
+        return
+    from core.feature_flags import feature_enabled
+    _kb_on = bool(srow.get("kb_native")) or feature_enabled("kb_state", int(srow.get("user_id") or uid))
+    if not _kb_on:
+        return
+    active_commit = int(srow.get("active_commit_id") or 0)
+    if not active_commit:
+        return
+    # 定位该回合在【当前活跃谱系】上的 born_commit(turn_index 匹配,取谱系内最新一个)——
+    # kb_events.born_commit = 该回合 record_runtime_turn 所建 commit(turn_index = 回合号)。
+    born = db.execute(
+        """
+        with recursive ancestry(cid) as (
+            select %(active)s::bigint
+          union all
+            select bc.parent_id from branch_commits bc
+            join ancestry a on bc.id = a.cid where bc.parent_id is not null
+        )
+        select id from branch_commits
+        where save_id = %(save)s and turn_index = %(turn)s and id in (select cid from ancestry)
+        order by id desc limit 1
+        """,
+        {"active": active_commit, "save": save_id, "turn": int(turn)},
+    ).fetchone()
+    born_commit = int((born or {}).get("id") or 0)
+    if not born_commit:
+        return
+    # 就地退役该 commit 生的所有 kb_events(首稿本回合新增的 fact/kevt 等增量)。
+    db.execute(
+        "update kb_events set retired_at_commit = %s "
+        "where save_id = %s and born_commit = %s and retired_at_commit is null",
+        (born_commit, save_id, born_commit),
+    )
+    # 用新稿【确定性】重跑史官(扫 canon 实体名 → encountered + 初识关系),写新行 born=born_commit
+    # 覆盖旧派生。复用现成入口 maintain_structured_kb,不新写抽取逻辑。
+    script_id = int(srow.get("script_id") or 0)
+    if script_id and rewrite_text.strip():
+        from kb.save_kb import maintain_structured_kb
+        maintain_structured_kb(db, save_id, script_id, born_commit, rewrite_text, player_name="")
+
+
 @router.post("/api/acceptance/choice", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_acceptance_choice(
     body: dict[str, Any],
@@ -263,7 +329,7 @@ async def api_acceptance_choice(
     try:
         with connect() as db:
             row = db.execute(
-                "select id, user_id, save_id, original_text, rewrite_text, chosen from acceptance_ab_log where id = %s",
+                "select id, user_id, save_id, turn, original_text, rewrite_text, chosen from acceptance_ab_log where id = %s",
                 (alt_id,),
             ).fetchone()
             if not row:
@@ -272,6 +338,7 @@ async def api_acceptance_choice(
             if int(row["user_id"] or 0) != uid:
                 return json_response({"ok": False, "error": "无权操作该候选"}, status_code=403)
             save_id = int(row["save_id"] or 0)
+            row_turn = int(row["turn"] or 0)
             original_text = str(row["original_text"] or "")
             rewrite_text = str(row["rewrite_text"] or "")
             # 记录选择(幂等:重复点同一选择只更新时间戳)。
@@ -292,8 +359,21 @@ async def api_acceptance_choice(
                     except (TypeError, ValueError):
                         mi = -1
                 if mi >= 0 and owns_save(db, save_id, uid):
+                    # 并发锁(与 message/edit / 回合提交同 key 事务级 advisory lock):amend 对
+                    # branch_commits/game_saves/runtime_checkouts 读改写须串行化。复用本连接,锁内
+                    # 不开新连接,随 db.commit() 释放。
+                    acquire_save_advisory_lock(db, save_id, uid)
                     # 自包含写穿所有存储(commit 快照 + 工作树 blob + snapshot_hash bump + messages)。
                     swapped, _orig = _amend_history_message(db, save_id, mi, rewrite_text, require_role="assistant")
+                    if swapped:
+                        # 换稿旧稿幽灵根修:首稿 gm_response 抽取的 kb_events 仍以 born_commit 挂在该回合
+                        # commit 上,情景召回持续回忆被换掉的旧剧情。退役该回合 kb_events(就地置
+                        # retired_at_commit,让 _newest_visible 与 episodic 扁平语料查询双双排除)+ 用新稿
+                        # 确定性重跑史官维护。失败只告警不破选择(KB 维护绝不阻断玩家选择落库)。
+                        try:
+                            _retire_and_remaintain_after_rewrite(db, save_id, row_turn, rewrite_text, uid)
+                        except Exception as _kbe:
+                            _log.warning("[acceptance/choice] kb retire/remaintain skip: %s", _kbe)
                     db.commit()
     except Exception as e:
         _log.exception("[acceptance/choice] failed")

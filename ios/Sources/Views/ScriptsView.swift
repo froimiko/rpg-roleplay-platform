@@ -673,8 +673,7 @@ struct ScriptDetailSheet: View {
             // 锁死项设置走 PATCH /settings(is_create=true);原来塞进 create body 被后端忽略 →
             // 快速开始的 free/loose 从不生效,玩家进的是后端默认 guided/strict。
             await store.api.saveSettings(base: store.serverURL, saveId: saveId, updates: [
-                "foreknowledge_mode": "none", "npc_awareness": "oblivious",
-                "steering_strength": "free", "spoiler_guard": "loose",
+                "foreknowledge_mode": "none", "steering_strength": "free",
             ], isCreate: true)
             // [round-4-P0] 必须先 activate 再进游戏台:/api/saves 只建档不激活运行时,
             // 漏掉则 GameConsole 的 /api/state 无活跃运行时 → 每次开局空/报错(对齐 NewGameView.create)。

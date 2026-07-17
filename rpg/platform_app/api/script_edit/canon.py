@@ -8,7 +8,7 @@ from fastapi import Depends, Request
 from psycopg.types.json import Jsonb
 
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router, _require_owner, _write_commit
 
 # ─── canon-entities CRUD ─────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ async def api_canon_update(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         before_row = db.execute(
             f"SELECT {_CANON_COLS} FROM kb_canon_entities WHERE script_id = %s AND logical_key = %s",
@@ -133,7 +133,7 @@ async def api_canon_add(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         new_row = db.execute(
             """
@@ -192,7 +192,7 @@ async def api_canon_delete(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         before_row = db.execute(
             "SELECT id, logical_key, name, summary, importance FROM kb_canon_entities WHERE script_id = %s AND logical_key = %s",

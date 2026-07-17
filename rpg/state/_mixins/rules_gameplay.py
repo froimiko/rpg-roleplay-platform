@@ -47,6 +47,25 @@ class RulesGameplayMixin:
         pc["hp"] = max(0, cur - actual)
         return cur - pc["hp"]
 
+    def append_rules_audit(self, reason: str = "", ops: int = 1) -> None:
+        """规则引擎侧 audit_log 单一落法(source='rules_engine')。
+
+        apply_rules_state_ops 用它;战斗里直改 state(如 damage_player 打玩家)绕过
+        apply_rules_state_ops 的分支也用它补审计,保证两条路径的审计条目同构(字段/裁剪一致),
+        避免「打 NPC 有审计、打玩家没审计」的孪生分叉。异常吞掉(审计不阻断战斗结算)。"""
+        try:
+            audit = self.data.setdefault("permissions", {}).setdefault("audit_log", [])
+            audit.append({
+                "ts": now_iso(),
+                "source": "rules_engine",
+                "ops": int(ops),
+                "reason": reason,
+                "turn": self.data.get("turn", 0),
+            })
+            self.data["permissions"]["audit_log"] = audit[-200:]
+        except Exception:
+            pass
+
     # ── Inventory (canonical) ──────────────────────────────────
     # Bug 5：player_character.inventory 是物品的唯一真相源；
     # memory.resources 是派生展示层，consume 之后必须同步。

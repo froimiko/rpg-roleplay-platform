@@ -8,7 +8,7 @@ from fastapi import Depends, Request
 
 from ...db import connect
 from ...security import normalize_username, public_user
-from .._deps import SESSION_COOKIE, json_response, require_user
+from .._deps import SESSION_COOKIE, json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -137,7 +137,7 @@ async def api_my_usage_timeline(days: int = 30, group_by: str = "day", user=Depe
             group_by=group_by,
         ))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/me/stats")

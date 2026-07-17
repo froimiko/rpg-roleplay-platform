@@ -7,7 +7,7 @@ import { FieldLabel } from './shared.jsx';
 /* ================================================================
    STEP 3 — 引导与防剧透 + 故事意图
    ================================================================ */
-function StepMeta({ foreknowledge, setForeknowledge, npcAwareness, setNpcAwareness, steering, setSteering, spoiler, setSpoiler, storyIntent, setStoryIntent }) {
+function StepMeta({ foreknowledge, setForeknowledge, steering, setSteering, storyIntent, setStoryIntent }) {
   const { t } = useTranslation();
   const segOpts = (opts, cur, set) => (
     <div className="pl-seg2">
@@ -29,15 +29,6 @@ function StepMeta({ foreknowledge, setForeknowledge, npcAwareness, setNpcAwarene
         ], foreknowledge, setForeknowledge)}
       </div>
 
-      {/* NPC 起疑 */}
-      <div>
-        <FieldLabel hint={t('mobile.new_game.meta.npc_hint')}>{t('mobile.new_game.meta.npc_label')}</FieldLabel>
-        {segOpts([
-          ['oblivious', t('mobile.new_game.meta.npc_oblivious')],
-          ['suspicious', t('mobile.new_game.meta.npc_suspicious')],
-        ], npcAwareness, setNpcAwareness)}
-      </div>
-
       {/* 引导强度 */}
       <div>
         <FieldLabel hint={t('mobile.new_game.meta.steering_hint')}>{t('mobile.new_game.meta.steering_label')}</FieldLabel>
@@ -46,15 +37,6 @@ function StepMeta({ foreknowledge, setForeknowledge, npcAwareness, setNpcAwarene
           ['guided', t('mobile.new_game.meta.steering_guided')],
           ['free', t('mobile.new_game.meta.steering_free')],
         ], steering, setSteering)}
-      </div>
-
-      {/* 防剧透 */}
-      <div>
-        <FieldLabel hint={t('mobile.new_game.meta.spoiler_hint')}>{t('mobile.new_game.meta.spoiler_label')}</FieldLabel>
-        {segOpts([
-          ['strict', t('mobile.new_game.meta.spoiler_strict')],
-          ['loose', t('mobile.new_game.meta.spoiler_loose')],
-        ], spoiler, setSpoiler)}
       </div>
 
       {/* 故事意图 */}

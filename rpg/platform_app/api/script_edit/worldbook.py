@@ -10,7 +10,7 @@ from fastapi import Depends, Request
 from psycopg.types.json import Jsonb
 
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router, _require_owner, _write_commit
 
 # ─── worldbook CRUD ───────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ async def api_worldbook_update(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         before_row = db.execute(
             f"SELECT {_WB_COLS} FROM worldbook_entries WHERE id = %s AND script_id = %s",
@@ -150,7 +150,7 @@ async def api_worldbook_add(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         # book_id 是遗留列、可空(migration 85);有 books 行就带上,没有就 NULL,归属看 script_id。
         book_row = db.execute(
@@ -229,7 +229,7 @@ async def api_worldbook_delete(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         before_row = db.execute(
             "SELECT id, title, content, priority, enabled, metadata FROM worldbook_entries WHERE id = %s AND script_id = %s",
@@ -319,7 +319,7 @@ async def api_worldbook_batch(
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
 
         if action == "delete":
             rows = db.execute(

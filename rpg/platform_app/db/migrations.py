@@ -2239,6 +2239,17 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # 数字键序兜底)。写路径 flag 门控 RPG_KB_HASH_KEYS,读路径无条件双制式。纯增列。
         "alter table kb_events add column if not exists seq integer",
     ]),
+    (98, "token_usage_created_at_index", [
+        # /api/admin/usage(platform_app/api/admin/usage.py)四条查询(total/by_user/
+        # by_api/by_day)全部只按 `where created_at > now() - interval` 过滤,不带
+        # user_id/save_id/api_id 等等值前缀谓词。已有的 idx_token_usage_user_time /
+        # idx_token_usage_save_time / idx_token_usage_user_time_cover 都以 user_id 或
+        # save_id 为首列,按最左前缀规则对纯 created_at 范围扫描一律用不上 → 全表扫描。
+        # 补一条以 created_at 为首列(且仅此一列)的索引,四条查询都能命中。
+        # if not exists 幂等;不用 concurrently ——migrator 在事务内跑,CONCURRENTLY
+        # 不能在事务块中执行。
+        "create index if not exists idx_token_usage_created_at on token_usage(created_at)",
+    ]),
 ]
 
 

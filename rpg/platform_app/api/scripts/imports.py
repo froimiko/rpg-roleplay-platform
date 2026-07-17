@@ -10,7 +10,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from ... import script_import
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -72,7 +72,7 @@ async def api_import_script(request: Request, user=Depends(require_user)):
             "error": str(exc),
         }, status_code=400)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/preview")
@@ -89,7 +89,7 @@ async def api_script_preview(request: Request, user=Depends(require_user)):
             sample_limit=int(body.get("sample_limit", 20)),
         ))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/batch-import")
@@ -106,7 +106,7 @@ async def api_scripts_batch_import(request: Request, user=Depends(require_user))
     try:
         raw = decode_upload(file_item)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
     import io
     import zipfile
@@ -167,7 +167,7 @@ async def api_upload_init(request: Request, user=Depends(require_user)):
             int(body.get("total_chunks") or 0),
         )})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/uploads/{upload_id}/chunk")
@@ -190,7 +190,7 @@ async def api_upload_finish(upload_id: str, user=Depends(require_user)):
     try:
         return json_response(script_import.finish_upload(user["id"], upload_id))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/uploads/{upload_id}/cancel")
@@ -199,7 +199,7 @@ async def api_upload_cancel(upload_id: str, user=Depends(require_user)):
     try:
         return json_response(script_import.cancel_upload(user["id"], upload_id))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 # ── script pack export / import ───────────────────────────────────────────────

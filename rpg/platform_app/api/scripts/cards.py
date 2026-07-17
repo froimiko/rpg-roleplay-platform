@@ -7,7 +7,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from ... import knowledge
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -16,7 +16,7 @@ async def api_script_character_cards(script_id: int, limit: int | None = None, c
     try:
         return json_response({"ok": True, **knowledge.list_character_cards(user["id"], script_id, limit, cursor)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/scripts/{script_id}/character-cards/{card_id}")
@@ -25,7 +25,7 @@ async def api_script_character_card(script_id: int, card_id: int, user=Depends(r
     try:
         card = knowledge.get_character_card(user["id"], script_id, card_id)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
     if not card:
         return json_response({"ok": False, "error": "character_card 不存在"}, status_code=404)
     return json_response({"ok": True, "card": card})
@@ -38,7 +38,7 @@ async def api_script_upsert_character_card(request: Request, script_id: int, use
     try:
         return json_response({"ok": True, "card": knowledge.upsert_character_card(user["id"], script_id, body)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     except Exception as exc:
         # 兜底:改名撞同名等唯一约束冲突(罕见竞态/其它路径)别冒成 500「保存没反应」,
         # 转成可行动 400。upsert 内 with connect() 已回滚,连接干净归还。
@@ -59,7 +59,7 @@ async def api_script_delete_character_card(script_id: int, card_id: int, user=De
     try:
         return json_response(knowledge.delete_character_card(user["id"], script_id, card_id))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
 
 
 @router.post("/api/scripts/{script_id}/character-cards/{card_id}/enabled")
@@ -71,7 +71,7 @@ async def api_script_card_enabled(request: Request, script_id: int, card_id: int
             user["id"], script_id, card_id, bool(body.get("enabled", True))
         )})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/{script_id}/character-cards/{card_id}/protagonist")
@@ -86,7 +86,7 @@ async def api_script_card_protagonist(script_id: int, card_id: int, user=Depends
             user["id"], script_id, card_id
         )})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/{script_id}/audit-cards")
@@ -111,4 +111,4 @@ async def api_audit_character_cards(request: Request, script_id: int, user=Depen
             "settings_hash": "settings-models", "error": str(exc),
         }, status_code=400)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)

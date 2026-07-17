@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -19,7 +19,7 @@ async def api_set_card_visibility(request: Request, card_id: int, user=Depends(r
     try:
         return json_response(user_cards.set_card_public(user["id"], card_id, bool(body.get("public"))))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=403)
+        return value_error_response(exc, status_code=403)
 
 
 @router.get("/api/cards/public")
@@ -36,4 +36,4 @@ async def api_clone_public_card(card_id: int, user=Depends(require_user)):
     try:
         return json_response(user_cards.clone_public_card(user["id"], card_id))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)

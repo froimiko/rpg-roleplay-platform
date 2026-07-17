@@ -7,7 +7,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router, _require_owner
 
 @router.post("/api/scripts/{script_id}/agent-doc")
@@ -21,7 +21,7 @@ async def api_agent_doc_upload(request: Request, script_id: int, user=Depends(re
         try:
             _require_owner(db, script_id, user["id"])
         except ValueError as exc:
-            return json_response({"ok": False, "error": str(exc)}, status_code=403)
+            return value_error_response(exc, status_code=403)
     try:
         body = await request.json()
     except Exception:
@@ -38,4 +38,4 @@ async def api_agent_doc_upload(request: Request, script_id: int, user=Depends(re
         )
         return json_response({"ok": True, **res})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)

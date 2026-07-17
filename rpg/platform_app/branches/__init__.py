@@ -77,8 +77,8 @@ from platform_app.branches.refs import (
 
 # ── runtime ────────────────────────────────────────────────────────────────────
 from platform_app.branches.runtime import (
+    RuntimeTurnConflict,
     bootstrap_runtime_binding,
-    mark_runtime_dirty,
     persist_runtime_state,
     record_runtime_turn,
 )
@@ -129,7 +129,7 @@ __all__ = [
     # activation
     "activate_node", "activate_save", "continue_from",
     # runtime
-    "bootstrap_runtime_binding", "mark_runtime_dirty",
+    "bootstrap_runtime_binding", "RuntimeTurnConflict",
     "persist_runtime_state", "record_runtime_turn",
     # deletion
     "delete_subtree", "rollback_to_message", "rewind_last_round",

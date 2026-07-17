@@ -8,7 +8,7 @@ from fastapi import Depends
 
 from ... import knowledge
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -19,7 +19,7 @@ async def api_script_worldbook(script_id: int, limit: int | None = None, cursor:
         return json_response({"ok": True, **knowledge.list_worldbook_entries(
             user["id"], script_id, limit, cursor, fetch_all=fetch_all)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 # canon 实体列表(MD 编辑器按类型拉取)。鉴权 owner 或 subscriber(只读),与 GET worldbook

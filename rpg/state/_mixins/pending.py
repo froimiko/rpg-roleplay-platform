@@ -17,9 +17,18 @@ import logging as _logging
 
 from core.clock import now_iso
 from state.parsers import _clean_item, _parse_question
-from state.permissions import _normalize_permission_mode
+from state.permissions import _normalize_permission_mode, _permission_label
 
 _log = _logging.getLogger(__name__)
+
+# GM 自主叙事记忆写入(后果账本 / NPC 议程 / 推测)在非授权模式下入 pending 时用的
+# 合成 path 标记 —— 与 generate_image 同套「合成 path 走特殊 approve 分支」模式。
+# approve 时按此分派回专用方法(见 _approve_narrative_op_pending),不走
+# apply_state_write_typed 的字段写入路径(这些 op 不是 path=value 字段写入)。
+_NARRATIVE_OP_PATHS = frozenset({
+    "consequence", "npc_agenda", "hypothesis",
+    "confirm_hypothesis", "reject_hypothesis",
+})
 
 
 class PendingMixin:
@@ -47,6 +56,11 @@ class PendingMixin:
         # ── Phase 1 生图门控：generate_image pending 不走 _set_path，而是入队生图 ──
         if path == "generate_image":
             return _approve_image_pending(item)
+
+        # GM 自主叙事记忆写入(consequence/npc_agenda/hypothesis/...)pending:按 op
+        # 重放对应专用方法(这些不是 path=value 字段写入,不能走 apply_state_write_typed)。
+        if path in _NARRATIVE_OP_PATHS:
+            return self._approve_narrative_op_pending(item)
 
         # Bug 5：直接传 typed value，不走 spec 字符串往返；防止 list/dict 被 str() 污染。
         result = self.apply_state_write_typed(
@@ -83,6 +97,80 @@ class PendingMixin:
         })
         permissions["audit_log"] = permissions["audit_log"][-200:]
         return f"状态写入拒绝：{item.get('path', '')}"
+
+    def add_pending_narrative_op(self, op: str, value: dict, *, source: str, display: str) -> str:
+        """把 GM 自主叙事记忆写入(consequence/npc_agenda/hypothesis/confirm_/reject_
+        hypothesis)入 pending_writes 队列 —— 与 apply_state_write_typed 的字段 pending
+        同队列、同前端审批 UI。approve 时按 op 分派回专用方法(_approve_narrative_op_pending)。
+
+        根因:这些 op 原直调 register_consequence / upsert_npc_agenda / add_hypothesis
+        等专用方法,完全绕过 apply_state_write_typed 的权限闸门 —— read_only 也拦不住。
+        而它们【确实进 GM 上下文注入】(consequence_echo / npc_agenda / memory provider
+        消费),有真实叙事影响,故 read_only 承诺「任何 LLM 自动写入都入 pending」对它们
+        必须成立。value 里的字段必须 JSON 可序列化(随存档持久化):set 类(extra_known)
+        由调用方转 list 存,approve 时重建 set。"""
+        import secrets as _secrets
+        permissions = self.data.setdefault("permissions", {})
+        mode = _normalize_permission_mode(permissions.get("mode", "full_access"))
+        pending = {
+            "id": _secrets.token_urlsafe(8),
+            "path": op,          # 合成标记;approve 按 op 分派(非真实 state path)
+            "op": op,
+            "value": value,
+            "source": source,
+            "turn": self.data.get("turn", 0),
+            "risk": "medium",
+            "field": display,
+            "from": "",
+            "to": display,
+            "reason": f"{_permission_label(mode)}未授权 GM 自动写入叙事记忆",
+        }
+        permissions.setdefault("pending_writes", []).append(pending)
+        permissions["pending_writes"] = permissions["pending_writes"][-20:]
+        return f"状态写入待审：{display}"
+
+    def _approve_narrative_op_pending(self, item: dict) -> str:
+        """审批通过一条 GM 叙事记忆写入 pending(add_pending_narrative_op 入队的)。
+        approve = 用户已授权 → 直接调专用方法落地(绕过权限闸门,不会二次入 pending)。"""
+        op = str(item.get("op") or item.get("path") or "")
+        value = item.get("value") or {}
+        src = f"{item.get('source', 'gm')}:approved"
+        if op == "consequence":
+            ok, msg = self.register_consequence(
+                text=value.get("text", ""),
+                due_turns=value.get("due_turns"),
+                due_location=value.get("due_location"),
+                origin="gm",
+            )
+            return f"状态写入：{msg}" if ok else msg
+        if op == "npc_agenda":
+            extra = value.get("extra_known") or []
+            ok, msg = self.upsert_npc_agenda(
+                name=value.get("name", ""),
+                goal=value.get("goal"),
+                stance=value.get("stance"),
+                extra_known=set(extra) if extra else None,
+            )
+            return f"状态写入：{msg}" if ok else msg
+        if op == "hypothesis":
+            mid = self.add_hypothesis(
+                text=value.get("text", ""),
+                source=src,
+                time_label=value.get("time_label"),
+                characters=value.get("characters"),
+            )
+            return f"推测登记：{mid}"
+        if op == "confirm_hypothesis":
+            hid = value.get("id", "")
+            if hid and self.confirm_hypothesis(hid, source=src):
+                return f"推测确认：{hid}"
+            return f"推测确认失败（id 不存在或非 active）：{hid}"
+        if op == "reject_hypothesis":
+            hid = value.get("id", "")
+            if hid and self.reject_hypothesis(hid):
+                return f"推测拒绝：{hid}"
+            return f"推测拒绝失败（id 不存在）：{hid}"
+        return f"未知待审 op：{op}"
 
     def add_pending_question(self, text: str, source: str = "gm", options: list | None = None) -> bool:
         if options is None:

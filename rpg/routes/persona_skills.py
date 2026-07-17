@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from platform_app.api._deps import json_response
+from platform_app.api._deps import json_response, value_error_response
 
 from routes._deps_fastapi import get_current_user
 
@@ -65,7 +65,7 @@ async def api_persona_skill_import(
         )
         return json_response(result)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     except Exception as exc:  # noqa: BLE001
         return json_response({"ok": False, "error": f"导入失败: {exc}"}, status_code=500)
 

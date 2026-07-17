@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from platform_app.api._deps import json_response
+from platform_app.branches import RuntimeTurnConflict
 
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse, OkResponse
@@ -570,6 +571,22 @@ async def api_chat(
                 except Exception as _pe:
                     _log.warning("[chat] 断连打断落库失败(放弃,不影响清理): %s", _pe)
             raise
+        except RuntimeTurnConflict as _conf:
+            # 双端并发状态覆盖根修:本回合流式期间存档已被别处(另一 tab/设备)推进,
+            # record_runtime_turn 已原子放弃本回合(未落 commit/kb_events/messages)。给前端明确
+            # 错误横幅让玩家刷新重试;这不是模型/网络故障,不计入渠道健康失败。已流式给用户的
+            # 半截正文由前端错误横幅覆盖语义。
+            _mark_context_run(
+                pipeline_ctx.context_run_id,
+                "failed",
+                error=f"save_conflict: {_conf}",
+                duration_ms=int((time.time() - _chat_start_time) * 1000),
+            )
+            yield _sse("error", {
+                "message": str(_conf) or "存档已在别处推进,请刷新后重试。",
+                "kind": "save_conflict",
+            })
+            yield _sse("done", {"interrupted": True, "status": _payload_sse(api_user)})
         except Exception as exc:
             _mark_context_run(
                 pipeline_ctx.context_run_id,

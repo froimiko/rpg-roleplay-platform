@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from fastapi import Depends, Request
 
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -41,7 +41,7 @@ async def api_account_export(include_chunks: int = 0, user=Depends(require_user)
             account_io.export_account, user["id"], bool(include_chunks),
         )
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
     ascii_fallback = filename.encode("ascii", "ignore").decode("ascii") or "account-export.zip"
     quoted = _quote(filename, safe="")
     cd = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quoted}"
@@ -82,4 +82,4 @@ async def api_account_import(request: Request, user=Depends(require_user)):
     except HTTPException:
         raise
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)

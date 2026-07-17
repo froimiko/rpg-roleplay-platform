@@ -9,7 +9,7 @@ from fastapi import Depends, Request
 
 from ... import script_import
 from ...db import connect
-from .._deps import json_response, require_user
+from .._deps import json_response, require_user, value_error_response
 from ._shared import router
 
 
@@ -47,7 +47,7 @@ async def api_script_chapters(
             return json_response({"ok": True, "items": [_expose(r) for r in rows], "query": q})
         return json_response({"ok": True, **script_import.list_chapters(user["id"], script_id, limit, cursor)})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.get("/api/scripts/{script_id}/chapters/{chapter_index:int}")
@@ -99,7 +99,7 @@ async def api_chapter_update(request: Request, script_id: int, chapter_index: in
              "server_chapter": conflict.server_chapter},
             status_code=409)
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/blank")
@@ -112,7 +112,7 @@ async def api_create_blank_script(request: Request, user=Depends(require_user)):
     try:
         return json_response(script_import.create_blank_script(user["id"], (body or {}).get("title") or ""))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/{script_id}/add-chapter")
@@ -126,7 +126,7 @@ async def api_add_chapter(request: Request, script_id: int, user=Depends(require
     try:
         return json_response(script_import.create_chapter(user["id"], script_id, (body or {}).get("title") or ""))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/{script_id}/chapters/merge")
@@ -143,7 +143,7 @@ async def api_chapter_merge(request: Request, script_id: int, user=Depends(requi
             separator=body.get("separator") or "\n\n",
         ))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/{script_id}/chapters/delete")
@@ -175,7 +175,7 @@ async def api_chapter_split(request: Request, script_id: int, chapter_index: int
             new_title=body.get("new_title") or "",
         ))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/scripts/{script_id}/resplit")
@@ -189,4 +189,4 @@ async def api_script_resplit(request: Request, script_id: int, user=Depends(requ
             custom_pattern=body.get("custom_pattern", ""),
         ))
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)

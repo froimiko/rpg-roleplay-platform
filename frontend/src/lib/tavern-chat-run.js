@@ -240,6 +240,7 @@ export function startTavernRun(cfg) {
     // pages(附件 UI 宿主):失败轮回填本轮已发送的附件,不覆盖用户已重新选择的附件
     // (与 game-console restoreFailedDraft 719 行同款语义)。移动酒馆无附件 UI,不传 cfg.setAttachments 即 no-op。
     if (setAttachments) setAttachments((cur) => (Array.isArray(cur) && cur.length ? cur : sentAttachments));
+    // gc.keepFailedTurn 为 RPG 台专属;若未来全局化,此处需接同款短路(2026-07-17 审计记录)。
     setHistory((h) => {
       const last = h[h.length - 1];
       if (last && last.role === 'user' && last.content === playerText) return h.slice(0, -1);

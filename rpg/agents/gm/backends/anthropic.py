@@ -259,18 +259,34 @@ class _AnthropicBackend:
     ) -> Iterator[dict[str, Any]]:
         """流式 + native tool_use。yields:
           - {"type": "text", "text": "..."}
+          - {"type": "reasoning", "text": "..."}       # thinking_delta 思考流(仅展示)
+          - {"type": "thinking_block", "block": {...}}  # 完整 thinking/redacted_thinking block
+                                                        # (含 signature),供工具循环原样装回历史
           - {"type": "tool_use_block", "id": "...", "name": "...", "input": {...}}
           - {"type": "stop", "stop_reason": "end_turn"|"tool_use"|...}
         每个 tool_use_block 完整产生后才 yield（input JSON 已合并完）。
+
+        Extended Thinking(task 141):按用户 effort 偏好启用(_thinking_param,与 call()/stream()
+        同一读取方式;对照 vertex/openai 的 effort)。budget=0/None → 不带 thinking 参数(保持关闭
+        语义)。**Anthropic 硬约束**:thinking+tool_use 时,含 thinking block 的 assistant 回合必须
+        把每个 thinking/redacted_thinking block(连 signature)原样装回后续请求的 messages,否则
+        后续工具轮 400。故此处把每个 thinking/redacted_thinking block 从流式事件重建成
+        {"type":"thinking_block", ...} 事件,由 stream_with_mcp_loop 装 assistant 消息时**原样保留、
+        且置于 content 首位**(非交错思考下 Anthropic 恒先产 thinking 再产 text/tool_use,置首即
+        还原原始顺序)。
         """
         current_block: dict[str, Any] | None = None
         partial_json_buf = ""
         stop_reason: str | None = None
-        # 刻意暂缓:工具循环不启用 Extended Thinking(不传 thinking 参数)。原因是 thinking 开启后
-        # Anthropic 要求把每个含 thinking block 的 assistant 回合原样(连 signature)装回 messages,
-        # 否则后续工具轮 400;本 backend 的 assistant 回合是从流式事件重建 text/tool_use block 的
-        # (见 stream_with_mcp_loop),尚未保留 thinking block 的往返 → 贸然开启会破坏多轮工具调用。
-        # 这是设计题(需要 thinking block round-trip),留待专门改造,不在本批次动。
+        # 重建中的 thinking / redacted_thinking block(含 signature),content_block_stop 时 yield。
+        current_thinking: dict[str, Any] | None = None
+        current_redacted: dict[str, Any] | None = None
+        # 与 call()/stream() 同源:按用户 effort 偏好取 thinking 参数;budget<=0 → None(不启用)。
+        _thinking = self._thinking_param()
+        if _thinking:
+            # thinking 模型 max_tokens 必须容下 budget(留输出余量),否则 SDK 报错。
+            max_tokens = max(max_tokens, int(_thinking["budget_tokens"]) + 1024)
+        _extra = {"thinking": _thinking} if _thinking else {}
         with self.client.messages.stream(
             model=self.model_name,
             max_tokens=max_tokens,
@@ -278,6 +294,7 @@ class _AnthropicBackend:
             messages=messages,
             tools=anthropic_tools,
             tool_choice={"type": "auto"},
+            **_extra,
         ) as stream:
             for event in stream:
                 et = getattr(event, "type", None)
@@ -290,6 +307,17 @@ class _AnthropicBackend:
                             "name": getattr(block, "name", ""),
                         }
                         partial_json_buf = ""
+                    elif bt == "thinking":
+                        # 边流边攒思考文本 + signature;signature 通常在块尾以 signature_delta 到达。
+                        current_thinking = {"type": "thinking", "thinking": "", "signature": ""}
+                    elif bt == "redacted_thinking":
+                        # redacted_thinking = 被安全层加密的思考块:data 在 start 事件即完整给出,
+                        # 无 delta、无明文。SDK 语义要求原样透传保留(round-trip)以满足 API 合规,
+                        # 但**不作为 reasoning 展示**(无明文可显示,展示加密块也无意义)。
+                        current_redacted = {
+                            "type": "redacted_thinking",
+                            "data": getattr(block, "data", "") or "",
+                        }
                 elif et == "content_block_delta":
                     delta = getattr(event, "delta", None)
                     dt = getattr(delta, "type", None)
@@ -299,6 +327,20 @@ class _AnthropicBackend:
                             yield {"type": "text", "text": text}
                     elif dt == "input_json_delta":
                         partial_json_buf += getattr(delta, "partial_json", "") or ""
+                    elif dt == "thinking_delta":
+                        # 思考流:攒进 block(供 round-trip)+ yield reasoning 事件(展示)。
+                        # 事件形态逐字对照 openai_compat/vertex 的 {"type":"reasoning","text":...}。
+                        ttext = getattr(delta, "thinking", "") or ""
+                        if current_thinking is not None:
+                            current_thinking["thinking"] += ttext
+                        if ttext:
+                            yield {"type": "reasoning", "text": ttext}
+                    elif dt == "signature_delta":
+                        # signature 是 thinking block 的完整性签名,必须随 block 原样回传,否则
+                        # 后续工具轮 400。不展示。累加以兼容单/多分片两种到达形态。
+                        sig = getattr(delta, "signature", "") or ""
+                        if current_thinking is not None:
+                            current_thinking["signature"] += sig
                 elif et == "content_block_stop":
                     if current_block is not None:
                         try:
@@ -315,6 +357,14 @@ class _AnthropicBackend:
                         }
                         current_block = None
                         partial_json_buf = ""
+                    elif current_thinking is not None:
+                        # 完整 thinking block(含 signature)→ 供 loop 原样装回历史。
+                        yield {"type": "thinking_block", "block": current_thinking}
+                        current_thinking = None
+                    elif current_redacted is not None:
+                        # redacted_thinking:同样 round-trip 保留,但不产 reasoning 事件。
+                        yield {"type": "thinking_block", "block": current_redacted}
+                        current_redacted = None
                 elif et == "message_delta":
                     delta = getattr(event, "delta", None)
                     if delta:
@@ -409,6 +459,9 @@ class _AnthropicBackend:
         for _iteration in range(max_iterations):
             pending_uses: list[dict[str, Any]] = []
             accumulated_blocks: list[dict[str, Any]] = []
+            # 本轮 assistant 回合的 thinking / redacted_thinking block(含 signature),按到达顺序。
+            # 有工具调用时必须原样装回 assistant 历史(Anthropic 硬约束),否则下一工具轮 400。
+            thinking_blocks: list[dict[str, Any]] = []
             current_text = ""
             for ev in self.stream_with_tools_native(
                 system, messages, anthropic_tools, max_tokens=max_tokens,
@@ -419,6 +472,14 @@ class _AnthropicBackend:
                     if text:
                         current_text += text
                         yield {"type": "text", "text": text}
+                elif et == "reasoning":
+                    # 思考流透传给消费侧(chat_pipeline/gm.py 已就绪:落 _turn_reasoning + 前端显示)。
+                    yield ev
+                elif et == "thinking_block":
+                    # 不外抛,仅收集用于 round-trip(装回 assistant 历史)。
+                    _blk = ev.get("block")
+                    if _blk:
+                        thinking_blocks.append(_blk)
                 elif et == "tool_use_block":
                     full_name = ev.get("name", "")
                     if sep in full_name:
@@ -444,6 +505,10 @@ class _AnthropicBackend:
             if not pending_uses:
                 return
             assistant_content: list[dict[str, Any]] = []
+            # thinking / redacted_thinking block 置于 content 首位:Anthropic 要求含 thinking 的
+            # assistant 回合把这些块(连 signature)原样回传,且它们在原始回合中先于 text/tool_use
+            # (非交错思考),置首即还原顺序。省略或改动会导致下一工具轮 400。
+            assistant_content.extend(thinking_blocks)
             if current_text:
                 assistant_content.append({"type": "text", "text": current_text})
             assistant_content.extend(accumulated_blocks)

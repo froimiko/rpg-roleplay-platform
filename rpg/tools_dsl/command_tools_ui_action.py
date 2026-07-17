@@ -15,8 +15,10 @@ command_tools_ui_action.py — task 109b-2
     window.__UI_ATLAS.setField / click — DOM 直接生效, React state 同步
   · 工具 result 立刻给 LLM 一个 ack 字符串, LLM 不阻塞等前端
   · 因为是"通过用户浏览器代为执行", 权限完全跟随用户在 UI 上能做的事 (用户
-    自己能填能点的, agent 才能填能点); 安全靠用户的 permission_mode 控制
-    (read_only 时 agent 不能调这些工具, 由前端在 onSet 时检查)。
+    自己能填能点的, agent 才能填能点)。安全边界由**后端**按 permission_mode
+    把关:read_only / default 模式下 ui_set_field 直接拒绝(见 _t_ui_set_field
+    的权限闸门)。确定性缝优先后端 —— 前端 ui-atlas.js 的 setField 实际零检查,
+    绝不能把它当安全边界(旧注释误称"由前端在 onSet 检查",已纠正)。
 """
 from __future__ import annotations
 
@@ -24,8 +26,32 @@ from typing import Any
 
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
 
-# 允许所有 origin 调用 — 因为这些工具本质是"代用户点鼠标",
-# 安全边界由前端 permission_mode 把关 (agent 写到 form 字段, 用户能看到)。
+
+def _current_permission_mode(user_id: int) -> str:
+    """读当前用户活跃存档的权限模式(参照 apply_ops 现行读法:
+    state.data["permissions"]["mode"],经 _normalize_permission_mode 归一)。
+
+    ui_set_field 是 user scope 工具,executor 只拿 (user_id, args) 没有 state,
+    故复用 app._ensure_loaded 取当前档 GameState(与 console_assistant 路由的
+    state_provider 同源)。ensure_gm=False 避免顺带装 GM。
+
+    拿不到状态时返回 "full_access"(fail-open):UI 代填不是游戏态写入,拿不到
+    模式(如非游戏页 / 尚无存档)时不阻断正常代填;真读到 read_only/default 才拒。
+    单测可 monkeypatch 本函数控制模式。"""
+    try:
+        import app as _ui
+        from state.permissions import _normalize_permission_mode
+        state = _ui._ensure_loaded({"id": int(user_id)}, ensure_gm=False)
+        return _normalize_permission_mode(
+            (state.data.get("permissions") or {}).get("mode", "full_access")
+        )
+    except Exception:
+        return "full_access"
+
+
+# 允许所有 origin 调用 — 因为这些工具本质是"代用户点鼠标"。
+# 安全边界由后端 permission_mode 把关(见 _t_ui_set_field:read_only/default 拒绝),
+# 不指望前端(ui-atlas.js 零检查)。
 _UI_ORIGINS = frozenset({
     "ui_button", "api_direct", "llm_set", "llm_chat", "llm_chat_json_op",
     "console_assistant",
@@ -63,6 +89,15 @@ def _t_ui_set_field(user_id: int, args: dict) -> str | dict[str, Any]:
         return "失败: field_key 必填 (从 ui_atlas.forms[].fields[].key 拿)"
     if value is None:
         return "失败: value 必填 (可以是字符串/数字/布尔)"
+    # 权限闸门(后端权威,不指望前端 ui-atlas.js 零检查):read_only / default 模式
+    # 下不允许助手代填表单字段。read 法参照 apply_ops(state.permissions.mode)。
+    # 失败串走 dispatcher「失败: ...」惯例(_RESULT_FAILURE_RE 识别)。
+    mode = _current_permission_mode(user_id)
+    if mode in ("read_only", "default"):
+        return (
+            f"失败: 当前权限模式为 {mode},不允许助手代填表单字段(ui_set_field)。"
+            f"请切换到完全访问权限(full_access),或自行在页面上填写。"
+        )
     # 返回的 dict 会被 console_assistant 主循环识别为 UI action
     return {
         "__ui_action__": "set_field",

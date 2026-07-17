@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from platform_app.api._deps import json_response
+from platform_app.api._deps import json_response, value_error_response
 
 from routes._deps_fastapi import get_current_admin_strict, get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, ErrorResponse, GenericOkResponse
@@ -83,7 +83,7 @@ async def api_mcp_server_validate(
     try:
         return json_response({"ok": True, "result": validate_mcp_server(body_dict.get("id", ""))})
     except ValueError as exc:
-        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+        return value_error_response(exc)
 
 
 @router.post("/api/mcp/server/start", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)

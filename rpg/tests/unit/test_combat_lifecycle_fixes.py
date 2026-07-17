@@ -55,5 +55,41 @@ class FinalizeSharedAndDefeatedGuard(unittest.TestCase):
         self.assertIn('outcome == "victory"', fn)
 
 
+class EnemyAttackPlayerAudit(unittest.TestCase):
+    """打玩家(damage_player 直改 HP,绕过 apply_rules_state_ops)必须补同构 audit_log。
+    原病:打 NPC 有审计、打玩家无审计。"""
+
+    def test_append_rules_audit_shape(self):
+        g = GameState(copy.deepcopy(DEFAULT_STATE))
+        g.data["turn"] = 7
+        g.append_rules_audit(reason="enemy_attack e1", ops=1)
+        audit = g.data["permissions"]["audit_log"]
+        self.assertEqual(len(audit), 1)
+        e = audit[0]
+        self.assertEqual(e["source"], "rules_engine")
+        self.assertEqual(e["reason"], "enemy_attack e1")
+        self.assertEqual(e["ops"], 1)
+        self.assertEqual(e["turn"], 7)
+        self.assertIn("ts", e)
+
+    def test_apply_rules_state_ops_same_audit_shape(self):
+        # apply_rules_state_ops 与 append_rules_audit 共用单一落法 → 两路径 audit 条目同构
+        g = GameState(copy.deepcopy(DEFAULT_STATE))
+        g.apply_rules_state_ops(
+            [{"op": "set", "path": "world.time", "value": "夜"}], reason="rules")
+        audit = g.data["permissions"]["audit_log"]
+        self.assertTrue(audit)
+        self.assertEqual(audit[-1]["source"], "rules_engine")
+        self.assertEqual(audit[-1]["reason"], "rules")
+        self.assertIn("ts", audit[-1])
+
+    def test_enemy_attack_player_branch_audits(self):
+        # 静态守卫:enemy_attack 打玩家分支补了 append_rules_audit,dice_log 仍单写(不双写)
+        i = CB.find("def enemy_attack(")
+        end = CB.find("\ndef ", i + 1)
+        ea = CB[i:end]
+        self.assertIn("append_rules_audit", ea, "enemy_attack 玩家分支漏 audit_log")
+
+
 if __name__ == "__main__":
     unittest.main()

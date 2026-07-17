@@ -26,6 +26,7 @@ os.environ.setdefault("RPG_REQUIRE_AUTH", "0")
 from state import DEFAULT_STATE, GameState  # noqa: E402
 from tools_dsl.command_dispatcher import (  # noqa: E402
     MAX_CALLS_PER_USER_PER_SECOND,
+    MAX_SYNC_SCOPE_LOCKS,
     MAX_TRACE_DEPTH,
     MAX_TRACE_SEEN,
     ToolCallEnvelope,
@@ -501,6 +502,73 @@ class TraceSeenLRUBound(unittest.TestCase):
                 user_id=1, tool="list_models", args={"k": str(i)}, origin="llm_chat", trace_id=live))
         # live trace 仍在表中且其去重集保留了历史签名
         self.assertIn(live, self.dispatcher._trace_seen)
+
+
+class SyncScopeLocksLRUBound(unittest.TestCase):
+    """_SYNC_SCOPE_LOCKS 是进程级全局锁表(dispatch_sync 同步写路径,SEC(H-15)),
+    key=(user_id, save_id),生命周期覆盖整个进程运行期(不像 _trace_seen 单回合内清空)。
+    长期运行下「玩过的存档数」无限增长 → plain dict 从不缩小 = 真实内存泄漏。
+    验证 LRU 上限生效,且淘汰不会摘掉正被其他线程持有的锁(否则同 key 会冒出两把互不
+    相识的锁,击穿它本该提供的互斥保证)。"""
+
+    def setUp(self):
+        from tools_dsl.command_dispatcher import _SYNC_SCOPE_LOCKS as _locks
+        _locks.clear()  # 隔离其他用例留下的 key,避免跨用例污染上限断言
+        self.reg = ToolRegistry()
+        self.reg.register(ToolSpec(
+            name="touch", description="",
+            input_schema={"type": "object", "properties": {}},
+            executor=lambda state, args: "ok",
+            scope="save",
+            origins=frozenset({"llm_set", "ui_button"}),
+        ))
+        self.dispatcher = ToolDispatcher(
+            registry=self.reg,
+            state_provider=lambda env: _new_state(),
+        )
+
+    def test_sync_scope_locks_bounded(self):
+        from tools_dsl.command_dispatcher import _SYNC_SCOPE_LOCKS as _locks
+        for i in range(MAX_SYNC_SCOPE_LOCKS + 200):
+            self.dispatcher.dispatch_sync(ToolCallEnvelope(
+                user_id=1, save_id=i, tool="touch", args={},
+                origin="llm_set", trace_id=f"scope-{i}",
+            ))
+        self.assertLessEqual(len(_locks), MAX_SYNC_SCOPE_LOCKS,
+                              "_SYNC_SCOPE_LOCKS 超过 LRU 上限,未防住内存泄漏")
+
+    def test_eviction_does_not_break_held_lock(self):
+        import threading as _threading
+
+        from tools_dsl.command_dispatcher import _SYNC_SCOPE_LOCKS as _locks
+        from tools_dsl.command_dispatcher import _get_sync_scope_lock
+
+        held_key = (99, 999)
+        held_lock = _get_sync_scope_lock(held_key)
+        held_evt = _threading.Event()
+        release_evt = _threading.Event()
+
+        def _hold():
+            with held_lock:
+                held_evt.set()
+                release_evt.wait(timeout=5)
+
+        t = _threading.Thread(target=_hold)
+        t.start()
+        try:
+            self.assertTrue(held_evt.wait(timeout=2), "后台线程未能持有锁,测试装置有误")
+            # 涌入远超上限的新 (user,save) key,逼淘汰逻辑运行
+            for i in range(MAX_SYNC_SCOPE_LOCKS + 200):
+                self.dispatcher.dispatch_sync(ToolCallEnvelope(
+                    user_id=1, save_id=i, tool="touch", args={},
+                    origin="llm_set", trace_id=f"scope2-{i}",
+                ))
+            # 被持有的锁必须仍在表中,且还是同一个对象(没被淘汰后重建成另一把)
+            self.assertIn(held_key, _locks)
+            self.assertIs(_locks[held_key], held_lock)
+        finally:
+            release_evt.set()
+            t.join(timeout=5)
 
 
 class IntegerArgCoercion(unittest.TestCase):
